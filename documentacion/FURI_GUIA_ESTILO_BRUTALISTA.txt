@@ -1,11 +1,13 @@
 ═══════════════════════════════════════════════════════════════════════════════
-                    FURY - GUIA DE ESTILO BRUTALISTA
-                    Version 2.0 | Actualizado: 2026-07-30
+                    F.U.R.I. - GUIA DE ESTILO BRUTALISTA
+                    Version 3.0 | Actualizado: 2026-08-05
 ═══════════════════════════════════════════════════════════════════════════════
 
 PROPOSITO:
 Guia definitiva de estilo visual para F.U.R.I. Basada en la implementacion
 real de HomeScreen. TODAS las pantallas deben seguir este documento.
+
+Esta version 3.0 incorpora las reglas de skill_visual .md como obligatorias.
 
 ═══════════════════════════════════════════════════════════════════════════════
 1. PRINCIPIO FUNDAMENTAL: CAOS ORGANIZADO
@@ -17,7 +19,44 @@ Column, Row para el layout principal. Los bloques se posicionan
 manualmente formando un "caos ordenado" -- dispersos pero intencionales.
 
 ═══════════════════════════════════════════════════════════════════════════════
-2. COLORES POR SECCION (NO NEGOCIABLE)
+2. REGLAS VISUALES DE skill_visual .md (OBLIGATORIAS)
+═══════════════════════════════════════════════════════════════════════════════
+
+Las siguientes reglas de skill_visual .md tienen prioridad absoluta sobre
+cualquier otra regla visual:
+
+2.1. Fondo y Borde del Mismo Color
+  - Todo elemento con borde y fondo debe tener IDENTICO color en ambos.
+  - Fondo SIEMPRE solido (Opacity 1.0), NUNCA transparente ni con alpha.
+  - PROHIBIDO: fondos transparentes, rgba con alpha < 1, o semi-transparentes.
+  - PROHIBIDO: color de borde diferente al color de fondo.
+  - PROHIBIDO: usar negro puro (#000000) como color de fondo.
+
+2.2. Bordes Redondos
+  - Todo elemento con borde y fondo de color debe tener border-radius.
+  - Bloques grandes (cards, paneles): borderRadius: 16-24 (heredado: 18)
+  - Botones, tags: borderRadius: 6-12
+  - Popups, modales: borderRadius: 16-24
+  - PROHIBIDO: BorderRadius.zero en elementos con borde y fondo de color.
+
+2.3. Sin Sombras
+  - PROHIBIDO: boxShadow, elevation, drop shadows de cualquier tipo.
+  - boxShadow: NONE en todos los elementos.
+
+2.4. Sin Degradados
+  - PROHIBIDO: linear-gradient, radial-gradient, sweep-gradient.
+  - Fondos SIEMPRE de color solido.
+
+2.5. Principios Brutalistas que se Mantienen
+  - Tipografia monoespaciada (monospace).
+  - Layouts crudos y asimetricos bienvenidos.
+  - Sin sombras (boxShadow: none).
+  - Sin degradados.
+  - Paleta de colores limitada y saturada.
+  - Sin adornos decorativos innecesarios.
+
+═══════════════════════════════════════════════════════════════════════════════
+3. COLORES POR SECCION (NO NEGOCIABLE)
 ═══════════════════════════════════════════════════════════════════════════════
 
 Cada pantalla tiene UN color vibrante dominante (_c):
@@ -39,7 +78,7 @@ Cada pantalla tiene UN color vibrante dominante (_c):
   Preguntas             Verde    #39FF14
 
 ═══════════════════════════════════════════════════════════════════════════════
-3. ESTRUCTURA BASE DE CADA PANTALLA (TEMPLATE)
+4. ESTRUCTURA BASE DE CADA PANTALLA (TEMPLATE)
 ═══════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -77,7 +116,7 @@ class XxxScreen extends StatelessWidget {
 }
 
 ═══════════════════════════════════════════════════════════════════════════════
-4. BLOQUES (COMPONENTE ATOMICO)
+5. BLOQUES (COMPONENTE ATOMICO) — ACTUALIZADO skill_visual
 ═══════════════════════════════════════════════════════════════════════════════
 
 Cada bloque se define como:
@@ -89,12 +128,13 @@ Cada bloque se define como:
         borderRadius: BorderRadius.circular(18),
         child: Container(
           decoration: BoxDecoration(
-            color: backgroundColor,
-            border: Border.all(color: borderColor, width: borderWidth),
+            color: backgroundColor,           // SOLIDO, sin alpha
+            border: Border.all(
+              color: backgroundColor,          // IGUAL al color de fondo
+              width: borderWidth,
+            ),
             borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(color: Color(0xFF000000), offset: Offset(5,5), blurRadius: 0),
-            ],
+            // SIN boxShadow
           ),
           child: childWidget,
         ),
@@ -102,17 +142,23 @@ Cada bloque se define como:
     ),
   );
 
-Reglas de bloques:
+Reglas de bloques (actualizadas skill_visual):
 - borderRadius: SIEMPRE 18 (herencia del HomeScreen)
-- boxShadow: SIEMPRE Offset(5,5) blurRadius: 0
+- backgroundColor: color SOLIDO (Opacity 1.0), NUNCA con alpha < 1
+- borderColor: SIEMPRE IGUAL al backgroundColor
 - borderWidth: variable entre 2-6px, segun jerarquia visual
-- backgroundColor: color semi-transparente de _c (alpha 0.08-0.30)
-- borderColor: _c o negro, segun contexto
+- SIN boxShadow
 - Todo tap usa HapticFeedback (lightImpact, mediumImpact, selectionClick)
 - Rotaciones: -0.1 a 0.1 radianes con Transform.rotate
 
+Colores de bloque validos:
+- _c directamente (color vibrante puro)
+- Variante oscura de _c (con .withBlue, .withGreen, .withRed para oscurecer, NUNCA con alpha)
+- Colores neutros solidos (#1a1a1a, #2d2d2d, #3a3a3a, etc.)
+- PROHIBIDO: _c.withValues(alpha: 0.xx)
+
 ═══════════════════════════════════════════════════════════════════════════════
-5. HEADER DE NAVEGACION
+6. HEADER DE NAVEGACION — ACTUALIZADO skill_visual
 ═══════════════════════════════════════════════════════════════════════════════
 
 Cada pantalla tiene un header con boton de volver:
@@ -121,14 +167,19 @@ Cada pantalla tiene un header con boton de volver:
     height: 44, padding: EdgeInsets.symmetric(horizontal: 8),
     decoration: BoxDecoration(
       color: _c,
-      border: Border(bottom: BorderSide(color: Colors.black, width: 4)),
+      border: Border(bottom: BorderSide(color: _c, width: 4)),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Row(children: [
       GestureDetector(
         onTap: () { HapticFeedback.lightImpact(); Navigator.of(context).pop(); },
         child: Container(
           padding: EdgeInsets.all(6),
-          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.zero),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1a1a1a),
+            border: Border.all(color: const Color(0xFF1a1a1a), width: 2),
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: Icon(Icons.arrow_back, color: _c, size: 20),
         ),
       ),
@@ -136,28 +187,49 @@ Cada pantalla tiene un header con boton de volver:
     ]),
   );
 
+Cambios respecto a version anterior:
+- border del header: color _c (mismo que fondo, NO negro)
+- boton volver: fondo #1a1a1a (NUNCA negro puro #000000)
+- boton volver: borde = mismo color que fondo
+- boton volver: borderRadius definido (NO BorderRadius.zero)
+- header: borderRadius aplicado
+
 ═══════════════════════════════════════════════════════════════════════════════
-6. TIPOGRAFIA
+7. FONDO CONCRETEPAINTER — ACTUALIZADO skill_visual
+═══════════════════════════════════════════════════════════════════════════════
+
+CustomPainter _ConcretePainter:
+- Fondo solido gris oscuro (#1a1a1a), SIN gradientes
+- 80 puntos de ruido blanco aleatorio (opacidad 1.5%, tamano 1-5px)
+- 12 lineas horizontales finas (opacidad 4%, 0.5px de grosor)
+- Seed Random: 42 (reproducible)
+
+Cambios respecto a version anterior:
+- ELIMINADO el gradiente lineal diagonal (viola regla "sin degradados")
+- Fondo: color solido #1a1a1a en lugar de gradiente multi-stop
+
+═══════════════════════════════════════════════════════════════════════════════
+8. TIPOGRAFIA
 ═══════════════════════════════════════════════════════════════════════════════
 
 - Fuente: SIEMPRE 'monospace'
 - Peso: FontWeight.bold para titulos, FontWeight.w900 para destacados
-- Color de texto: _c (el color de la seccion) o _c.withValues(alpha: 0.5-0.9)
-- Texto sobre fondo negro: Colors.black
+- Color de texto: _c (el color de la seccion) o blanco/gris claro
+- Texto sobre fondo oscuro: Colors.white o Color(0xFFCCCCCC)
 - Tamanos: proporcionales al ancho de pantalla (w * factor)
 
 ═══════════════════════════════════════════════════════════════════════════════
-7. INTERACCIONES
+9. INTERACCIONES
 ═══════════════════════════════════════════════════════════════════════════════
 
 - TapTile: animacion scale 1.0 -> 1.12 -> 0.95 -> 1.0 (150ms)
 - HapticFeedback en CADA tap
-- Confetti al navegar entre pantallas (desde HomeScreen)
+- Confeti al navegar entre pantallas (desde HomeScreen)
 - Transiciones de pagina: MaterialPageRoute (default)
 - Sin animaciones suaves >200ms
 
 ═══════════════════════════════════════════════════════════════════════════════
-8. PROCESO PARA CREAR UNA NUEVA PANTALLA
+10. PROCESO PARA CREAR UNA NUEVA PANTALLA
 ═══════════════════════════════════════════════════════════════════════════════
 
 1. Elegir _c (color de seccion)
@@ -165,14 +237,35 @@ Cada pantalla tiene un header con boton de volver:
 3. Cada bloque tiene un proposito funcional (icono, texto, widget anidado)
 4. Al menos 2 bloques con rotacion distinta
 5. Al menos 3 tamanos de bloque diferentes
-6. Header con boton volver
-7. ConcretePainter de fondo
+6. Header con boton volver (con borderRadius, sin negro puro)
+7. ConcretePainter de fondo (sin gradientes)
+8. Verificar checklist de skill_visual .md antes de mergear
 
 NO USAR: GridView, Table, Row, Column como layout principal.
 USAR: Stack + Positioned con calculos desde LayoutBuilder.
 
 ═══════════════════════════════════════════════════════════════════════════════
-9. ESTADOS DE PANTALLA
+11. CHECKLIST DE VERIFICACION (skill_visual + brutalista)
+═══════════════════════════════════════════════════════════════════════════════
+
+Antes de mergear cualquier pantalla o componente, verificar TODO:
+
+- [ ] Fondos solidos? (Opacity 1.0, sin alpha, sin rgba)
+- [ ] Color de borde identico al color de fondo?
+- [ ] Sin fondos #000000 (negro puro)?
+- [ ] Todos los elementos con borde/fondo tienen borderRadius?
+- [ ] Sin sombras? (boxShadow: none, elevation: 0)
+- [ ] Sin degradados? (linear, radial, sweep)
+- [ ] Tipografia monospace?
+- [ ] Layout caos organizado con Stack + Positioned?
+- [ ] Colores limitados y saturados (no mas de 3-4 por pantalla)?
+- [ ] Sin adornos decorativos innecesarios?
+- [ ] borderRadius 18 consistente en bloques?
+- [ ] HapticFeedback en cada tap?
+- [ ] Rotaciones sutiles (-0.1 a 0.1 rad)?
+
+═══════════════════════════════════════════════════════════════════════════════
+12. ESTADOS DE PANTALLA
 ═══════════════════════════════════════════════════════════════════════════════
 
 Toda pantalla debe contemplar:
@@ -182,20 +275,17 @@ Toda pantalla debe contemplar:
 - DATA:   contenido real
 
 ═══════════════════════════════════════════════════════════════════════════════
-10. EJEMPLO DE LAYOUT UNICO (CalendarHomeScreen)
-═══════════════════════════════════════════════════════════════════════════════
 
-Layout propuesto (diferente al HomeScreen, mismo lenguaje visual):
+Version 3.0 - Actualizada con reglas de skill_visual .md
+- Eliminado boxShadow de bloques
+- Eliminados fondos semi-transparentes (alpha), ahora solidos
+- borderColor ahora siempre igual a backgroundColor
+- Eliminado gradiente de ConcretePainter
+- Eliminado negro puro (#000000) como color de fondo
+- Header y boton volver actualizados con borderRadius y sin negro puro
+- Agregado checklist combinado brutalista + skill_visual
 
-  // Bloque grande izquierdo (calendario) - 55% ancho, 70% alto
-  // Bloque mediano derecho arriba (eventos del dia) - 40% ancho, 35% alto
-  // Bloque mediano derecho abajo (proximos) - 40% ancho, 30% alto  
-  // Bloque horizontal abajo (countdown) - 95% ancho, 12% alto
-  // Bloque pequeno flotante (add event) - 15% ancho, 15% alto, rotado
-
-═══════════════════════════════════════════════════════════════════════════════
-
-Version 2.0 - Reescrita basada en la implementacion real de HomeScreen
 TODA pantalla nueva DEBE seguir este documento al pie de la letra.
+Las reglas de skill_visual .md tienen prioridad sobre cualquier otra.
 
 ═══════════════════════════════════════════════════════════════════════════════

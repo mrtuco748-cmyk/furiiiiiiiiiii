@@ -15,7 +15,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 3, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 4, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -36,6 +36,12 @@ class DatabaseHelper {
     }
     if (oldVersion < 3) {
       await db.execute("ALTER TABLE schedules ADD COLUMN userId TEXT DEFAULT ''");
+    }
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN endTime TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN professor TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN userId TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN color INTEGER DEFAULT 0xFF7B2D8E");
     }
   }
 
@@ -71,7 +77,11 @@ class DatabaseHelper {
         dayOfWeek INTEGER NOT NULL,
         classTypeId INTEGER,
         startTime TEXT NOT NULL,
-        title TEXT NOT NULL
+        title TEXT NOT NULL,
+        endTime TEXT DEFAULT '',
+        professor TEXT DEFAULT '',
+        userId TEXT DEFAULT '',
+        color INTEGER DEFAULT 0xFF7B2D8E
       )
     ''');
     await db.execute('''

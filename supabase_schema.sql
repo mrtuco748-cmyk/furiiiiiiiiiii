@@ -285,9 +285,10 @@ CREATE TABLE IF NOT EXISTS favorites (
   user_id TEXT NOT NULL,
   category TEXT NOT NULL,
   title TEXT NOT NULL,
-  subtitle TEXT,
+  critica TEXT,
   emoji TEXT DEFAULT '⭐',
-  rating DOUBLE PRECISION DEFAULT 0,
+  rating_facu DOUBLE PRECISION DEFAULT 0,
+  rating_rocio DOUBLE PRECISION DEFAULT 0,
   favorited BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

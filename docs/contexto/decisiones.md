@@ -71,3 +71,20 @@
 - **Alternativas descartadas**: Dependencias directas entre providers (acoplamiento), streams globales (menos control)
 - **Impacto**: Arquitectura de eventos desacoplados con cola de reintentos
 - **Revisable**: Sí
+
+### D-10: Bot WhatsApp con Baileys + GitHub Actions (sin hosting propio)
+- **Fecha**: 2026-08-05
+- **Qué se decidió**: Crear bot de WhatsApp que notifica actividad de la app cada 30 min usando Node.js + Baileys, ejecutado en GitHub Actions (gratis)
+- **Por qué**: Notificaciones push llegan solo al celu, pero no hay visibilidad proactiva de actividad en otras secciones. Baileys usa WhatsApp Web (sin API de Meta Business), GitHub Actions es gratis y no requiere servidor
+- **Alternativas descartadas**: WhatsApp Cloud API de Meta (requiere numero de negocio verificado, costos), servidor 24/7 (costo mensual), solo Edge Functions (no pueden mantener conexion WebSocket para WhatsApp)
+- **Impacto**: Nueva carpeta `bot-furi/`, 2 tablas Supabase nuevas (`bot_sessions`, `bot_notificaciones`), sesion WhatsApp persistida en BD, GitHub Actions cada 30 min
+- **Limitacion**: No es tiempo real (polling cada 30 min). Para tiempo real se necesitaria servidor 24/7 + WhatsApp Cloud API
+- **Revisable**: Sí — si se necesita tiempo real, migrar a Edge Function + WhatsApp Cloud API
+
+### D-11: Rating dual por usuario + critica compartida en Favoritos
+- **Fecha**: 2026-08-05
+- **Qué se decidió**: Cada favorito se califica con estrellas de forma independiente por Facu (`rating_facu`) y por Rocio (`rating_rocio`), y existe una sola critica de texto compartida (`critica`). El rating se asigna por identidad (`AppState.identity`) en el provider (`setRating(id, identity, value)`).
+- **Por qué**: La app es de pareja y ambos consumen los mismos favoritos; un unico rating pierde la subjetividad de cada uno. La critica compartida evita redundancia (acordamos texto) y fomenta edicion colaborativa.
+- **Alternativas descartadas**: critica por usuario (Facu y Rocio con su texto propio, mas rico pero mas complejo; descartado por ahora), un solo rating promediado (pierdela opinion individual), solo estrellas sin texto.
+- **Impacto**: Schema `favorites` con 3 campos nuevos y `subtitle`/`rating` eliminados. Migracion `supabase/migration_favorites_dual_rating.sql`. UI rediseñada con mini filas de rating F/R, modal de detalle con edicion de critica + calificacion de ambos. Cualquiera puede calificarle al otro (ambos pueden editar todo). Promedio disponible cuando ambos calificaron.
+- **Revisable**: Sí — si en el futuro se quiere critica por usuario, agregar `critica_facu`/`critica_rocio` y migrar

@@ -8,6 +8,7 @@ import '../../models/schedule.dart';
 import '../../models/event_type.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
+import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFF00D4FF);
 const _dark = Color(0xFF000000);
@@ -254,19 +255,16 @@ color: _c.withValues(alpha: 0.25),
       body: Stack(
         children: [
           Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-          SafeArea(child: LayoutBuilder(
-            builder: (context, constraints) {
-              final w = constraints.maxWidth;
-              final h = constraints.maxHeight;
+          ResponsiveWrapper(builder: (context, w, h) {
               return SizedBox(width: w, height: h, child: Stack(children: [
                 _formBlock(w, h, types),
                 _saveBtn(w, h),
                 if (isEditing) _deleteBtn(w, h),
                 _xFloating(w, h),
               ]));
-            },
-          )),
-        ],
+             },
+           ),
+         ],
       ),
     );
   }

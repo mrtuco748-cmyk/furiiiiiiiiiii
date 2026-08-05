@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/board_data_provider.dart';
 import '../../widgets/tap_tile.dart';
+import '../../widgets/responsive_wrapper.dart';
 import '../../app_state.dart';
 
 const _c = Color(0xFF39FF14);
@@ -103,7 +104,7 @@ class _PizarraScreenState extends State<PizarraScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _boardBg,
-      body: SafeArea(child: Stack(children: [
+      body: ResponsiveWrapper(builder: (context, w, h) => Stack(children: [
         _boardCanvas(),
         _headerFloating(),
         _toolsFloating(),

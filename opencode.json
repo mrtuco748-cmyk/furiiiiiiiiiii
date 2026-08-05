@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "AGENTS.md",
+    "docs/contexto/arquitectura.md",
+    "docs/contexto/convenciones.md",
+    "docs/contexto/decisiones.md",
+    "docs/contexto/errores-conocidos.md",
+    "docs/contexto/flujo-de-trabajo.md",
+    "docs/contexto/forma-de-trabajo-con-el-usuario.md",
+    "docs/contexto/glosario.md",
+    "docs/contexto/historial.md",
+    "docs/contexto/bot-whatsapp.md",
+    "skill_visual .md",
+    "FURI-Nosotros-Skill.md",
+    "documentacion/*.md"
+  ]
+}

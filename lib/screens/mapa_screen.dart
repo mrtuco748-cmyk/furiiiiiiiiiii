@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../app_state.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 
 const _black = Color(0xFF000000);
@@ -41,10 +42,7 @@ class _MapaScreenState extends State<MapaScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
-      body: SafeArea(child: LayoutBuilder(
-        builder: (context, constraints) {
-          final w = constraints.maxWidth;
-          final h = constraints.maxHeight;
+      body: ResponsiveWrapper(builder: (context, w, h) {
           return SizedBox(width: w, height: h, child: Stack(
             children: [
               Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
@@ -53,7 +51,7 @@ class _MapaScreenState extends State<MapaScreen> {
             ],
           ));
         },
-      )),
+      ),
     );
   }
 

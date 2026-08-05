@@ -72,13 +72,17 @@
 - **Fix permanente**: Implementar GoRouter o Navigator 2.0
 - **Prioridad**: MEDIA
 
-### BAJA - Sin git history
+### ~~BAJA - Sin git history~~ ✅ RESUELTO
 - **Dónde**: Raíz del proyecto
-- **Qué pasa**: No hay repositorio git (.git no existe)
-- **Por qué es problema**: No se puede trackear cambios, hacer rollback, o colaborar
-- **Solución temporal**: `git init` local
-- **Fix permanente**: Crear repo en GitHub/GitLab
-- **Prioridad**: BAJA
+- **Qué pasaba**: No existía repositorio git
+- **Fix**: `git init` + push a GitHub + GitHub Actions CI/CD funcional
+- **Prioridad**: ~~BAJA~~ → RESUELTO 2026-08-05
+
+### ~~CRÍTICA - ClassSetupWizard aparece siempre aunque ya se completó~~ ✅ RESUELTO
+- **Dónde**: `lib/screens/home_screen.dart:69-80` y `lib/providers/schedule_provider.dart:23-27`
+- **Qué pasaba**: `_checkClassSetup()` consultaba Supabase por schedules `type='Clase'`, pero `ScheduleProvider.addSchedule()` solo guardaba en SQLite local. Las clases nunca llegaban a Supabase, así que el wizard siempre se mostraba.
+- **Fix**: `addSchedule()` ahora inserta en Supabase (`schedules`) además de en SQLite local
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-05
 
 ### ~~BAJA - Estilo brutalista no implementado consistentemente~~ ✅ RESUELTO
 - **Dónde**: 18 screens transformadas

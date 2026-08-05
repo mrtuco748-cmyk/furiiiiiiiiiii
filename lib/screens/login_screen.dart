@@ -6,6 +6,7 @@ import '../app_state.dart';
 import '../services/notification_service.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import 'home_screen.dart';
 
 const _red = Color(0xFFFF5757);
@@ -29,17 +30,14 @@ class LoginScreen extends StatelessWidget {
       body: Stack(
         children: [
           Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-          SafeArea(child: LayoutBuilder(
-            builder: (context, constraints) {
-              final w = constraints.maxWidth;
-              final h = constraints.maxHeight;
+          ResponsiveWrapper(builder: (context, w, h) {
               return SizedBox(width: w, height: h, child: Stack(children: [
                 _titleBlock(w, h),
                 _facuBlock(context, w, h),
                 _rocioBlock(context, w, h),
               ]));
             },
-          )),
+          ),
         ],
       ),
     );

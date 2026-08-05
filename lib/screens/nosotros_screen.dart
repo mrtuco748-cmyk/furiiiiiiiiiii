@@ -9,6 +9,7 @@ import '../app_state.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/swap_widget.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 import 'chat_screen.dart';
 import 'letters_screen.dart';
@@ -545,10 +546,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
   }
 
   Widget _buildContent(ThemeSet t) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
+    return ResponsiveWrapper(builder: (context, w, h) {
         final lay = _calcLayout(w, h);
         final activeEmociones = _swinkOpen == 'emociones';
         final activePreguntas = _swinkOpen == 'preguntas';

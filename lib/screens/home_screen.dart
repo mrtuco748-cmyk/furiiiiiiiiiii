@@ -4,13 +4,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_state.dart';
-import '../supabase_config.dart';
 import '../theme/app_theme.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/mode_btn.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../services/notification_service.dart';
-import '../providers/schedule_provider.dart';
+import '../providers/class_schedule_provider.dart';
+import '../database/database_helper.dart';
 import 'nosotros_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
@@ -67,11 +68,11 @@ class _BrutalGridState extends State<_BrutalGrid> {
 
   Future<void> _checkClassSetup() async {
     try {
-      final res = await SupabaseConfig.client.from('schedules').select('id').eq('type', 'Clase').limit(1);
-      if ((res as List).isEmpty && mounted) {
+      final res = await DatabaseHelper().getAll('class_schedules');
+      if (res.isEmpty && mounted) {
         final result = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const ClassSetupWizard()));
         if (result == true) {
-          final pv = context.read<ScheduleProvider>();
+          final pv = context.read<ClassScheduleProvider>();
           if (mounted) pv.loadSchedules();
         }
       }
@@ -180,10 +181,8 @@ class _BrutalGridState extends State<_BrutalGrid> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
+    return ResponsiveWrapper(
+      builder: (context, w, h) {
         final gap = w * 0.025;
         final c1 = w * 0.1;
         final c4 = w * 0.13;

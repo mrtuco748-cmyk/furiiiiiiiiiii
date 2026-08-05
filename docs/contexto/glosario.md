@@ -30,10 +30,11 @@
 | Notification | Notificación in-app | `notifications` |
 | Note | Nota compartida | `notes` |
 | DeviceToken | Token FCM | `device_tokens` |
-| Schedule | Evento de calendario | SQLite `schedules` |
+| Schedule | Evento de calendario | SQLite `schedules` + Supabase `schedules` |
+| ClassSchedule | Clase recurrente por día de la semana | SQLite `class_schedules` |
 | Transaction | Transacción financiera | `transactions` |
 | Task | Tarea kanban | `tasks` |
-| Favorite | Favorito por categoría | `favorites` |
+| Favorite | Favorito por categoría, con `rating_facu`/`rating_rocio` (rating dual por usuario) y `critica` texto compartido | `favorites` |
 
 ## Siglas y Acrónimos
 
@@ -45,3 +46,6 @@
 | IA | Inteligencia Artificial (Gemini) |
 | LOC | Lines of Code |
 | TDD | Test-Driven Development |
+| CI/CD | Continuous Integration / Continuous Deployment |
+| ESM | ECMAScript Modules (sistema de módulos de Node.js) |
+| QR | Quick Response code (escaneo para vincular WhatsApp) |

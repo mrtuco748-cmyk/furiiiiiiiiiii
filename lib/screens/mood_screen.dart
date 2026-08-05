@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../widgets/mood_display.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 
 const _c = Color(0xFF9D00FF);
@@ -73,10 +74,7 @@ class _MoodScreenState extends State<MoodScreen> {
   }
 
   Widget _buildContent() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
+    return ResponsiveWrapper(builder: (context, w, h) {
         return SizedBox(width: w, height: h, child: Stack(
           children: [
             Positioned.fill(child: CustomPaint(painter: ConcretePainter())),

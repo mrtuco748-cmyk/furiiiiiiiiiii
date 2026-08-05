@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../providers/schedule_provider.dart';
-import '../../models/schedule.dart';
+import '../../providers/class_schedule_provider.dart';
+import '../../models/class_schedule.dart';
 import '../../app_state.dart';
 
 class ClassSetupWizard extends StatefulWidget {
@@ -48,7 +48,7 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
     }
   }
 
-  Future<void> _save(ScheduleProvider pv) async {
+  Future<void> _save(ClassScheduleProvider pv) async {
     HapticFeedback.heavyImpact();
     if (_saving) return;
     setState(() => _saving = true);
@@ -59,16 +59,14 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
         final end = c.endCtrl.text.trim();
         if (name.isEmpty || start.isEmpty || end.isEmpty) continue;
         for (final d in c.selectedDays) {
-          final date = DateTime.now().add(Duration(days: (d - DateTime.now().weekday + 7) % 7));
-          await pv.addSchedule(Schedule(
-            title: name,
-            description: c.profCtrl.text.trim().isNotEmpty ? 'Prof: ${c.profCtrl.text.trim()}' : '',
-            date: date,
+          await pv.addSchedule(ClassSchedule(
+            dayOfWeek: d,
             startTime: start,
+            title: name,
             endTime: end,
-            type: 'Clase',
-            color: 0xFF7B2D8E,
+            professor: c.profCtrl.text.trim(),
             userId: AppState.identity ?? '',
+            color: 0xFF7B2D8E,
           ));
         }
       }
@@ -94,7 +92,7 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
     final dark = const Color(0xFF1A1A1A);
 
     return Material(color: dark, child: SafeArea(child: Column(children: [
-      Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: green, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18))), child: Center(child: Text(_step == 0 ? 'CONFIGURACION INICIAL' : 'Clase ${_step} de $_classCount', style: GoogleFonts.bangers(color: dark, fontSize: 20, fontWeight: FontWeight.bold)))),
+      Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: green, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18))), child: Center(child: Text(_step == 0 ? 'CONFIGURACION INICIAL' : 'Clase $_step de $_classCount', style: GoogleFonts.bangers(color: dark, fontSize: 20, fontWeight: FontWeight.bold)))),
       Expanded(child: _step == 0 ? _askCount(green, dark) : _classForms(green, dark)),
       if (_step == 0)
         Padding(padding: const EdgeInsets.all(16), child: GestureDetector(onTap: _next, child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: green, borderRadius: BorderRadius.circular(14), border: Border.all(color: dark, width: 4), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)]), child: Center(child: Text('Siguiente ->', style: GoogleFonts.bangers(color: dark, fontSize: 18, fontWeight: FontWeight.bold)))))),
@@ -104,7 +102,7 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
           const Spacer(),
           GestureDetector(onTap: () {
             if (_saving) return;
-            if (_step >= _classCount) { _save(context.read<ScheduleProvider>()); }
+            if (_step >= _classCount) { _save(context.read<ClassScheduleProvider>()); }
             else { setState(() => _step++); _next(); }
           }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12), decoration: BoxDecoration(color: _saving ? const Color(0xFF666666) : green, borderRadius: BorderRadius.circular(14), border: Border.all(color: dark, width: 3)), child: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(_step >= _classCount ? 'Guardar' : 'Siguiente ->', style: GoogleFonts.bangers(color: dark, fontSize: 18, fontWeight: FontWeight.bold)))),
         ])),
@@ -115,7 +113,7 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
     return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
       Icon(Icons.school, color: green, size: 60),
       const SizedBox(height: 20),
-      Text('Cuantas materias tienes\nesta semana?', style: GoogleFonts.bangers(color: green, fontSize: 22), textAlign: TextAlign.center),
+      Text('Cuantas clases tienes\na la semana?', style: GoogleFonts.bangers(color: green, fontSize: 22), textAlign: TextAlign.center),
       const SizedBox(height: 20),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         _countBtn(() { if (_classCount > 1) setState(() => _classCount--); }, Icons.remove),

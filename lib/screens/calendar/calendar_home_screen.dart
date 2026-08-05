@@ -1,14 +1,14 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/schedule_provider.dart';
 import '../../providers/event_type_provider.dart';
+import '../../providers/class_schedule_provider.dart';
 import '../../models/schedule.dart';
-import '../../app_state.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
+import '../../widgets/responsive_wrapper.dart';
 import 'schedule_form_screen.dart';
 
 bool isSameDay(DateTime a, DateTime b) =>
@@ -49,6 +49,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
     try {
       await context.read<ScheduleProvider>().loadSchedules();
       await context.read<EventTypeProvider>().loadTypes();
+      await context.read<ClassScheduleProvider>().loadSchedules();
       if (mounted) setState(() => _initialized = true);
     } catch (_) {
       if (mounted) setState(() => _initialized = true);
@@ -60,9 +61,23 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   }
 
   List<Schedule> _getEventsForDay(DateTime day) {
-    return context.read<ScheduleProvider>().schedules.where((s) =>
+    final dateSchedules = context.read<ScheduleProvider>().schedules.where((s) =>
       s.date.year == day.year && s.date.month == day.month && s.date.day == day.day,
     ).toList();
+    final recurring = context.read<ClassScheduleProvider>().getByDay(day.weekday);
+    for (final cs in recurring) {
+      dateSchedules.add(Schedule(
+        title: cs.title,
+        description: cs.professor.isNotEmpty ? 'Prof: ${cs.professor}' : '',
+        date: day,
+        startTime: cs.startTime,
+        endTime: cs.endTime,
+        type: 'Clase',
+        color: cs.color,
+        userId: cs.userId,
+      ));
+    }
+    return dateSchedules;
   }
 
   void _openForm() {
@@ -91,10 +106,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       backgroundColor: _darkGreen,
       body: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-        SafeArea(child: LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final h = constraints.maxHeight;
+        ResponsiveWrapper(builder: (context, w, h) {
             if (!_initialized) return Center(child: CircularProgressIndicator(color: _brightBlue, strokeWidth: 3));
             return SizedBox(width: w, height: h, child: Stack(children: [
               _monthNav(w, h),
@@ -102,9 +114,9 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
               _upcomingBlock(w, h),
               _addBtn(w, h),
             ]));
-          },
-        )),
-      ]),
+           },
+         ),
+       ]),
     );
   }
 

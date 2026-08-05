@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../supabase_config.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 
 const _c = Color(0xFFFF6B00);
@@ -112,8 +113,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildContent() {
-    return LayoutBuilder(builder: (context, constraints) {
-      final w = constraints.maxWidth; final h = constraints.maxHeight;
+    return ResponsiveWrapper(builder: (context, w, h) {
       return SizedBox(width: w, height: h, child: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
         _header(w, h), _msgArea(w, h), _inputArea(w, h),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../services/notification_service.dart';
 
 const _c = Color(0xFFFFFF00);
@@ -75,11 +76,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final h = constraints.maxHeight;
+      body: ResponsiveWrapper(builder: (context, w, h) {
             return SizedBox(width: w, height: h, child: Stack(
               children: [
                 bg(w, h),
@@ -97,7 +94,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ],
             ));
           },
-        ),
       ),
     );
   }

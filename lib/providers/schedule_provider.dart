@@ -1,6 +1,8 @@
+import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/schedule.dart';
+import '../supabase_config.dart';
 
 class ScheduleProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper();
@@ -22,6 +24,23 @@ class ScheduleProvider extends ChangeNotifier {
 
   Future<int> addSchedule(Schedule schedule) async {
     final id = await _db.insert('schedules', schedule.toMap());
+    try {
+      await SupabaseConfig.client.from('schedules').insert({
+        'title': schedule.title,
+        'description': schedule.description,
+        'date': schedule.date.toIso8601String().substring(0, 10),
+        'startTime': schedule.startTime,
+        'endTime': schedule.endTime,
+        'location': schedule.location,
+        'instructor': schedule.instructor,
+        'type': schedule.type,
+        'color': schedule.color,
+        'createdAt': schedule.createdAt.toIso8601String(),
+        'updatedAt': schedule.updatedAt.toIso8601String(),
+      });
+    } catch (e) {
+      developer.log('Sync: fallo al subir schedule a Supabase: $e');
+    }
     await loadSchedules();
     return id;
   }

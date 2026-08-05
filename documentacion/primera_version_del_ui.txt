@@ -3,9 +3,13 @@
   Documentacion de la pantalla principal
 =========================================================
 
-FECHA: Julio 2026
+FECHA: Julio 2026 (historico)
 ARCHIVO PRINCIPAL: lib/main.dart
 ESTILO: Brutalismo (concreto texturado, colores neón, bordes gruesos, rotaciones)
+
+NOTA 2026-08-05: Este documento describe la PRIMERA version del UI. La version
+actual (3.0) sigue las reglas de skill_visual .md. Ver FURI_GUIA_ESTILO_BRUTALISTA.txt
+para la guia actualizada con las reglas obligatorias de skill_visual.
 
 =========================================================
   ESTRUCTURA DE GRILLA (grid)
@@ -125,11 +129,14 @@ Modos:
   FONDO
 =========================================================
 
-CustomPainter _ConcretePainter:
+CustomPainter _ConcretePainter (version original - historica):
   - Gradiente lineal diagonal gris oscuro (#2A2A2A -> #1A1A1A -> #222222 -> #151515)
   - 80 puntos de ruido blanco aleatorio (opacidad 1.5%, tamaño 1-5px)
   - 12 lineas horizontales finas (opacidad 4%, 0.5px de grosor)
   - Seed Random: 42 (reproducible)
+
+  ACTUALIZACION skill_visual: El gradiente fue eliminado. Ahora es fondo
+  solido #1a1a1a (ver FURI_GUIA_ESTILO_BRUTALISTA.txt seccion 7).
 
 =========================================================
   ASSETS / ICONOS

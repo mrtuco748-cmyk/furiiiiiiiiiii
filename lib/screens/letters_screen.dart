@@ -4,6 +4,7 @@ import '../supabase_config.dart';
 import '../app_state.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 
 const _cInbox = Color(0xFFFF1493);
@@ -153,10 +154,7 @@ class _LettersScreenState extends State<LettersScreen> {
   }
 
   Widget _buildContent() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
+    return ResponsiveWrapper(builder: (context, w, h) {
         if (_composing) return _composeView(w, h);
         return SizedBox(width: w, height: h, child: Stack(
           children: [

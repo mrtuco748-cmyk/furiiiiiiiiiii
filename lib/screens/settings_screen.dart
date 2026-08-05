@@ -4,6 +4,7 @@ import '../app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -15,10 +16,7 @@ class SettingsScreen extends StatelessWidget {
     final t = appThemes[mode]!;
     return Scaffold(
       backgroundColor: t.dark,
-      body: SafeArea(child: LayoutBuilder(
-        builder: (context, constraints) {
-          final w = constraints.maxWidth;
-          final h = constraints.maxHeight;
+      body: ResponsiveWrapper(builder: (context, w, h) {
           return SizedBox(width: w, height: h, child: Stack(children: [
             Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
             _header(w, h, t, context),
@@ -26,7 +24,7 @@ class SettingsScreen extends StatelessWidget {
             _soundBlock(w, h, t),
           ]));
         },
-      )),
+      ),
     );
   }
 

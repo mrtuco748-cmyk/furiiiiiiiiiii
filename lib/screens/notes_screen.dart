@@ -5,6 +5,7 @@ import '../supabase_config.dart';
 import '../app_state.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 
 const _c = Color(0xFFFFDE59);
@@ -178,10 +179,7 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Widget _buildContent() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
+    return ResponsiveWrapper(builder: (context, w, h) {
         if (_adding) return _addView(w, h);
         return SizedBox(width: w, height: h, child: Stack(
           children: [

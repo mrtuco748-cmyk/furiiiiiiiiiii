@@ -6,6 +6,7 @@ import '../../providers/class_type_provider.dart';
 import '../../models/class_schedule.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
+import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFF00D4FF);
 const _dark = Color(0xFF000000);
@@ -143,10 +144,7 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
       body: Stack(
         children: [
           Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-          SafeArea(child: LayoutBuilder(
-            builder: (context, constraints) {
-              final w = constraints.maxWidth;
-              final h = constraints.maxHeight;
+          ResponsiveWrapper(builder: (context, w, h) {
 
               if (_isLoading) return _loadingState(w, h);
               if (_hasError) return _errorState(w, h);
@@ -158,9 +156,9 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                 _addBtn(w, h),
                 _xFloating(w, h),
               ]));
-            },
-          )),
-        ],
+             },
+           ),
+         ],
       ),
     );
   }

@@ -2,7 +2,7 @@
 
 ## Propósito
 Bot que notifica por WhatsApp sobre actividad en la app F.U.R.I cada 30 minutos.
-Envia mensajes a ambos integrantes de la pareja (Facu y Rocio) con las novedades detectadas.
+Usa un numero de WhatsApp propio para enviar notificaciones a Facu y Rocio.
 
 ## Stack
 
@@ -96,13 +96,108 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 
 ## Setup inicial (primera vez)
 
-```bash
-cd bot-furi
-npm install
-node bot.js
-# Escanea el QR con WhatsApp > Dispositivos vinculados
-# La sesion se guarda automaticamente en Supabase
+### Instalacion de Node.js
+
+Node.js se instalo via descarga manual (portable ZIP) en:
+
 ```
+D:\nodejs\node-v20.18.0-win-x64\
+├── node.exe       # Runtime Node.js v20.18.0
+├── npm.cmd        # Gestor de paquetes npm v10.8.2
+├── npx.cmd        # Ejecutor de paquetes
+├── corepack.cmd
+├── node_modules/  # Modulos globales
+└── install_tools.bat
+```
+
+No se uso instalador MSI ni `C:\Program Files\nodejs\`. La version portable evita permisos de administrador y mantiene Node.js aislado en `D:`.
+
+### PATH requerido
+
+Node.js **NO** esta en el PATH del sistema. Para cada sesion de terminal, hay que agregarlo manualmente:
+
+**PowerShell:**
+```powershell
+$env:Path = "D:\nodejs\node-v20.18.0-win-x64;" + $env:Path
+```
+
+**CMD:**
+```cmd
+set PATH=D:\nodejs\node-v20.18.0-win-x64;%PATH%
+```
+
+> Para agregarlo permanentemente: `Win + R` > `sysdm.cpl` > Opciones avanzadas > Variables de entorno > PATH > agregar `D:\nodejs\node-v20.18.0-win-x64`
+
+### Variables de entorno del bot (.env)
+
+Archivo `bot-furi\.env` (NO se commitea, esta en .gitignore):
+
+```env
+SUPABASE_URL=https://nruyjpvoplkilcxqnees.supabase.co
+SUPABASE_KEY=sb_secret_VrlUEpNWozmgP5JTKuLDxA_hE296gb-
+MI_NUMERO=5493786499129
+FACU_NUMERO=5493786614189
+ROCIO_NUMERO=5493786513637
+```
+
+| Variable | Descripcion | Donde obtenerla |
+|---------|------------|----------------|
+| `SUPABASE_URL` | URL del proyecto Supabase | Supabase Dashboard > Settings > API > Project URL |
+| `SUPABASE_KEY` | Service role key (lectura/escritura total) | Supabase Dashboard > Settings > API > service_role |
+| `MI_NUMERO` | Numero WhatsApp DEL BOT (cuenta que envia) | El numero que vinculaste al QR. Ej: 5493786499129 |
+| `FACU_NUMERO` | Numero de Facu que recibe notificaciones | 5493786614189 |
+| `ROCIO_NUMERO` | Numero de Rocio que recibe notificaciones | 5493786513637 |
+
+> `MI_NUMERO` es la cuenta de WhatsApp que escaneo el QR (una cuenta aparte para el bot, no el numero personal de Facu ni Rocio). El bot envia desde ese numero a `FACU_NUMERO` y `ROCIO_NUMERO`.
+
+### Ejecutar localmente
+
+**Para iniciar sesion nueva (escanear QR):**
+```powershell
+# 1. Agregar Node.js al PATH
+$env:Path = "D:\nodejs\node-v20.18.0-win-x64;" + $env:Path
+
+# 2. Ir al directorio del bot
+cd D:\projetcs\proyectos\F.U.R.I\bot-furi
+
+# 3. Instalar dependencias (solo primera vez)
+npm install
+
+# 4. (Opcional) Borrar sesion vieja para re-escanear QR
+Remove-Item -Recurse -Force auth -ErrorAction SilentlyContinue
+
+# 5. Ejecutar
+node bot.js
+```
+
+Se mostrara un QR en la terminal. Escanear con **WhatsApp > Dispositivos vinculados > Vincular un dispositivo**.
+La sesion se guarda automaticamente en Supabase (`bot_sessions`) y en `bot-furi/auth/`.
+
+**Para ejecutar con sesion ya guardada:**
+```powershell
+$env:Path = "D:\nodejs\node-v20.18.0-win-x64;" + $env:Path
+cd D:\projetcs\proyectos\F.U.R.I\bot-furi
+node bot.js
+```
+
+No mostrara QR y verificara eventos inmediatamente.
+
+### Dependencias npm
+
+```json
+{
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.0",   // Conexion WhatsApp Web
+    "@supabase/supabase-js": "^2.45.0",     // Cliente Supabase
+    "qrcode-terminal": "^0.12.0",           // QR en terminal
+    "pino": "^9.0.0",                       // Logger (requerido por Baileys)
+    "ws": "^8.18.0",                        // WebSocket para Supabase Realtime
+    "dotenv": "^16.4.0"                     // Carga .env automaticamente
+  }
+}
+```
+
+`node_modules/` se excluye del repo (`.gitignore`). Se regenera con `npm install`.
 
 ## GitHub Actions
 
@@ -116,9 +211,9 @@ on:
 Secrets requeridos:
 - `SUPABASE_URL` - URL del proyecto Supabase
 - `SUPABASE_KEY` - service_role key (para escribir en bot_notificaciones)
-- `MI_NUMERO` - numero de WhatsApp del bot (cuenta desde la que se envia, ej: 5493786499129)
-- `FACU_NUMERO` - numero de Facu para recibir notificaciones
-- `ROCIO_NUMERO` - numero de Rocio para recibir notificaciones
+- `MI_NUMERO` - numero WhatsApp del bot (cuenta emisora, ej: 5493786499129)
+- `FACU_NUMERO` - numero de Facu que recibe notificaciones
+- `ROCIO_NUMERO` - numero de Rocio que recibe notificaciones
 
 ## Troubleshooting
 

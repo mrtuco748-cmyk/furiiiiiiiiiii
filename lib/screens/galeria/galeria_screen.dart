@@ -8,6 +8,7 @@ import '../../providers/gallery_provider.dart';
 import '../../app_state.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
+import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFFFF66C4);
 const _dark = Color(0xFF000000);
@@ -54,8 +55,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   @override
   Widget build(BuildContext context) {
     if (_fullScreenId != null) return _fullScreenView();
-    return Scaffold(backgroundColor: _c, body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-      final w = constraints.maxWidth; final h = constraints.maxHeight;
+    return Scaffold(backgroundColor: _c, body: ResponsiveWrapper(builder: (context, w, h) {
       return SizedBox(width: w, height: h, child: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
         _headerBar(w, h),
@@ -63,7 +63,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
         _mosaicBlock(w, h),
         _fab(w, h),
       ]));
-    })));
+    }));
   }
 
   Widget _fullScreenView() {

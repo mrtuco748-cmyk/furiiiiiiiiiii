@@ -7,6 +7,7 @@ import '../../models/transaction.dart';
 import '../../app_state.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
+import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFF00FF66);
 const _red = Color(0xFFFF4444);
@@ -69,14 +70,13 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   @override
   Widget build(BuildContext context) {
     final darkBg = const Color(0xFF111111);
-    return Scaffold(backgroundColor: _c, body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-      final w = constraints.maxWidth; final h = constraints.maxHeight;
+    return Scaffold(backgroundColor: _c, body: ResponsiveWrapper(builder: (context, w, h) {
       return SizedBox(width: w, height: h, child: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
         _header(w, h, darkBg), _balanceBlock(w, h, darkBg), _incomeBlock(w, h), _expenseBlock(w, h),
         _chartBlock(w, h), _listBlock(w, h, darkBg), _fabs(w, h, darkBg),
       ]));
-    })));
+    }));
   }
 
   Widget _header(double w, double h, Color dark) {

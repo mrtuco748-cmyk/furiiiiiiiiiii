@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../supabase_config.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
+import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
 
 class RetosScreen extends StatefulWidget {
@@ -72,15 +73,14 @@ class _RetosScreenState extends State<RetosScreen> {
     final t = getTheme(widget.mode);
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
-      body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final w = constraints.maxWidth; final h = constraints.maxHeight;
+      body: ResponsiveWrapper(builder: (context, w, h) {
         return SizedBox(width: w, height: h, child: Stack(children: [
           Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
           _header(w, h, t),
           _body(w, h, t),
           _fab(w, h, t),
         ]));
-      })),
+      }),
     );
   }
 
