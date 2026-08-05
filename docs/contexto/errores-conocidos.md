@@ -24,12 +24,13 @@
 - **Fix**: Eliminados 6, registrados 2 útiles. Total: 13 providers activos.
 - **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-07-29
 
-### CRÍTICA - 9+ tablas Supabase faltan en schema SQL
+### CRÍTICA - 8+ tablas Supabase faltan en schema SQL
 - **Dónde**: `supabase_schema.sql` vs `lib/providers/`
-- **Qué pasa**: Tablas como `transactions`, `tasks`, `photos`, `albums`, `board_elements`, `study_sessions`, `favorites`, `timeline_events`, `schedules` se usan en código pero no están definidas en el schema SQL
+- **Qué pasa**: Tablas como `transactions`, `tasks`, `photos`, `albums`, `board_elements`, `study_sessions`, `timeline_events`, `schedules` se usan en código pero no están definidas en el schema SQL
 - **Por qué es problema**: Las llamadas a Supabase para esas tablas fallarán
 - **Solución temporal**: Ninguna
 - **Fix permanente**: Agregar todas las tablas faltantes al schema y ejecutar en Supabase
+- **Nota**: `favorites` sí está completa desde 2026-08-05 (con `rating_facu`, `rating_rocio`, `critica`); ver `supabase/migration_favorites_dual_rating.sql` para migrar DBs existentes
 - **Prioridad**: CRÍTICA
 
 ### ALTA - API key de Gemini con placeholder incorrecto
@@ -83,6 +84,13 @@
 - **Qué pasaba**: `_checkClassSetup()` consultaba Supabase por schedules `type='Clase'`, pero `ScheduleProvider.addSchedule()` solo guardaba en SQLite local. Las clases nunca llegaban a Supabase, así que el wizard siempre se mostraba.
 - **Fix**: `addSchedule()` ahora inserta en Supabase (`schedules`) además de en SQLite local
 - **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-05
+
+### ~~MEDIA - FavoriteItem.toMap() pisaba userId en update()~~ ✅ RESUELTO
+- **Dónde**: `lib/providers/favorites_provider.dart` (`FavoriteItem.toMap`)
+- **Qué pasaba**: `toMap()` hacía `'user_id': AppState.myId ?? ''`, ignorando el `userId` pasado al constructor. Al editar (`update()`), el autor original se sobrescribía con el usuario activo, perdiendo la autoría del favorito.
+- **Cómo se detectó**: Test TDD de serialización en `test/models/favorite_item_test.dart` que validaba `userId == 'facu-uuid'` falló (recibió `''`).
+- **Fix**: `'user_id': userId ?? AppState.myId ?? ''` — preserva el `userId` del constructor y solo usa `AppState.myId` como fallback.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-08-05
 
 ### ~~BAJA - Estilo brutalista no implementado consistentemente~~ ✅ RESUELTO
 - **Dónde**: 18 screens transformadas
