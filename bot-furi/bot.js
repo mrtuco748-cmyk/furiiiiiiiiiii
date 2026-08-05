@@ -14,6 +14,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const MI_NUMERO = process.env.MI_NUMERO || process.env.TU_NUMERO;
+const FACU_NUMERO = process.env.FACU_NUMERO;
+const ROCIO_NUMERO = process.env.ROCIO_NUMERO;
 const AUTH_DIR = path.join(__dirname, 'auth');
 const SESSION_TABLE = 'bot_sessions';
 const NOTIF_TABLE = 'bot_notificaciones';
@@ -41,6 +43,13 @@ async function loadSessionFromSupabase() {
   }
 
   const session = data.session_data;
+
+  const sesionCoincide = Object.keys(session).some(f => f.includes(MI_NUMERO || ''));
+  if (!sesionCoincide) {
+    console.log(`Sesion guardada no coincide con el numero ${MI_NUMERO}. Se ignorara y se solicitara QR.`);
+    return false;
+  }
+
   if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
   for (const [filename, content] of Object.entries(session)) {
@@ -438,10 +447,11 @@ async function verificarYNotificar(sock) {
   const header = `*F.U.R.I. - Novedades*\n${new Date().toLocaleString('es-AR')}\n━━━━━━━━━━━━━━━\n`;
   const texto = header + mensajes.join('\n\n');
 
-  if (MI_NUMERO) {
-    await enviarMensaje(sock, MI_NUMERO, texto);
+  const destinatarios = [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean);
+  for (const num of destinatarios) {
+    await enviarMensaje(sock, num, texto);
   }
-  console.log(`Se enviaron ${mensajes.length} notificaciones.`);
+  console.log(`Se enviaron ${mensajes.length} notificaciones a ${destinatarios.length} destinatarios.`);
 }
 
 // ─── MAIN ──────────────────────────────────────────────────────

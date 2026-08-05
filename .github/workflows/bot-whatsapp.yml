@@ -26,3 +26,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           MI_NUMERO: ${{ secrets.MI_NUMERO }}
+          FACU_NUMERO: ${{ secrets.FACU_NUMERO }}
+          ROCIO_NUMERO: ${{ secrets.ROCIO_NUMERO }}
