@@ -1,0 +1,19 @@
+{
+  "name": "bot-furi",
+  "version": "1.0.0",
+  "description": "Bot de WhatsApp para notificaciones de F.U.R.I.",
+  "type": "module",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "setup": "node bot.js --setup"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "dotenv": "^17.4.2",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.21.2"
+  }
+}

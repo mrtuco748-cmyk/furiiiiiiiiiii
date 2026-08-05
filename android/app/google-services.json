@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "752556261993",
+    "project_id": "furi-7cf63",
+    "storage_bucket": "furi-7cf63.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:752556261993:android:40f6f1d2f48073341bd8f8",
+        "android_client_info": {
+          "package_name": "com.furiapp.furi_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0hFpr0_hnknJHK180PRf2uxnMcw-mqqQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

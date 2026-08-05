@@ -1,0 +1,201 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    FURY - GUIA DE ESTILO BRUTALISTA
+                    Version 2.0 | Actualizado: 2026-07-30
+═══════════════════════════════════════════════════════════════════════════════
+
+PROPOSITO:
+Guia definitiva de estilo visual para F.U.R.I. Basada en la implementacion
+real de HomeScreen. TODAS las pantallas deben seguir este documento.
+
+═══════════════════════════════════════════════════════════════════════════════
+1. PRINCIPIO FUNDAMENTAL: CAOS ORGANIZADO
+═══════════════════════════════════════════════════════════════════════════════
+
+Cada pantalla usa Stack + Positioned con bloques de distintos tamanos,
+posiciones libres, y ligeras rotaciones. NO se usan GridView, Table,
+Column, Row para el layout principal. Los bloques se posicionan
+manualmente formando un "caos ordenado" -- dispersos pero intencionales.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. COLORES POR SECCION (NO NEGOCIABLE)
+═══════════════════════════════════════════════════════════════════════════════
+
+Cada pantalla tiene UN color vibrante dominante (_c):
+
+  Login/Identidad       Rosa     #FF1493
+  Nosotros/Pareja       Rojo     #FF5757
+  Chat/Mensajes         Naranja  #FF6B00
+  Calendario            Cian     #00D4FF
+  Tareas/Kanban         Naranja  #FF6B35
+  Estudio/Pomodoro      Amarillo #FFDE59
+  Finanzas              Verde    #00FF66
+  Galeria               Rosa     #FF66C4
+  Favoritos             Violeta  #9D00FF
+  Pizarra               Verde    #39FF14
+  Notificaciones        Amarillo #FFFF00
+  Cartas/Letters        Rosa     #FF1493
+  Notas                 Amarillo #FFDE59
+  Mood                  Purpura  #9D00FF
+  Preguntas             Verde    #39FF14
+
+═══════════════════════════════════════════════════════════════════════════════
+3. ESTRUCTURA BASE DE CADA PANTALLA (TEMPLATE)
+═══════════════════════════════════════════════════════════════════════════════
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../widgets/tap_tile.dart';
+import '../widgets/concrete_painter.dart';
+
+const _c = Color(0xFFxxxxxx); // color de la seccion
+
+class XxxScreen extends StatelessWidget {
+  const XxxScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
+          SafeArea(child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final h = constraints.maxHeight;
+              return Stack(children: [
+                // Bloques posicionados libremente
+                // ...
+                _header(context),
+              ]);
+            },
+          )),
+        ],
+      ),
+    );
+  }
+}
+
+═══════════════════════════════════════════════════════════════════════════════
+4. BLOQUES (COMPONENTE ATOMICO)
+═══════════════════════════════════════════════════════════════════════════════
+
+Cada bloque se define como:
+
+  Positioned(left: x, top: y, width: w, height: h,
+    child: TapTile(
+      onTap: () => onTap(x + w/2, y + h/2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            border: Border.all(color: borderColor, width: borderWidth),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(color: Color(0xFF000000), offset: Offset(5,5), blurRadius: 0),
+            ],
+          ),
+          child: childWidget,
+        ),
+      ),
+    ),
+  );
+
+Reglas de bloques:
+- borderRadius: SIEMPRE 18 (herencia del HomeScreen)
+- boxShadow: SIEMPRE Offset(5,5) blurRadius: 0
+- borderWidth: variable entre 2-6px, segun jerarquia visual
+- backgroundColor: color semi-transparente de _c (alpha 0.08-0.30)
+- borderColor: _c o negro, segun contexto
+- Todo tap usa HapticFeedback (lightImpact, mediumImpact, selectionClick)
+- Rotaciones: -0.1 a 0.1 radianes con Transform.rotate
+
+═══════════════════════════════════════════════════════════════════════════════
+5. HEADER DE NAVEGACION
+═══════════════════════════════════════════════════════════════════════════════
+
+Cada pantalla tiene un header con boton de volver:
+
+  Widget _header() => Container(
+    height: 44, padding: EdgeInsets.symmetric(horizontal: 8),
+    decoration: BoxDecoration(
+      color: _c,
+      border: Border(bottom: BorderSide(color: Colors.black, width: 4)),
+    ),
+    child: Row(children: [
+      GestureDetector(
+        onTap: () { HapticFeedback.lightImpact(); Navigator.of(context).pop(); },
+        child: Container(
+          padding: EdgeInsets.all(6),
+          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.zero),
+          child: Icon(Icons.arrow_back, color: _c, size: 20),
+        ),
+      ),
+      // Optional: titulo o acciones
+    ]),
+  );
+
+═══════════════════════════════════════════════════════════════════════════════
+6. TIPOGRAFIA
+═══════════════════════════════════════════════════════════════════════════════
+
+- Fuente: SIEMPRE 'monospace'
+- Peso: FontWeight.bold para titulos, FontWeight.w900 para destacados
+- Color de texto: _c (el color de la seccion) o _c.withValues(alpha: 0.5-0.9)
+- Texto sobre fondo negro: Colors.black
+- Tamanos: proporcionales al ancho de pantalla (w * factor)
+
+═══════════════════════════════════════════════════════════════════════════════
+7. INTERACCIONES
+═══════════════════════════════════════════════════════════════════════════════
+
+- TapTile: animacion scale 1.0 -> 1.12 -> 0.95 -> 1.0 (150ms)
+- HapticFeedback en CADA tap
+- Confetti al navegar entre pantallas (desde HomeScreen)
+- Transiciones de pagina: MaterialPageRoute (default)
+- Sin animaciones suaves >200ms
+
+═══════════════════════════════════════════════════════════════════════════════
+8. PROCESO PARA CREAR UNA NUEVA PANTALLA
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Elegir _c (color de seccion)
+2. Disenar layout unico: 5-8 bloques con posiciones/tamanos/rotaciones distintas
+3. Cada bloque tiene un proposito funcional (icono, texto, widget anidado)
+4. Al menos 2 bloques con rotacion distinta
+5. Al menos 3 tamanos de bloque diferentes
+6. Header con boton volver
+7. ConcretePainter de fondo
+
+NO USAR: GridView, Table, Row, Column como layout principal.
+USAR: Stack + Positioned con calculos desde LayoutBuilder.
+
+═══════════════════════════════════════════════════════════════════════════════
+9. ESTADOS DE PANTALLA
+═══════════════════════════════════════════════════════════════════════════════
+
+Toda pantalla debe contemplar:
+- LOADING: skeleton con bloques del mismo layout pero alpha bajo
+- EMPTY:  icono/texto centrado con accion para crear contenido
+- ERROR:  icono warning + boton reintentar
+- DATA:   contenido real
+
+═══════════════════════════════════════════════════════════════════════════════
+10. EJEMPLO DE LAYOUT UNICO (CalendarHomeScreen)
+═══════════════════════════════════════════════════════════════════════════════
+
+Layout propuesto (diferente al HomeScreen, mismo lenguaje visual):
+
+  // Bloque grande izquierdo (calendario) - 55% ancho, 70% alto
+  // Bloque mediano derecho arriba (eventos del dia) - 40% ancho, 35% alto
+  // Bloque mediano derecho abajo (proximos) - 40% ancho, 30% alto  
+  // Bloque horizontal abajo (countdown) - 95% ancho, 12% alto
+  // Bloque pequeno flotante (add event) - 15% ancho, 15% alto, rotado
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Version 2.0 - Reescrita basada en la implementacion real de HomeScreen
+TODA pantalla nueva DEBE seguir este documento al pie de la letra.
+
+═══════════════════════════════════════════════════════════════════════════════

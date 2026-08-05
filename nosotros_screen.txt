@@ -1,0 +1,400 @@
+import 'package:flutter/material.dart';
+import '../supabase_config.dart';
+import '../models/couple_data.dart';
+import '../main.dart';
+import '../app_state.dart';
+import '../services/notification_service.dart';
+import 'chat_screen.dart';
+
+class NosotrosScreen extends StatefulWidget {
+  final String myId;
+  final String? partnerId;
+  final AppMode mode;
+  const NosotrosScreen({super.key, required this.myId, this.partnerId, this.mode = AppMode.flower});
+
+  @override
+  State<NosotrosScreen> createState() => _NosotrosScreenState();
+}
+
+class _NosotrosScreenState extends State<NosotrosScreen> {
+  Profile? _me;
+  bool _loading = true;
+  String? _selectedMood;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('profiles')
+          .select()
+          .eq('id', widget.myId)
+          .single();
+      _me = Profile.fromMap(res);
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _selectMood(String mood) async {
+    setState(() => _selectedMood = mood);
+    try {
+      await SupabaseConfig.client.from('moods').upsert({
+        'user_id': widget.myId,
+        'mood': mood,
+        'date': DateTime.now().toIso8601String().substring(0, 10),
+      });
+      final name = _me?.name ?? AppState.myName ?? 'Alguien';
+      NotificationService.showNotification(
+        title: 'Estado de ánimo',
+        body: '$name está $mood hoy',
+        data: {'type': 'mood'},
+      );
+      if (widget.partnerId != null) {
+        NotificationService.sendPushNotification(
+          userId: widget.partnerId!,
+          title: 'Estado de ánimo',
+          body: '$name está $mood hoy',
+          data: {'type': 'mood'},
+        );
+        NotificationService.storeNotification(
+          type: 'mood',
+          title: '$name está $mood',
+          body: 'Hoy $name se siente $mood',
+          targetUserId: widget.partnerId,
+        );
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF1A1A1A),
+        body: Center(
+            child: CircularProgressIndicator(color: Color(0xFF39FF14))),
+      );
+    }
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A1A),
+      appBar: _brutalAppBar(),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            _daysCounter(),
+            const SizedBox(height: 12),
+            _sectionGrid(),
+            const SizedBox(height: 12),
+            _moodSection(),
+            const SizedBox(height: 12),
+            _quickActions(),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _brutalAppBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(60),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFFFF66C4),
+          border: Border(
+            bottom: BorderSide(color: Colors.black, width: 4),
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.black),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _me?.name ?? 'Nosotros',
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: Stack(
+                  children: [
+                    const Icon(Icons.chat_bubble, color: Colors.black),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF39FF14),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      myId: widget.myId,
+                      partnerId: widget.partnerId ?? '',
+                      myName: _me?.name ?? '',
+                      mode: widget.mode,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _daysCounter() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF7000FF),
+        border: Border.all(color: Colors.black, width: 4),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Colors.black, offset: Offset(5, 5), blurRadius: 0),
+        ],
+      ),
+      child: Column(
+        children: [
+          const Text('❤️ JUNTOS ❤️',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white)),
+          const SizedBox(height: 8),
+          const Text('365',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 48,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFFFFDE59))),
+          const Text('días de amor',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                  color: Colors.white70)),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionGrid() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionTile('💌 Cartas', 'Buzón de cartas', const Color(0xFFFF5757), Icons.mail_outline)),
+            const SizedBox(width: 8),
+            Expanded(child: _sectionTile('📅 Fechas', 'Aniversarios', const Color(0xFF00F0FF), Icons.calendar_month)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _sectionTile('🎯 Metas', 'Sueños compartidos', const Color(0xFF39FF14), Icons.flag)),
+            const SizedBox(width: 8),
+            Expanded(child: _sectionTile('🏆 Retos', 'Desafíos de pareja', const Color(0xFFFFDE59), Icons.emoji_events)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _sectionTile('💭 Preguntas', 'Conocerse más', const Color(0xFFFF66C4), Icons.help_outline)),
+            const SizedBox(width: 8),
+            Expanded(child: _sectionTile('📊 Estados', 'Nuestro humor', const Color(0xFF7000FF), Icons.mood)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTile(String title, String subtitle, Color color, IconData icon) {
+    return GestureDetector(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$title - Próximamente'),
+              backgroundColor: color,
+              behavior: SnackBarBehavior.floating),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color,
+          border: Border.all(color: Colors.black, width: 3),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Colors.black, offset: Offset(4, 4), blurRadius: 0),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: Colors.black, size: 28),
+            const SizedBox(height: 8),
+            Text(title,
+                style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black)),
+            Text(subtitle,
+                style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    color: Colors.black87)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _moodSection() {
+    final moods = ['feliz', 'cansado', 'estrés'];
+    final moodColors = [const Color(0xFF39FF14), const Color(0xFFFFDE59), const Color(0xFFFF5757)];
+    final moodIcons = [Icons.sentiment_satisfied, Icons.sentiment_neutral, Icons.sentiment_dissatisfied];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        border: Border.all(color: Colors.black, width: 4),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Colors.black, offset: Offset(5, 5), blurRadius: 0),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('¿CÓMO ESTÁS HOY?',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.black)),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(moods.length, (i) {
+              final isSelected = _selectedMood == moods[i];
+              return GestureDetector(
+                onTap: () => _selectMood(moods[i]),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? moodColors[i] : Colors.grey[200],
+                    border: Border.all(
+                      color: Colors.black,
+                      width: isSelected ? 4 : 2,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: isSelected
+                        ? const [BoxShadow(color: Colors.black, offset: Offset(3, 3), blurRadius: 0)]
+                        : null,
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(moodIcons[i],
+                          color: Colors.black, size: 28),
+                      const SizedBox(height: 4),
+                      Text(moods[i],
+                          style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.black)),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickActions() {
+    return Column(
+      children: [
+        _actionTile(Icons.mail_outline, 'ESCRIBIR CARTA', 'Guardar un mensaje especial', const Color(0xFFFF5757)),
+        const SizedBox(height: 8),
+        _actionTile(Icons.emoji_events, 'NUEVO RETO', 'Empezar un desafío de pareja', const Color(0xFFFFDE59)),
+        const SizedBox(height: 8),
+        _actionTile(Icons.add_circle_outline, 'NUEVA META', 'Agregar sueño compartido', const Color(0xFF00F0FF)),
+      ],
+    );
+  }
+
+  Widget _actionTile(IconData icon, String title, String subtitle, Color color) {
+    return GestureDetector(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$title - Próximamente'),
+              backgroundColor: color,
+              behavior: SnackBarBehavior.floating),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color,
+          border: Border.all(color: Colors.black, width: 3),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Colors.black, offset: Offset(4, 4), blurRadius: 0),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.black, size: 28),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        color: Colors.black87)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

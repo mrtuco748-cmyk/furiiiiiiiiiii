@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mercantil Andina</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:radial-gradient(circle at 30% 20%, #2b2b45, #0e0e1a 70%);
+    font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    padding:40px 16px;
+  }
+
+  /* ---------- MARCO DE TELÉFONO ---------- */
+  .phone{
+    width:360px;
+    background:#d9dadf;
+    border-radius:46px;
+    padding:14px;
+    box-shadow:
+      0 30px 60px rgba(0,0,0,.5),
+      inset 0 0 0 2px rgba(255,255,255,.4);
+  }
+
+  .notch-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:6px 0 10px;
+    position:relative;
+  }
+  .speaker{
+    width:70px;
+    height:6px;
+    border-radius:6px;
+    background:linear-gradient(90deg,#b06bd9,#8b5cf6);
+  }
+  .cam{
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    top:-2px;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:#333;
+  }
+
+  .screen{
+    background:linear-gradient(180deg,#bfe0f7 0%, #b9d8ef 35%, #c9c2e6 70%, #d9bfe0 100%);
+    border-radius:34px;
+    padding:10px 10px 14px;
+  }
+
+  /* ---------- GRID PRINCIPAL ---------- */
+  .grid{
+    display:grid;
+    grid-template-columns: 32px 1.13fr 0.83fr 48px;
+    grid-template-rows: 56px 96px 96px 50px 50px 92px;
+    gap:8px;
+    grid-template-areas:
+      "side herr   herr   ajus"
+      "side cal    piz    piz"
+      "side nos    piz    piz"
+      "side nos    galtop modos"
+      "side galbot galbot modos"
+      "side bot    bot    modos";
+  }
+
+  .tile{
+    border-radius:16px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    font-size:10px;
+    font-weight:600;
+    color:#3b3b3b;
+    box-shadow:0 3px 8px rgba(0,0,0,.12), inset 0 0 0 1px rgba(255,255,255,.5);
+    padding:4px;
+    gap:4px;
+    line-height:1.1;
+  }
+  .tile .icon{ font-size:22px; }
+
+  /* ---------- SIDEBAR "tareas" ---------- */
+  .sidebar{
+    grid-area: side;
+    border-radius:14px;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  .sidebar .half{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+  .sidebar .half.pink{ background:#f3c7db; }
+  .sidebar .half.blue{ background:#a9c9ea; }
+  .tab{
+    width:22px;
+    height:16px;
+    border-radius:6px;
+    background:#fdf5f8;
+    border:1.5px solid rgba(0,0,0,.35);
+    box-shadow:0 2px 4px rgba(0,0,0,.1);
+  }
+
+  /* ---------- TILES ---------- */
+  .herr{ grid-area:herr; background:#f5d7e4; flex-direction:row; gap:6px; }
+  .herr .icon{ font-size:16px; }
+
+  .ajus{ grid-area:ajus; background:#cfd8e3; }
+  .ajus .icon{ font-size:18px; }
+
+  .cal{ grid-area:cal; background:#fbe3b0; }
+  .piz{ grid-area:piz; background:#f2c9c9; }
+  .piz .board{
+    width:70%;
+    aspect-ratio:5/4;
+    background:#dfe8d9;
+    border:3px solid #6b6b6b;
+    border-radius:6px;
+    margin-bottom:6px;
+  }
+
+  .nos{ grid-area:nos; background:#f4c6d6; }
+  .nos .icon{ font-size:28px; }
+
+  /* Galería (Fotos y videos) en forma de L acostada: 
+     una pestaña angosta arriba-izquierda + una barra ancha abajo, 
+     unidas sin costura para que se vean como una sola pieza */
+  .galtop{
+    grid-area:galtop;
+    background:#f6d3e0;
+    flex-direction:row;
+    justify-content:center;
+    border-radius:16px;
+    box-shadow:0 3px 8px rgba(0,0,0,.12), inset 0 0 0 1px rgba(255,255,255,.5);
+    margin-bottom:6px;
+  }
+  .galtop .badge{
+    width:32px;
+    height:32px;
+    border-radius:9px;
+    background:#f8f2f5;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:17px;
+  }
+
+  .galbot{
+    grid-area:galbot;
+    background:#f6d3e0;
+    flex-direction:row;
+    gap:8px;
+    border-radius:16px;
+    box-shadow:0 3px 8px rgba(0,0,0,.12), inset 0 0 0 1px rgba(255,255,255,.5);
+  }
+  .galbot .mini{
+    width:28px;
+    height:28px;
+    border-radius:8px;
+    background:#fdf5f8;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:13px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);
+  }
+
+  .bot{
+    grid-area:bot;
+    background:transparent;
+    box-shadow:none;
+    display:flex;
+    flex-direction:row;
+    gap:8px;
+    padding:0;
+  }
+  .bot .b1, .bot .b2, .bot .b3{
+    border-radius:16px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 3px 8px rgba(0,0,0,.12), inset 0 0 0 1px rgba(255,255,255,.5);
+    font-size:9px;
+    font-weight:600;
+    color:#3b3b3b;
+    gap:4px;
+    padding:4px;
+  }
+  .bot .b1{ flex:0.6; background:#bfe3c2; }
+  .bot .b2{ flex:1;   background:#fbdca0; }
+  .bot .b3{ flex:1.1; background:#f3c3cf; }
+
+  .modos{
+    grid-area:modos;
+    background:#eef1f4;
+    border-radius:999px;
+    box-shadow:0 3px 8px rgba(0,0,0,.12), inset 0 0 0 1px rgba(255,255,255,.5);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:space-evenly;
+    padding:8px 0;
+  }
+  .modos span{
+    font-size:14px;
+    width:26px;
+    height:26px;
+    border-radius:50%;
+    background:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);
+  }
+
+  /* ---------- BARRA DE NAVEGACIÓN ---------- */
+  .navbar{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:34px;
+    padding-top:14px;
+  }
+  .navbar .tri{
+    width:0; height:0;
+    border-top:7px solid transparent;
+    border-bottom:7px solid transparent;
+    border-right:10px solid #6b6b6b;
+  }
+  .navbar .circ{
+    width:14px; height:14px;
+    border-radius:50%;
+    border:2px solid #6b6b6b;
+  }
+  .navbar .sq{
+    width:12px; height:12px;
+    border:2px solid #6b6b6b;
+    border-radius:2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch-row">
+    <div class="speaker"></div>
+    <div class="cam"></div>
+  </div>
+
+  <div class="screen">
+    <div class="grid">
+
+      <div class="sidebar">
+        <div class="half pink">
+          <div class="tab"></div><div class="tab"></div><div class="tab"></div>
+        </div>
+        <div class="half blue">
+          <div class="tab"></div><div class="tab"></div>
+        </div>
+      </div>
+
+      <div class="tile herr">
+        <span class="icon">🗓️</span><span class="icon">🪪</span><span class="icon">👤</span>
+      </div>
+
+      <div class="tile ajus">
+        <span class="icon">⚙️</span>Ajustes
+      </div>
+
+      <div class="tile cal">
+        <span class="icon">📅</span>Calendario
+      </div>
+
+      <div class="tile piz">
+        <div class="board"></div>Pizarrón
+      </div>
+
+      <div class="tile nos">
+        <span class="icon">💑</span>Nosotros
+      </div>
+
+      <div class="tile galtop">
+        <div class="badge">📷</div>
+      </div>
+
+      <div class="tile galbot">
+        <div class="mini">▶️</div><div class="mini">🖼️</div><div class="mini">▶️</div>
+      </div>
+
+      <div class="bot">
+        <div class="b1"><span class="icon">🧴</span></div>
+        <div class="b2"><span class="icon">📊</span>Finanzas</div>
+        <div class="b3"><span class="icon">⭐</span>Cosas que<br>nos gustan</div>
+      </div>
+
+      <div class="modos">
+        <span>🌸</span><span>🟢</span><span>🌙</span><span>🟦</span><span>💋</span>
+      </div>
+
+    </div>
+
+    <div class="navbar">
+      <div class="tri"></div>
+      <div class="circ"></div>
+      <div class="sq"></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

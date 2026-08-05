@@ -1,0 +1,94 @@
+ESTRUCTURA DEL PROYECTO F.U.R.I
+=================================
+
+═══ lib/ (código fuente) ═══
+
+├─ main.dart
+│  Punto de entrada. Inicializa Supabase, notificaciones y sesión.
+│
+├─ app_state.dart
+│  Guarda/carga sesión (identidad, IDs) en SharedPreferences.
+│
+├─ supabase_config.dart
+│  Cliente Supabase (URL + anon key).
+│
+├─ theme/
+│  └─ app_theme.dart
+│     Modos de color (flower, green, dark, blue, heart) y ThemeSet.
+│     Usado por: home_screen, nosotros_screen, chat_screen, etc.
+│
+├─ screens/
+│  ├─ login_screen.dart         — Selección de identidad (Facu/Rocio)
+│  ├─ home_screen.dart          — Grilla brutalista con confeti y modos
+│  ├─ nosotros_screen.dart      — Contador de días, mood, acciones
+│  ├─ chat_screen.dart          — Chat en tiempo real con todo el sistema
+│  └─ notifications_screen.dart — Bandeja de notificaciones
+│
+├─ widgets/
+│  ├─ message_bubble.dart       — Burbuja de mensaje, DateDividerPill,
+│  │                              TailPainter, BubbleClipper
+│  ├─ tap_tile.dart             — Botón con animación de escala
+│  ├─ mode_btn.dart             — Selector de modo de color circular
+│  └─ concrete_painter.dart     — Fondo de textura "hormigón"
+│
+├─ services/
+│  └─ notification_service.dart — FCM, local notifs, listener global,
+│                                 device tokens, historial, push
+│
+└─ models/
+  ├─ profile.dart      — Perfil de usuario
+  ├─ message.dart      — Mensaje del chat (con copyWith)
+  ├─ mood.dart         — Estado de ánimo diario
+  ├─ letter.dart       — Carta con apertura programada
+  ├─ anniversary.dart  — Aniversario/fecha importante
+  ├─ goal.dart         — Meta compartida
+  └─ challenge.dart    — Reto de pareja
+
+
+═══ Dependencias entre archivos ═══
+
+main.dart
+  → supabase_config, app_state, login_screen, home_screen, notification_service
+
+login_screen.dart
+  → supabase_config, app_state, home_screen
+
+home_screen.dart
+  → app_state, theme/app_theme, widgets/tap_tile, widgets/mode_btn,
+     widgets/concrete_painter, notification_service, nosotros_screen,
+     notifications_screen
+
+nosotros_screen.dart
+  → supabase_config, models/profile, theme/app_theme, app_state,
+     notification_service, chat_screen
+
+chat_screen.dart
+  → supabase_config, models/message, app_state, theme/app_theme,
+     notification_service, widgets/message_bubble
+
+notifications_screen.dart
+  → theme/app_theme, notification_service
+
+notification_service.dart
+  → supabase_config, app_state
+
+widgets/message_bubble.dart
+  → theme/app_theme, models/message
+
+
+═══ Supabase ═══
+
+supabase_schema.sql — Tablas, índices, RLS y trigger de notificaciones
+supabase/functions/send-push/index.ts — Edge Function que envía FCM push
+
+
+═══ Flujo de notificaciones ═══
+
+App abierta (cualquier pantalla):
+  Realtime global → NotificationService.startListening() → notificación local
+
+App abierta en el chat:
+  Realtime del chat → muestra mensaje + notificación local + push
+
+App cerrada:
+  Trigger DB (on_message_insert_send_push) → Edge Function send-push → FCM → celular

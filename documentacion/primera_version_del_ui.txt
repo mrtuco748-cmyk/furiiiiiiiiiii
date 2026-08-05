@@ -1,0 +1,163 @@
+=========================================================
+  PRIMERA VERSION DEL UI — F.U.R.I (Flutter App)
+  Documentacion de la pantalla principal
+=========================================================
+
+FECHA: Julio 2026
+ARCHIVO PRINCIPAL: lib/main.dart
+ESTILO: Brutalismo (concreto texturado, colores neón, bordes gruesos, rotaciones)
+
+=========================================================
+  ESTRUCTURA DE GRILLA (grid)
+=========================================================
+
+Basada en el HTML original "pantalla_mercantil-1.html".
+
+Distribucion:
+
+  col1 (10% ancho) | col2 (1.13fr) | col3 (0.83fr) | col4 (13% ancho)
+  ────────────────────────────────────────────────────
+  row1 (12.7%)  | SIDEBAR | HERRAMIENTAS (3 iconos)  | AJUSTES
+  row2 (21.8%)  | SIDEBAR | CALENDARIO                | GORRO
+  row3 (21.8%)  | SIDEBAR | NOSOTROS (corazon+gente)  | PIZARRON
+  row4 (11.4%)  | SIDEBAR | NOSOTROS (continua)       | CAMARA  | MODOS
+  row5 (11.4%)  | SIDEBAR | GALERIA (3 mini-iconos)   |         | MODOS
+  row6 (20.9%)  | SIDEBAR | BOTONES INFERIORES (3)    |         | MODOS
+
+Proporciones originales (360px de referencia):
+  - col1: 32px, col4: 48px
+  - row heights: 56, 96, 96, 50, 50, 92 px
+  - gap entre tiles: 8px
+
+En Flutter se calcula con LayoutBuilder + fracciones del ancho/alto disponible.
+
+=========================================================
+  SISTEMA DE TEMAS (5 modos)
+=========================================================
+
+AppMode:
+  flower  - Rosa neón, cian, lima, amarillo, naranja
+  green   - Verde bosque, verde claro, lima suave, lima, marrón
+  dark    - Púrpura, azul, cian, rosa neón, azul índigo
+  blue    - Azul oscuro, azul claro, celeste, azul muy claro, azul profundo
+  heart   - Rojo oscuro, rojo claro, rosa claro, dorado, rojo
+
+Cada _Theme tiene 8 colores:
+  a, b, c, d, e  -> 5 colores de acento (se asignan dinamicamente a los tiles)
+  dark, light, mid -> fondo oscuro, fondo claro, gris medio
+
+El modo activo se muestra en la barra derecha (MODOS) con borde mas grueso.
+
+=========================================================
+  BLOQUES / TILES
+=========================================================
+
+Cada tile tiene:
+  - ClipRRect con borderRadius: 18
+  - Border.all de 3-6px de grosor (color variable segun modo)
+  - Fondo de color solido (sin gradientes)
+  - Rotacion leve en algunos tiles (Transform.rotate con angle ±0.05 a ±0.1)
+  - Animacion bounce al tocarlo (ver seccion animaciones)
+
+LISTA DE TILES (con sus iconos):
+
+  SIDEBAR:
+    - Mitad superior: 3 tabs rectangulares (color d)
+    - Mitad inferior: 2 tabs rectangulares (color d)
+
+  HERRAMIENTAS (fila 1, col 2+3):
+    - calendar_month, badge, person (en fila, 3 Expanded iguales)
+
+  AJUSTES (fila 1, col 4):
+    - settings (rotado 0.1rad)
+
+  CALENDARIO (fila 2, col 2):
+    - calendar_month grande (rotado -0.05rad)
+
+  GORRO (fila 2, col 3+4):
+    - school (graduation cap)
+
+  NOSOTROS (fila 3-4, col 2):
+    - Stack: favorite (size 110) detras + people (size 50) encima, centrados
+    - Rotado 0.07rad
+
+  PIZARRON (fila 3, col 3+4):
+    - Container verde con borde negro (simula pizarron)
+    - Rotado 0.08rad
+
+  CAMARA (fila 4, col 3):
+    - Container negro con camera_alt dentro
+    - Rotado -0.1rad
+
+  GALERIA (fila 5, col 2+3):
+    - play_arrow, image, play_arrow (3 iconos en fila)
+
+  BOTONES INFERIORES (fila 6, col 2+3):
+    - spa (planta/verde), bar_chart (finanzas), star (favoritos)
+    - Flex: 6:10:11
+
+  MODOS (fila 4-6, col 4):
+    - 5 botones circulares: local_florist, circle(verde), dark_mode, circle(azul), favorite
+    - Cada uno cambia el tema global al tocarlo
+    - El activo se resalta con borde mas grueso (4px) y color invertido
+
+  DECORACION:
+    - Linea diagonal amarilla delgada (lado derecho, rotada 0.3rad)
+
+=========================================================
+  ANIMACIONES
+=========================================================
+
+Tap Bounce (en todos los tiles via _TapTile):
+  - Duracion: 350ms
+  - Secuencia:
+    1. Escala 1.0 -> 1.12 (35% del tiempo)
+    2. Escala 1.12 -> 0.95 (20% del tiempo, rebote)
+    3. Escala 0.95 -> 1.0 (45% del tiempo, retorno)
+  - Curve: easeInOut
+  - Se dispara con onTap (GestureDetector)
+
+Modos:
+  - AnimatedContainer de 300ms para el boton activo
+  - setState cambia _mode y toda la pantalla se re-colorea
+
+=========================================================
+  FONDO
+=========================================================
+
+CustomPainter _ConcretePainter:
+  - Gradiente lineal diagonal gris oscuro (#2A2A2A -> #1A1A1A -> #222222 -> #151515)
+  - 80 puntos de ruido blanco aleatorio (opacidad 1.5%, tamaño 1-5px)
+  - 12 lineas horizontales finas (opacidad 4%, 0.5px de grosor)
+  - Seed Random: 42 (reproducible)
+
+=========================================================
+  ASSETS / ICONOS
+=========================================================
+
+Carpeta Assets/icons/:
+  - 250 iconos SVG Feather (MIT license)
+  - Categorias: buttons, panels, boards, general, extra
+
+Paquetes Flutter (pubspec.yaml):
+  - font_awesome_flutter ^11.0.0
+  - flutter_svg ^2.0.17
+  - flutter_launcher_icons ^0.14.3
+  - material_design_icons_flutter ^7.0.7296
+  - phosphor_flutter ^2.1.0
+  - google_fonts ^8.2.0
+
+NOTA: font_awesome_flutter ya no se usa en el codigo actual
+      (todos los iconos son de Material Icons).
+
+=========================================================
+  COMPILACION
+=========================================================
+
+Para compilar APKs:
+  flutter build apk --split-per-abi --release
+
+APKs generados en: build/app/outputs/flutter-apk/
+  - app-armeabi-v7a-release.apk  (~14MB)
+  - app-arm64-v8a-release.apk    (~16.5MB)
+  - app-x86_64-release.apk       (~18MB)

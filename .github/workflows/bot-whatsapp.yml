@@ -1,0 +1,28 @@
+name: Bot FURI WhatsApp
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+        working-directory: bot-furi
+
+      - name: Ejecutar bot
+        run: node bot.js
+        working-directory: bot-furi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          MI_NUMERO: ${{ secrets.MI_NUMERO }}

@@ -1,0 +1,335 @@
+{
+  "skill": {
+    "id": "furi-nosotros",
+    "name": "F.U.R.I. - Pantalla Nosotros",
+    "description": "Desarrollar la pantalla Nosotros con 7 botones interactivos, animaciones SWAP/SWINK y funcionalidades de pareja",
+    "version": "1.0",
+    "author": "Facu",
+    "priority": "high",
+    "complexity": "medium-high",
+    "status": "development"
+  },
+  "objective": {
+    "primary": "Terminar la pantalla Nosotros de F.U.R.I.",
+    "success_criteria": [
+      "Todos los 7 botones funcionales y clickeables",
+      "Animaciones SWAP implementadas correctamente",
+      "Animaciones SWINK fluidas",
+      "Datos sincronizados en tiempo real entre usuarios",
+      "Responsividad en Android y PC",
+      "Personalización de colores por usuario (Facu/Rocio)"
+    ]
+  },
+  "interactive_loop": {
+    "enabled": true,
+    "pause_before_action": true,
+    "ask_for_approval": "always",
+    "handle_ambiguity": "ask",
+    "never_invent": true,
+    "rules": [
+      "Parar ANTES de cada acción y preguntar",
+      "No asumir preferencias del usuario",
+      "Si hay ambigüedad, preguntar explícitamente",
+      "Mostrar exactamente qué se va a hacer",
+      "Usuario controla cada paso: Ejecutar/Modificar/Saltar/Completado"
+    ]
+  },
+  "workflow": {
+    "phase_1": {
+      "name": "Planificación de Estructura",
+      "description": "Definir arquitectura, componentes y dependencias",
+      "steps": [
+        {
+          "id": "1.1",
+          "name": "Elegir stack tecnológico",
+          "description": "¿Qué framework y lenguaje usarás?",
+          "requires_approval": true,
+          "options": [
+            "React Native + Electron",
+            "Flutter + Electron",
+            "Custom con Vue/React"
+          ]
+        },
+        {
+          "id": "1.2",
+          "name": "Definir estructura de componentes",
+          "description": "Crear estructura de carpetas y componentes base",
+          "requires_approval": true,
+          "details": "Cada botón será un componente reutilizable"
+        },
+        {
+          "id": "1.3",
+          "name": "Configurar base de datos",
+          "description": "¿Firebase, PostgreSQL, MongoDB?",
+          "requires_approval": true,
+          "options": [
+            "Firebase Realtime DB",
+            "PostgreSQL + Socket.io",
+            "MongoDB + WebSockets"
+          ]
+        }
+      ]
+    },
+    "phase_2": {
+      "name": "Componentes Base",
+      "description": "Desarrollar los componentes individuales",
+      "steps": [
+        {
+          "id": "2.1",
+          "name": "Barra decorativa de corazones",
+          "description": "Componente simple de 3 corazones arriba",
+          "requires_approval": true,
+          "acceptance_criteria": [
+            "Se ve bien en ambas orientaciones",
+            "Colores personalizados por usuario"
+          ]
+        },
+        {
+          "id": "2.2",
+          "name": "Botón base reutilizable",
+          "description": "Crear componente Button base para todos los botones",
+          "requires_approval": true,
+          "features": [
+            "Click handler customizable",
+            "Soporte para SWAP",
+            "Soporte para SWINK",
+            "Estilos personalizables"
+          ]
+        },
+        {
+          "id": "2.3",
+          "name": "Sistema de animaciones",
+          "description": "Crear módulo de animaciones SWAP y SWINK",
+          "requires_approval": true,
+          "animations": [
+            "SWAP: transición icono-contenido",
+            "SWINK: agrande + expansión",
+            "Scroll texto línea por línea",
+            "Scroll texto frase por frase"
+          ]
+        }
+      ]
+    },
+    "phase_3": {
+      "name": "Implementación de Botones",
+      "description": "Desarrollar cada botón con su funcionalidad",
+      "steps": [
+        {
+          "id": "3.1",
+          "name": "Botón CHAT",
+          "description": "Interfaz de chat en tiempo real",
+          "requires_approval": true,
+          "subtasks": [
+            "Interfaz de mensajes",
+            "Historial de chat",
+            "Envío en tiempo real",
+            "Notificaciones"
+          ]
+        },
+        {
+          "id": "3.2",
+          "name": "Botón RETOS",
+          "description": "Gestión de retos con SWAP animado",
+          "requires_approval": true,
+          "subtasks": [
+            "Listar retos personales",
+            "Crear nuevo reto",
+            "Aprobar retos en conjunto",
+            "SWAP reto aleatorio (4-7 seg)",
+            "Marcar como completado"
+          ]
+        },
+        {
+          "id": "3.3",
+          "name": "Botón CARTAS",
+          "description": "Lectura de cartas con SWAP y scroll",
+          "requires_approval": true,
+          "subtasks": [
+            "Listar cartas ordenadas por tiempo",
+            "Crear nueva carta",
+            "Ver carta completa",
+            "SWAP última carta pareja (2 seg)",
+            "Scroll línea por línea si es larga"
+          ]
+        },
+        {
+          "id": "3.4",
+          "name": "Botón EMOCIONES",
+          "description": "Registro de emociones con SWINK",
+          "requires_approval": true,
+          "subtasks": [
+            "SWINK al presionar",
+            "Selector de emojis",
+            "Listar por hora",
+            "SWAP emoji si pareja agregó",
+            "Ver historial del día"
+          ]
+        },
+        {
+          "id": "3.5",
+          "name": "Botón PREGUNTAS",
+          "description": "Hacer/responder preguntas con interacción dual",
+          "requires_approval": true,
+          "subtasks": [
+            "1 click = SWAP última pregunta pareja",
+            "Scroll frase por frase de der-izq",
+            "2 clicks = SWINK historial",
+            "Hacer nueva pregunta",
+            "Responder preguntas"
+          ]
+        },
+        {
+          "id": "3.6",
+          "name": "Botón METAS",
+          "description": "Gestión de metas en conjunto",
+          "requires_approval": true,
+          "subtasks": [
+            "Crear meta",
+            "Marcar completada",
+            "Ver metas de pareja",
+            "Historial",
+            "Actualizar en tiempo real"
+          ]
+        },
+        {
+          "id": "3.7",
+          "name": "Botón DISTANCIA",
+          "description": "Mostrar distancia en tiempo real",
+          "requires_approval": true,
+          "subtasks": [
+            "Obtener ubicación ambos",
+            "Calcular distancia",
+            "Formato km/millas",
+            "Actualizar en tiempo real",
+            "Permisos de ubicación"
+          ]
+        }
+      ]
+    },
+    "phase_4": {
+      "name": "Sincronización y Tiempo Real",
+      "description": "Integrar actualizaciones en tiempo real",
+      "steps": [
+        {
+          "id": "4.1",
+          "name": "Configurar WebSockets o Realtime DB",
+          "description": "Asegurar que cambios se vean inmediatamente en ambos usuarios",
+          "requires_approval": true
+        },
+        {
+          "id": "4.2",
+          "name": "Probar sincronización",
+          "description": "Verificar que todo se actualiza en tiempo real entre usuarios",
+          "requires_approval": true
+        }
+      ]
+    },
+    "phase_5": {
+      "name": "Personalización por Usuario",
+      "description": "Adaptar colores y estilos para Facu y Rocio",
+      "steps": [
+        {
+          "id": "5.1",
+          "name": "Definir esquema de colores",
+          "description": "¿Qué colores para Facu? ¿Y para Rocio?",
+          "requires_approval": true,
+          "note": "Debe preguntarse al usuario exactamente qué colores"
+        },
+        {
+          "id": "5.2",
+          "name": "Aplicar personalización",
+          "description": "Aplicar colores y estilos según usuarioActual",
+          "requires_approval": true
+        }
+      ]
+    },
+    "phase_6": {
+      "name": "Animaciones y Pulido",
+      "description": "Perfeccionar todas las animaciones",
+      "steps": [
+        {
+          "id": "6.1",
+          "name": "Ajustar tiempos de SWAP",
+          "description": "¿Están bien los tiempos? (4 seg retos, 2 seg cartas, etc)",
+          "requires_approval": true
+        },
+        {
+          "id": "6.2",
+          "name": "Suavizar SWINK",
+          "description": "¿Se ve natural la animación?",
+          "requires_approval": true
+        },
+        {
+          "id": "6.3",
+          "name": "Velocidad de scroll",
+          "description": "¿La velocidad de scroll es legible?",
+          "requires_approval": true
+        }
+      ]
+    },
+    "phase_7": {
+      "name": "Testing y Responsividad",
+      "description": "Probar en Android y PC",
+      "steps": [
+        {
+          "id": "7.1",
+          "name": "Testing en Android",
+          "description": "¿Todo funciona bien en teléfono?",
+          "requires_approval": true
+        },
+        {
+          "id": "7.2",
+          "name": "Testing en PC",
+          "description": "¿Todo funciona bien en computadora?",
+          "requires_approval": true
+        },
+        {
+          "id": "7.3",
+          "name": "Pruebas de sincronización",
+          "description": "Probar cambios en tiempo real entre dispositivos",
+          "requires_approval": true
+        }
+      ]
+    }
+  },
+  "prompts": {
+    "planning": "Analiza el objetivo y propone exactamente el primer paso. Si hay algo ambiguo, pregunta antes de proceder.",
+    "implementation": "Basándote en los pasos anteriores, ¿cuál es el siguiente paso específico que necesitas ejecutar? Sé muy concreto.",
+    "review": "¿Se completó bien el paso anterior? ¿Necesita ajustes? ¿Qué cambios quiere el usuario?",
+    "ambiguity": "Hay algunas decisiones que necesito que hagas: [listar las ambigüedades]. ¿Cómo querés que lo haga?"
+  },
+  "state": {
+    "current_phase": "1. Planificación",
+    "completed_steps": [],
+    "current_step": "1.1",
+    "history": [],
+    "user_preferences": {
+      "facu_colors": null,
+      "rocio_colors": null,
+      "technology_stack": null,
+      "database_choice": null
+    }
+  },
+  "rules": {
+    "do": [
+      "Parar antes de cada acción",
+      "Preguntar si hay ambigüedad",
+      "Mostrar exactamente qué se va a hacer",
+      "Esperar aprobación del usuario",
+      "Registrar cada paso completado",
+      "Actualizar el estado del workflow"
+    ],
+    "dont": [
+      "Inventar información",
+      "Asumir preferencias",
+      "Ejecutar sin preguntar",
+      "Continuar si hay dudas",
+      "Omitir detalles importantes"
+    ]
+  },
+  "exit_conditions": {
+    "completed": "Todos los checklist items marcados como completos",
+    "cancel": "Usuario dice 'cancelar' o 'detener'",
+    "issues": "Problemas bloqueantes sin solución inmediata"
+  }
+}
