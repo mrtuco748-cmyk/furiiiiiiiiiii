@@ -93,17 +93,27 @@ async function saveSessionToSupabase() {
 }
 
 // ─── CONEXION WHATSAPP ────────────────────────────────────────
+// reintentos maximos por corrida (evita loop infinito que cuelga el job de CI)
+const MAX_REINTENTOS = 3;
+// timeout global duro: pase lo que pase, la corrida termina (CI no debe colgar)
+const TIMEOUT_GLOBAL_MS = 180000;
+
 function conectarYNotificar() {
-  return new Promise(async (resolve) => {
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  let intentos = 0;
+  return conectarIntento();
 
-    const sock = makeWASocket({
-      auth: state,
-      printQRInTerminal: false,
-      logger: pino({ level: 'warn' }),
-    });
+  function conectarIntento() {
+    const tiempoReintento = 'intento-' + (intentos + 1);
+    return new Promise(async (resolve) => {
+      const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
-    let resuelto = false;
+      const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        logger: pino({ level: 'warn' }),
+      });
+
+      let resuelto = false;
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
@@ -134,16 +144,24 @@ function conectarYNotificar() {
           console.log('Sesion cerrada. Vuelve a ejecutar localmente para re-escanear QR.');
           if (!resuelto) { resuelto = true; resolve(); }
         } else if (!resuelto) {
-          console.log('Conexion cerrada, reintentando...');
-          setTimeout(async () => {
-            try {
-              await conectarYNotificar();
-              resolve();
-            } catch (e) {
-              console.error('Error en reintento:', e.message);
-              resolve();
-            }
-          }, 3000);
+          intentos++;
+          if (intentos >= MAX_REINTENTOS) {
+            console.log(`No se pudo conectar en ${intentos} intentos. Abortando.`);
+            resuelto = true;
+            resolve();
+          } else {
+            console.log(`Conexion cerrada, reintentando (${intentos}/${MAX_REINTENTOS})...`);
+            setTimeout(async () => {
+              if (resuelto) { resolve(); return; }
+              try {
+                await conectarIntento();
+                resolve();
+              } catch (e) {
+                console.error('Error en reintento:', e.message);
+                resolve();
+              }
+            }, 3000);
+          }
         }
       }
     });
@@ -155,12 +173,13 @@ function conectarYNotificar() {
 
     setTimeout(() => {
       if (!resuelto) {
-        console.log('Timeout: no se pudo conectar en 60s. Si es CI, la sesion puede estar vencida.');
+        console.log(`Timeout: no se pudo conectar en ${TIMEOUT_GLOBAL_MS / 1000}s (intento ${intentos + 1}).`);
         resuelto = true;
         resolve();
       }
     }, 60000);
   });
+  }
 }
 
 // ─── UTIL: ENVIAR MENSAJE ─────────────────────────────────────
@@ -468,6 +487,12 @@ async function main() {
   console.log('Bot finalizado.');
   process.exit(0);
 }
+
+// timeout global duro: fuerza la salida aunque algo cuelgue (CI nunca colgado)
+setTimeout(() => {
+  console.error(`Falla: el bot superó el timeout global de ${TIMEOUT_GLOBAL_MS / 1000}s. Abortando.`);
+  try { process.exit(1); } catch (e) { /* noop */ }
+}, TIMEOUT_GLOBAL_MS).unref();
 
 main().catch(err => {
   console.error('Error fatal:', err);
