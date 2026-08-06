@@ -68,6 +68,7 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 | 10 | notes | 📝 | Ultima 1h | `note-{id}` |
 | 11 | gallery | 🖼️ | Ultima 1h | `gallery-{id}` |
 | 12 | timeline_events | 🕐 | Ultima 1h | `timeline-{id}` |
+| 13 | custom_questions | ❓ | Ultima 1h (nueva/respondida) | `question-{id}` |
 
 **No notifica**: messages (ya tienen push via FCM)
 
@@ -85,7 +86,7 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
    └── Si no hay sesion guardada, muestra QR en terminal
 6. saveSessionToSupabase() (guarda por si acaba de escanear QR)
 7. verificarYNotificar(sock)
-   └── Itera las 12 categorias
+   └── Itera las 13 categorias
    └── yaNotificado(tabla, key) para cada registro
    └── Acumula mensajes[]
    └── Si hay mensajes, los une con header y envia

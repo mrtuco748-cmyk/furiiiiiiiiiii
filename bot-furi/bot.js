@@ -463,6 +463,29 @@ async function verificarYNotificar(sock) {
     }
   }
 
+  // ── 13. CUSTOM_QUESTIONS (preguntas del boton ❓ de Nosotros) ──
+  const { data: preguntas } = await supabase
+    .from('custom_questions')
+    .select('*, from_user:profiles!from_user(name)')
+    .gte('created_at', haceUnaHora)
+    .order('created_at', { ascending: false });
+
+  if (preguntas) {
+    for (const q of preguntas) {
+      const key = `question-${q.id}`;
+      if (!(await yaNotificado('custom_questions', key))) {
+        const nombre = q.from_user?.name || 'Alguien';
+        const conRespuesta = q.answer != null && q.answer !== '';
+        mensajes.push(
+          conRespuesta
+            ? `❓ *${nombre}* respondio una pregunta`
+            : `❓ *${nombre}* te hizo una pregunta nueva`
+        );
+        await marcarNotificado('custom_questions', key, conRespuesta ? 'respondida' : 'nueva', MI_NUMERO, q.question);
+      }
+    }
+  }
+
   // ── ENVIAR ──
   if (mensajes.length === 0) {
     console.log('Sin novedades para notificar.');
