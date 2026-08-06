@@ -121,6 +121,9 @@ class NotificationService {
   static void _listenFCMForeground() {
     if (_fcm == null) return;
     FirebaseMessaging.onMessage.listen((message) {
+      if (message.data.containsKey('type') && message.data['type'] == 'message') {
+        return;
+      }
       final title = message.notification?.title ?? '';
       final body = message.notification?.body ?? '';
       final data = message.data;
