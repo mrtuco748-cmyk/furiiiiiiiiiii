@@ -82,7 +82,19 @@ class _PizarraScreenState extends State<PizarraScreen> {
 
   void _finishEditing(int id) {
     final text = _editCtrls[id]?.text ?? '';
-    if (text.isNotEmpty) context.read<BoardDataProvider>().updateContent(id, text);
+    final pv = context.read<BoardDataProvider>();
+    if (text.isNotEmpty) {
+      final candidates = pv.elements.where((e) => e.id == id);
+      final byCreated = pv.elements
+          .where((e) => (e.createdAt.millisecondsSinceEpoch % 1000000) == id)
+          .toList();
+      final match = candidates.isNotEmpty
+          ? candidates.first
+          : (byCreated.isNotEmpty ? byCreated.first : null);
+      if (match != null) {
+        pv.updateContentLocal(match, text);
+      }
+    }
     setState(() => _editing[id] = false);
   }
 
@@ -188,23 +200,22 @@ class _PizarraScreenState extends State<PizarraScreen> {
           onTap: () { HapticFeedback.selectionClick(); setState(() => _selectedId = id); },
           onDoubleTap: () => _startEditing(id, el.content),
           onPanUpdate: (d) {
-            if (el.id != null) context.read<BoardDataProvider>().move(el.id!, el.x + d.delta.dx, el.y + d.delta.dy);
+            context.read<BoardDataProvider>().moveLocal(el, el.x + d.delta.dx, el.y + d.delta.dy);
           },
-          child: _buildElement(el, selected, editing, ownerInitial),
+          child: _buildElement(el, id, selected, editing, ownerInitial),
         ),
       );
     }).toList();
   }
 
-  Widget _buildElement(BoardElement el, bool selected, bool editing, String ownerInitial) {
+  Widget _buildElement(BoardElement el, int id, bool selected, bool editing, String ownerInitial) {
     final w = el.width; final h = el.height;
     final color = _hexToColor(el.color);
-    final id = el.id ?? 0;
 
     if (editing) {
       return Container(width: w, height: h + 70,
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: _c.withValues(alpha: 0.2), border: Border.all(color: _c, width: 3), borderRadius: BorderRadius.circular(14), boxShadow: const [BoxShadow(color: Color(0xAA000000), offset: Offset(4, 4), blurRadius: 8)]),
+        decoration: BoxDecoration(color: const Color(0xFF1A3A1A), border: Border.all(color: _c, width: 3), borderRadius: BorderRadius.circular(14)),
         child: Column(children: [
           Expanded(child: TextField(
             controller: _editCtrls[id], autofocus: true, maxLines: null,
@@ -212,7 +223,7 @@ class _PizarraScreenState extends State<PizarraScreen> {
             decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
             onSubmitted: (_) => _finishEditing(id),
           )),
-          TapTile(onTap: () => _finishEditing(id), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(10)), child: Text('OK', style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: const Color(0xFF0D1A0D))))),
+          TapTile(onTap: () => _finishEditing(id), child: Container(width: 44, height: 34, alignment: Alignment.center, decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.check, color: Color(0xFF0D1A0D), size: 22))),
         ]),
       );
     }
@@ -220,17 +231,17 @@ class _PizarraScreenState extends State<PizarraScreen> {
     return Transform.rotate(angle: el.rotation, child: Container(
       width: w, height: h,
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.7), border: Border.all(color: selected ? _c : color, width: selected ? 4 : 2), borderRadius: BorderRadius.circular(14), boxShadow: const [BoxShadow(color: Color(0xAA000000), offset: Offset(4, 4), blurRadius: 8)]),
+      decoration: BoxDecoration(color: color, border: Border.all(color: selected ? _c : color, width: selected ? 4 : 2), borderRadius: BorderRadius.circular(14)),
       child: Stack(
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (el.content.isNotEmpty)
-                Expanded(child: Text(el.content, style: GoogleFonts.bangers(color: color, fontSize: 14, height: 1.3, letterSpacing: 0.5), maxLines: 6, overflow: TextOverflow.ellipsis))
+                Expanded(child: Text(el.content, style: GoogleFonts.bangers(color: const Color(0xFF111111), fontSize: 14, height: 1.3, letterSpacing: 0.5), maxLines: 6, overflow: TextOverflow.ellipsis))
               else
-                Expanded(child: Center(child: Icon(el.type == 'arrow' ? Icons.arrow_forward : (el.type == 'postit' ? Icons.push_pin : Icons.note_add), color: color, size: h * 0.5))),
-              Text(ownerInitial, style: GoogleFonts.bangers(color: color.withValues(alpha: 0.6), fontSize: 10)),
+                Expanded(child: Center(child: Icon(el.type == 'arrow' ? Icons.arrow_forward : (el.type == 'postit' ? Icons.push_pin : Icons.note_add), color: const Color(0xFF111111), size: h * 0.5))),
+              Text(ownerInitial, style: GoogleFonts.bangers(color: const Color(0xFF111111).withValues(alpha: 0.65), fontSize: 10)),
             ],
           ),
           Positioned(right: 0, top: 0, child: GestureDetector(

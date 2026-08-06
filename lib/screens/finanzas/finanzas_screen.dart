@@ -10,6 +10,7 @@ import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFF00FF66);
+const _cIncome = Color(0xFF008844);
 const _red = Color(0xFFFF4444);
 const _blue = Color(0xFF0088FF);
 const _yellow = Color(0xFFFFDE59);
@@ -42,7 +43,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _segBtn('GASTO', type == 'expense', () => setLocal(() => type = 'expense'), _red),
-          _segBtn('INGRESO', type == 'income', () => setLocal(() => type = 'income'), _c),
+          _segBtn('INGRESO', type == 'income', () => setLocal(() => type = 'income'), _cIncome),
         ]),
       ]),
       actions: [
@@ -64,7 +65,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   }
 
   Widget _segBtn(String label, bool active, VoidCallback onTap, Color color) {
-    return GestureDetector(onTap: () { HapticFeedback.heavyImpact(); onTap(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: active ? color : color.withValues(alpha: 0.3), border: Border.all(color: color, width: 2), borderRadius: BorderRadius.circular(14)), child: Text(label, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: active ? const Color(0xFF111111) : color))));
+    return GestureDetector(onTap: () { HapticFeedback.heavyImpact(); onTap(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: active ? color : color.withValues(alpha: 0.3), border: Border.all(color: color, width: 2), borderRadius: BorderRadius.circular(14)), child: Text(label, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: active ? Colors.white : color))));
   }
 
   @override
@@ -97,10 +98,10 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   }
 
   Widget _incomeBlock(double w, double h) {
-    return Positioned(left: w * 0.04, top: h * 0.21, width: w * 0.43, height: h * 0.09, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(18)),
+    return Positioned(left: w * 0.04, top: h * 0.21, width: w * 0.43, height: h * 0.09, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _cIncome, borderRadius: BorderRadius.circular(18)),
       child: Consumer<FinancesProvider>(builder: (context, pv, _) => Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.trending_up, color: const Color(0xFF111111), size: 28), const SizedBox(width: 4),
-        Text('\$${pv.totalIncome.toStringAsFixed(0)}', style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 16, color: const Color(0xFF111111))),
+        Icon(Icons.trending_up, color: Colors.white, size: 28), const SizedBox(width: 4),
+        Text('\$${pv.totalIncome.toStringAsFixed(0)}', style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
       ])),
     )));
   }

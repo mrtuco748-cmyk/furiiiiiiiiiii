@@ -140,6 +140,22 @@ class BoardDataProvider extends ChangeNotifier {
     await _flushMoves();
   }
 
+  /// Mueve un elemento localmente (optimista) sin requerir ID de BD.
+  /// Si el elemento ya tiene ID, tambien persiste hacia Supabase (vía move()).
+  /// Si no tiene ID (recién creado, esperando respuesta de BD), solo actualiza
+  /// la copia local para que el drag funcione de inmediato. Cuando llegue el ID
+  /// desde la BD (realtime o reload), los proximos moves ya persistirán.
+  void moveLocal(BoardElement el, double x, double y) {
+    if (el.id != null) {
+      move(el.id!, x, y);
+      return;
+    }
+    final idx = _elements.indexWhere((e) => identical(e, el));
+    if (idx == -1) return;
+    _elements[idx] = _elements[idx].copyWith(x: x, y: y);
+    notifyListeners();
+  }
+
   Future<void> _flushMoves() async {
     if (_pendingMoves.isEmpty) return;
     final moves = Map<int, _PendingMove>.from(_pendingMoves);
@@ -172,6 +188,26 @@ class BoardDataProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('BoardDataProvider.updateContent error: $e');
     }
+  }
+
+  /// Actualiza el contenido localmente por referencia (funciona para elementos
+  /// recién creados que aún no tienen ID de BD). Si el elemento tiene ID,
+  /// delega a updateContent() para persistir.
+  void updateContentLocal(BoardElement el, String content) {
+    if (el.id != null) {
+      updateContent(el.id!, content);
+      return;
+    }
+    final idx = _elements.indexWhere((e) => identical(e, el));
+    if (idx == -1) return;
+    _elements[idx] = BoardElement(
+      id: null, type: _elements[idx].type,
+      content: content, x: _elements[idx].x, y: _elements[idx].y,
+      width: _elements[idx].width, height: _elements[idx].height,
+      rotation: _elements[idx].rotation, color: _elements[idx].color,
+      userId: _elements[idx].userId, createdAt: _elements[idx].createdAt,
+    );
+    notifyListeners();
   }
 
   Future<void> delete(int id) async {
