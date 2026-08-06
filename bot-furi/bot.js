@@ -44,8 +44,14 @@ async function loadSessionFromSupabase() {
 
   const session = data.session_data;
 
-  const sesionCoincide = Object.keys(session).some(f => f.includes(MI_NUMERO || ''));
-  if (!sesionCoincide) {
+  // Valida que la sesion corresponda a MI_NUMERO verificando el contenido de
+  // creds.json (campo me.id: "<pais><numer o>@s.whatsapp.net"), NO los nombres
+  // de archivo (creds.json, session-*.json, etc. no incluyen el numero).
+  const creds = session['creds.json'];
+  const credsFull = String(creds?.me?.id ?? '');
+  const credsNumber = credsFull.replace('@s.whatsapp.net', '').split(':')[0];
+  const numeroCoincide = (credsNumber === (MI_NUMERO || '')) || (!MI_NUMERO);
+  if (!numeroCoincide) {
     console.log(`Sesion guardada no coincide con el numero ${MI_NUMERO}. Se ignorara y se solicitara QR.`);
     return false;
   }
