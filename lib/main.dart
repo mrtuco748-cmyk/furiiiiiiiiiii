@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -30,18 +32,86 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfiNoIsolate;
-  await dotenv.load(fileName: '.env');
-  await SupabaseConfig.initialize();
-  await NotificationService.initialize();
-  await DatabaseHelper().database;
-  AiService().init();
-  final saved = await AppState.loadSession();
-  runApp(FuriApp(startDirect: saved));
+void main() {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    ErrorWidget.builder = (FlutterErrorDetails details) => _crashWidget(details.exception.toString(), details.stack?.toString() ?? 'WIDGET CRASH:');
+
+    String? initError;
+    bool saved = false;
+
+    final bool isDesktop =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+
+    try {
+      if (isDesktop) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfiNoIsolate;
+      }
+    } catch (e) { initError = 'SQLite FFI: $e'; }
+
+    try { await dotenv.load(fileName: '.env'); }
+    catch (e) { initError = initError ?? 'dotenv: $e'; }
+
+    try { await SupabaseConfig.initialize(); }
+    catch (e) { initError = initError ?? 'Supabase: $e'; }
+
+    try { await NotificationService.initialize(); }
+    catch (e) { initError = initError ?? 'Notifications: $e'; }
+
+    try { await DatabaseHelper().database; }
+    catch (e) { initError = initError ?? 'Database: $e'; }
+
+    if (initError == null) {
+      try { AiService().init(); }
+      catch (e) { initError = 'AI: $e'; }
+    }
+
+    if (initError == null) {
+      try { saved = await AppState.loadSession(); }
+      catch (e) { initError = 'AppState: $e'; }
+    }
+
+    if (initError != null) {
+      runApp(_CrashApp(message: initError));
+      return;
+    }
+
+    runApp(FuriApp(startDirect: saved));
+  }, (error, stack) {
+    runApp(_CrashApp(message: 'UNCAUGHT: $error\n$stack'));
+  });
 }
+
+class _CrashApp extends StatelessWidget {
+  final String message;
+  const _CrashApp({super.key, required this.message});
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.red,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: SelectableText(message, style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace')),
+          ),
+        ),
+      ));
+}
+
+Widget _crashWidget(String error, String prefix) => MaterialApp(
+    home: Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: SelectableText('$prefix\n$error', style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace')),
+        ),
+      ),
+    ));
 
 class GoBackIntent extends Intent {
   const GoBackIntent();

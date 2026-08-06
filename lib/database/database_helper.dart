@@ -15,7 +15,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 4, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 5, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -42,6 +42,16 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE class_schedules ADD COLUMN professor TEXT DEFAULT ''");
       await db.execute("ALTER TABLE class_schedules ADD COLUMN userId TEXT DEFAULT ''");
       await db.execute("ALTER TABLE class_schedules ADD COLUMN color INTEGER DEFAULT 0xFF7B2D8E");
+    }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS chat_media_local (
+          message_id INTEGER PRIMARY KEY,
+          local_path TEXT NOT NULL,
+          file_name TEXT,
+          mime_type TEXT
+        )
+      ''');
     }
   }
 
@@ -109,6 +119,60 @@ class DatabaseHelper {
     ''');
     await db.insert('class_types', {'name': 'Gastronomía 1', 'color': 0xFF7000FF});
     await db.insert('class_types', {'name': 'Pastelería 1', 'color': 0xFF39FF14});
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS chat_media_local (
+        message_id INTEGER PRIMARY KEY,
+        local_path TEXT NOT NULL,
+        file_name TEXT,
+        mime_type TEXT
+      )
+    ''');
+  }
+
+  Future<void> saveChatMediaLocal({
+    required int messageId,
+    required String localPath,
+    String? fileName,
+    String? mimeType,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'chat_media_local',
+      {
+        'message_id': messageId,
+        'local_path': localPath,
+        'file_name': fileName,
+        'mime_type': mimeType,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<String?> getChatMediaLocalPath(int messageId) async {
+    final db = await database;
+    final rows = await db.query(
+      'chat_media_local',
+      columns: ['local_path'],
+      where: 'message_id = ?',
+      whereArgs: [messageId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['local_path'] as String?;
+  }
+
+  Future<Map<int, String>> getAllChatMediaLocalPaths() async {
+    final db = await database;
+    final rows = await db.query('chat_media_local');
+    final map = <int, String>{};
+    for (final r in rows) {
+      final id = r['message_id'];
+      final path = r['local_path'] as String?;
+      if (id is int && path != null && path.isNotEmpty) {
+        map[id] = path;
+      }
+    }
+    return map;
   }
 
   Future<int> insert(String table, Map<String, dynamic> values) async {

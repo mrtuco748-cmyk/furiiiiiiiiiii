@@ -10,6 +10,12 @@ set(BINARY_NAME "furi_app")
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
 
+# Install en el propio directorio de build (evita requerir permisos admin
+# sobre C:/Program Files/ que rompe el PostBuildEvent del instalador).
+if(NOT CMAKE_INSTALL_PREFIX OR CMAKE_INSTALL_PREFIX STREQUAL "C:/Program Files/${BINARY_NAME}")
+  set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "" FORCE)
+endif()
+
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(IS_MULTICONFIG)

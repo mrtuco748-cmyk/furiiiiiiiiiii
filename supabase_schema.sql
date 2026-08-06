@@ -21,11 +21,15 @@ CREATE TABLE IF NOT EXISTS messages (
   read_at TIMESTAMPTZ,
   reply_to_id BIGINT REFERENCES messages(id),
   reply_content TEXT,
-  message_type TEXT DEFAULT 'text',  -- text, image, voice, video, document, location, contact, poll
+  message_type TEXT DEFAULT 'text',  -- text, image, voice, video, gif, document
   attachment_url TEXT,
+  attachment_name TEXT,
+  attachment_mime TEXT,
+  attachment_size BIGINT,
+  cloud_deleted BOOLEAN DEFAULT false,
   starred BOOLEAN DEFAULT false,
   edited BOOLEAN DEFAULT false,
-  reactions JSONB DEFAULT '{}'::jsonb,  -- {"👍": ["user-id-1"], "❤️": ["user-id-1", "user-id-2"]}
+  reactions JSONB DEFAULT '{}'::jsonb,  -- {"🥰": ["user-id-1"], "xD": ["user-id-1", "user-id-2"]}
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

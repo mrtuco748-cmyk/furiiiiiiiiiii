@@ -1,210 +1,1347 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:audioplayers/audioplayers.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../supabase_config.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
+import 'package:record/record.dart';
+import 'package:video_player/video_player.dart';
+
+import '../models/message.dart';
+import '../providers/chat_provider.dart';
+import '../services/chat_media_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/responsive_wrapper.dart';
-import '../theme/app_theme.dart';
 
 const _c = Color(0xFFFF6B00);
-const _dark = Color(0xFF1A1A1A);
-const _mid = Color(0xFF2A2A2A);
-const _black = Color(0xFF000000);
+const _bg = Color(0xFF1A0F08);
+const _panel = Color(0xFF2A1810);
+const _inputBg = Color(0xFFFF6B00);
+const _darkText = Color(0xFF1A0F08);
+const _errorBg = Color(0xFF5A1010);
 
-class ChatScreen extends StatefulWidget {
-  final String myId; final String partnerId; final String myName; final AppMode mode;
-  const ChatScreen({super.key, required this.myId, required this.partnerId, required this.myName, required this.mode});
+class ChatScreen extends StatelessWidget {
+  final String myId;
+  final String partnerId;
+  final String myName;
+  final AppMode mode;
+
+  const ChatScreen({
+    super.key,
+    required this.myId,
+    required this.partnerId,
+    required this.myName,
+    required this.mode,
+  });
+
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => ChatProvider(myId: myId, partnerId: partnerId)..init(),
+      child: _ChatView(mode: mode),
+    );
+  }
 }
 
-enum _PageState { loading, error, empty, data }
+class _ChatView extends StatefulWidget {
+  final AppMode mode;
+  const _ChatView({required this.mode});
 
-class _ChatScreenState extends State<ChatScreen> {
-  _PageState _state = _PageState.loading;
+  @override
+  State<_ChatView> createState() => _ChatViewState();
+}
+
+class _ChatViewState extends State<_ChatView> {
   final _msgCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _focusNode = FocusNode();
-  RealtimeChannel? _channel;
-  List<Map<String, dynamic>> _messages = [];
-  String _partnerName = '';
-  Map<String, dynamic>? _replyTo;
-  double _swipeOffset = 0;
-  int? _swipingMsgId;
+  final _recorder = AudioRecorder();
+  final _picker = ImagePicker();
+  bool _recording = false;
+  DateTime? _recordStarted;
+  Timer? _recordTicker;
+  int _lastMsgCount = 0;
 
   @override
-  void initState() { super.initState(); _loadMessages(); _subscribeRealtime(); _loadPartnerName(); }
-
-  @override
-  void dispose() { _channel?.unsubscribe(); _msgCtrl.dispose(); _scrollCtrl.dispose(); _focusNode.dispose(); super.dispose(); }
-
-  Future<void> _loadPartnerName() async {
-    if (widget.partnerId.isEmpty) return;
-    try {
-      final data = await SupabaseConfig.client.from('profiles').select('name').eq('id', widget.partnerId).single();
-      if (mounted) setState(() => _partnerName = data['name'] as String? ?? '');
-    } catch (_) {}
-  }
-
-  Future<void> _loadMessages() async {
-    try {
-      final data = await SupabaseConfig.client.from('messages').select('*')
-          .or('from_user.eq.${widget.myId},to_user.eq.${widget.myId}').order('created_at', ascending: false).limit(100);
-      if (!mounted) return;
-      // La query trae los 100 más NUEVOS (desc); se invierten para mostrar cronológico (viejo arriba, nuevo abajo)
-      final newestFirst = List<Map<String, dynamic>>.from(data);
-      setState(() { _messages = newestFirst.reversed.toList(); _state = _messages.isEmpty ? _PageState.empty : _PageState.data; });
-      _scrollToBottom();
-    } catch (_) { if (mounted) setState(() => _state = _PageState.error); }
-  }
-
-  void _subscribeRealtime() {
-    _channel = SupabaseConfig.client.channel('chat').onPostgresChanges(
-      event: PostgresChangeEvent.insert, schema: 'public', table: 'messages',
-      callback: (payload) {
-        final row = payload.newRecord; final sender = row['from_user'] as String? ?? ''; final receiver = row['to_user'] as String? ?? '';
-        if (sender == widget.myId || receiver == widget.myId) {
-          if (mounted) { setState(() { _messages.add(row); _state = _PageState.data; }); _scrollToBottom(); }
-        }
-      },
-    ).onPostgresChanges(
-      event: PostgresChangeEvent.update, schema: 'public', table: 'messages',
-      callback: (payload) {
-        final row = payload.newRecord; final msgId = row['id']; final idx = _messages.indexWhere((m) => m['id'] == msgId);
-        if (idx >= 0 && mounted) setState(() => _messages[idx] = row);
-      },
-    ).subscribe();
+  void dispose() {
+    _recordTicker?.cancel();
+    _recorder.dispose();
+    _msgCtrl.dispose();
+    _scrollCtrl.dispose();
+    _focusNode.dispose();
+    super.dispose();
   }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      if (!_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
     });
   }
 
-  Future<void> _sendMessage() async {
-    final text = _msgCtrl.text.trim();
-    if (text.isEmpty) return;
+  Future<void> _sendText() async {
+    final text = _msgCtrl.text;
+    if (text.trim().isEmpty) return;
     HapticFeedback.heavyImpact();
+    final chat = context.read<ChatProvider>();
+    _msgCtrl.clear();
     try {
-      final msg = <String, dynamic>{'from_user': widget.myId, 'to_user': widget.partnerId, 'content': text};
-      if (_replyTo != null) {
-        final rid = _replyTo!['id'];
-        if (rid != null) {
-          msg['reply_to_id'] = rid is int ? rid : int.tryParse(rid.toString());
-        }
-        msg['reply_content'] = _replyTo!['content']?.toString() ?? '';
-      }
-      await SupabaseConfig.client.from('messages').insert(msg);
-      _msgCtrl.clear();
-      setState(() => _replyTo = null);
+      await chat.sendText(text);
+      _scrollToBottom();
       _focusNode.unfocus();
-    } catch (e) {
-      debugPrint('Chat send error: $e');
-    }
+    } catch (_) {}
   }
 
-  DateTime? _parseDt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(backgroundColor: _dark, body: SafeArea(child: _buildContent()));
-  }
-
-  Widget _buildContent() {
-    return ResponsiveWrapper(builder: (context, w, h) {
-      return SizedBox(width: w, height: h, child: Stack(children: [
-        Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-        _header(w, h), _msgArea(w, h), _inputArea(w, h),
-      ]));
-    });
-  }
-
-  Widget _header(double w, double h) {
-    final barH = h * 0.07;
-    return Positioned(left: 0, top: 0, width: w, height: barH, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _c, border: Border.all(color: _c, width: 4), borderRadius: BorderRadius.circular(18), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)]),
-        child: Row(children: [
-          Expanded(child: Center(child: Text(_partnerName.isNotEmpty ? _partnerName : 'CHAT', style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 18, color: _dark)))),
-        ]))));
-  }
-
-  Widget _msgArea(double w, double h) {
-    final top = h * 0.08; final areaH = h * 0.78;
-    final t = getTheme(widget.mode);
-    return Positioned(left: w * 0.025, top: top, width: w * 0.95, height: areaH, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _mid, border: Border.all(color: _c, width: 4), borderRadius: BorderRadius.circular(18)),
-      child: switch (_state) {
-        _PageState.loading => Center(child: CircularProgressIndicator(color: _c, strokeWidth: 3)),
-        _PageState.error => _errorContent(),
-        _PageState.empty => _emptyContent(),
-        _PageState.data => ListView.builder(controller: _scrollCtrl, padding: const EdgeInsets.all(10), itemCount: _messages.length, itemBuilder: (ctx, i) {
-          final m = _messages[i]; final isMine = (m['from_user'] as String?) == widget.myId; final msgId = m['id']; final isReplying = _replyTo?['id'] == msgId;
-          return GestureDetector(
-            onHorizontalDragUpdate: (d) { if (!isMine) setState(() { _swipingMsgId = msgId; _swipeOffset = (d.delta.dx).clamp(0, 80); }); },
-            onHorizontalDragEnd: (d) {
-              if (_swipeOffset > 40) { HapticFeedback.mediumImpact(); setState(() { _replyTo = m; _swipeOffset = 0; _swipingMsgId = null; }); _focusNode.requestFocus(); }
-              else { setState(() { _swipeOffset = 0; _swipingMsgId = null; }); }
-            },
-            child: Transform.translate(offset: Offset(_swipingMsgId == msgId ? _swipeOffset : (isReplying ? 24 : 0), 0), child: _msgBlock(m, isMine, t)),
-          );
-        }),
-      },
-    )));
-  }
-
-  Widget _msgBlock(Map<String, dynamic> m, bool isMine, ThemeSet t) {
-    final content = m['content']?.toString() ?? '';
-    final raw = _parseDt(m['created_at']);
-    final timeStr = raw != null ? '${raw.hour.toString().padLeft(2,'0')}:${raw.minute.toString().padLeft(2,'0')}' : '';
-    final blockColor = isMine ? t.a : t.e; final borderColor = blockColor;
-    final textColor = isMine ? t.dark : t.light;
-    final subColor = isMine ? t.dark.withValues(alpha: 0.6) : Colors.white38;
-    final read = m['read'] == true; final starred = m['starred'] == true;
-    final replyContent = m['reply_content']?.toString();
-    return Padding(
-      padding: EdgeInsets.only(bottom: 8, left: isMine ? 60 : 4, right: isMine ? 4 : 60),
-      child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: blockColor, border: Border.all(color: borderColor, width: 3), borderRadius: BorderRadius.circular(18), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)]),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          if (replyContent != null && replyContent.isNotEmpty)
-            Container(margin: const EdgeInsets.only(bottom: 4), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white24, width: 1)), child: Text(replyContent, style: GoogleFonts.bangers(fontSize: 10, color: Colors.white54), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          Text(content, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 15, color: textColor)),
-          const SizedBox(height: 4),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(timeStr, style: GoogleFonts.bangers(fontSize: 10, color: subColor)),
-            if (isMine) ...[const SizedBox(width: 4), Icon(read ? Icons.done_all : Icons.done, size: 14, color: subColor)],
-            if (starred) ...[const SizedBox(width: 4), Icon(Icons.star, size: 12, color: t.d)],
-          ]),
-        ]),
-      )),
+  Future<void> _pickImage({required bool fromCamera}) async {
+    final file = await _picker.pickImage(
+      source: fromCamera ? ImageSource.camera : ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (file == null || !mounted) return;
+    await _sendPicked(
+      path: file.path,
+      name: file.name,
+      mime: file.mimeType ?? 'image/jpeg',
+      type: 'image',
     );
   }
 
-  Widget _errorContent() => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    Icon(Icons.cloud_off, color: _c.withValues(alpha: 0.5), size: 60),
-    const SizedBox(height: 10),
-    GestureDetector(onTap: () { HapticFeedback.heavyImpact(); _loadMessages(); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(14), border: Border.all(color: _c, width: 3)), child: Icon(Icons.refresh, color: _dark, size: 28))),
-  ]));
+  Future<void> _pickVideo() async {
+    final file = await _picker.pickVideo(source: ImageSource.gallery);
+    if (file == null || !mounted) return;
+    await _sendPicked(
+      path: file.path,
+      name: file.name,
+      mime: file.mimeType ?? 'video/mp4',
+      type: 'video',
+    );
+  }
 
-  Widget _emptyContent() => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    Icon(Icons.chat_bubble_outline, color: _c.withValues(alpha: 0.5), size: 60), const SizedBox(height: 8),
-    Text('Inicia la conversacion', style: GoogleFonts.bangers(color: _c.withValues(alpha: 0.5), fontSize: 16)),
-  ]));
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      withData: false,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final f = result.files.single;
+    if (f.path == null) return;
+    final type = ChatMediaService.guessMessageType(
+      mime: f.extension == 'gif' ? 'image/gif' : null,
+      fileName: f.name,
+    );
+    await _sendPicked(
+      path: f.path!,
+      name: f.name,
+      mime: f.extension != null ? _mimeFromExt(f.extension!) : null,
+      type: type,
+      size: f.size,
+    );
+  }
 
-  Widget _inputArea(double w, double h) {
-    final hasReply = _replyTo != null; final top = hasReply ? h * 0.82 : 0.87; final areaH = hasReply ? h * 0.14 : 0.09;
-    return Positioned(left: w * 0.05, top: h * top, width: w * 0.90, height: h * areaH, child: Column(children: [
-      if (hasReply)
-        Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), margin: const EdgeInsets.only(bottom: 4), decoration: BoxDecoration(color: _c, border: Border.all(color: _c, width: 2), borderRadius: BorderRadius.circular(18)), child: Row(children: [
-          Icon(Icons.reply, color: _dark, size: 16), const SizedBox(width: 8),
-          Expanded(child: Text(_replyTo!['content']?.toString() ?? '', style: GoogleFonts.bangers(color: _dark, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          GestureDetector(onTap: () => setState(() => _replyTo = null), child: Icon(Icons.close, color: _dark, size: 18)),
-        ])),
-      Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _c, border: Border.all(color: _c, width: 4), borderRadius: BorderRadius.circular(18)),
-        child: Row(children: [
-          const SizedBox(width: 10),
-          Expanded(child: TextField(controller: _msgCtrl, focusNode: _focusNode, style: GoogleFonts.bangers(color: _dark, fontSize: 14), decoration: const InputDecoration(hintText: 'Mensaje...', hintStyle: TextStyle(color: Color(0xFF220000)), border: InputBorder.none), onSubmitted: (_) => _sendMessage())),
-          GestureDetector(onTap: _sendMessage, child: Container(width: 40, height: 40, margin: const EdgeInsets.all(4), decoration: BoxDecoration(color: _dark, borderRadius: BorderRadius.circular(12), border: Border.all(color: _dark, width: 2)), child: const Icon(Icons.send, color: Color(0xFFFF6B00), size: 18))),
-        ])))),
-    ]));
+  String? _mimeFromExt(String ext) {
+    switch (ext.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'm4a':
+        return 'audio/mp4';
+      case 'wav':
+        return 'audio/wav';
+      case 'pdf':
+        return 'application/pdf';
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _sendPicked({
+    required String path,
+    required String name,
+    required String type,
+    String? mime,
+    int? size,
+  }) async {
+    HapticFeedback.mediumImpact();
+    final chat = context.read<ChatProvider>();
+    try {
+      await chat.sendMedia(
+        localPath: path,
+        messageType: type,
+        fileName: name,
+        mimeType: mime,
+        size: size,
+      );
+      _scrollToBottom();
+    } catch (_) {}
+  }
+
+  Future<void> _toggleRecord() async {
+    if (_recording) {
+      final path = await _recorder.stop();
+      _recordTicker?.cancel();
+      setState(() {
+        _recording = false;
+        _recordStarted = null;
+      });
+      if (path == null || !mounted) return;
+      final secs = _recordStarted == null
+          ? 0
+          : DateTime.now().difference(_recordStarted!).inSeconds;
+      await _sendPicked(
+        path: path,
+        name: 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a',
+        mime: 'audio/mp4',
+        type: 'voice',
+      );
+      if (mounted && secs > 0) {
+        // caption opcional con duración ya va en content=filename
+      }
+      return;
+    }
+
+    final mic = await Permission.microphone.request();
+    if (!mic.isGranted) return;
+    if (!await _recorder.hasPermission()) return;
+
+    final dir = Directory.systemTemp;
+    final out = '${dir.path}/furi_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: out,
+    );
+    setState(() {
+      _recording = true;
+      _recordStarted = DateTime.now();
+    });
+    _recordTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _showAttachSheet() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        Widget item(IconData icon, String label, VoidCallback onTap) {
+          return GestureDetector(
+            onTap: () {
+              Navigator.pop(ctx);
+              onTap();
+            },
+            child: Container(
+              width: 72,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: _c,
+                border: Border.all(color: _c, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: _darkText, size: 26),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    style: GoogleFonts.bangers(fontSize: 11, color: _darkText),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                item(Icons.photo_library, 'Galeria', () => _pickImage(fromCamera: false)),
+                item(Icons.camera_alt, 'Camara', () => _pickImage(fromCamera: true)),
+                item(Icons.videocam, 'Video', _pickVideo),
+                item(Icons.attach_file, 'Archivo', _pickFile),
+                item(Icons.gif_box, 'GIF', () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: const ['gif'],
+                  );
+                  if (result == null || result.files.single.path == null) return;
+                  final f = result.files.single;
+                  await _sendPicked(
+                    path: f.path!,
+                    name: f.name,
+                    mime: 'image/gif',
+                    type: 'gif',
+                    size: f.size,
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showReactionBar(Message msg) {
+    HapticFeedback.mediumImpact();
+    final chat = context.read<ChatProvider>();
+    showDialog<void>(
+      context: context,
+      barrierColor: const Color(0x88000000),
+      builder: (ctx) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              decoration: BoxDecoration(
+                color: _panel,
+                border: Border.all(color: _panel, width: 2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final e in Message.defaultReactionEmojis)
+                    _ReactChip(
+                      label: e,
+                      selected: msg.myReactionKey(chat.myId) == e,
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await chat.toggleReaction(msg, e);
+                      },
+                    ),
+                  _ReactChip(
+                    label: '+',
+                    selected: false,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final custom = await _askCustomReaction();
+                      if (custom == null || custom.isEmpty) return;
+                      await chat.toggleReaction(msg, custom);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String?> _askCustomReaction() async {
+    final ctrl = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: _panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: _panel, width: 2),
+          ),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            maxLength: 12,
+            style: GoogleFonts.bangers(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              counterStyle: GoogleFonts.bangers(color: Colors.white38),
+              filled: true,
+              fillColor: _bg,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _bg, width: 2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _bg, width: 2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _c, width: 2),
+              ),
+            ),
+          ),
+          actions: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _bg,
+                  border: Border.all(color: _bg, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.close, color: Colors.white70, size: 22),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _c,
+                  border: Border.all(color: _c, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.check, color: _darkText, size: 22),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    ctrl.dispose();
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chat = context.watch<ChatProvider>();
+    final t = getTheme(widget.mode);
+
+    if (chat.messages.length != _lastMsgCount) {
+      _lastMsgCount = chat.messages.length;
+      _scrollToBottom();
+    }
+
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: ResponsiveWrapper(
+          builder: (context, w, h) {
+            return SizedBox(
+              width: w,
+              height: h,
+              child: Stack(
+                children: [
+                  Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
+                  _header(w, h, chat),
+                  _msgArea(w, h, chat, t),
+                  if (chat.error != null) _errorBanner(w, h, chat),
+                  if (chat.replyTo != null) _replyBanner(w, h, chat),
+                  _inputArea(w, h, chat),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _header(double w, double h, ChatProvider chat) {
+    final barH = h * 0.07;
+    return Positioned(
+      left: 0,
+      top: 0,
+      width: w,
+      height: barH,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _c,
+          border: Border.all(color: _c, width: 3),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.of(context).maybePop(),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Icon(Icons.arrow_back, color: _darkText, size: 22),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  chat.partnerName.isNotEmpty ? chat.partnerName : 'CHAT',
+                  style: GoogleFonts.bangers(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: _darkText,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 46),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _errorBanner(double w, double h, ChatProvider chat) {
+    return Positioned(
+      left: w * 0.05,
+      top: h * 0.075,
+      width: w * 0.9,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: _errorBg,
+          border: Border.all(color: _errorBg, width: 2),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                chat.error ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.bangers(color: Colors.white, fontSize: 12),
+              ),
+            ),
+            GestureDetector(
+              onTap: chat.clearError,
+              child: const Icon(Icons.close, color: Colors.white70, size: 18),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _msgArea(double w, double h, ChatProvider chat, ThemeSet t) {
+    final top = h * 0.08;
+    final areaH = h * 0.76;
+    return Positioned(
+      left: w * 0.025,
+      top: top,
+      width: w * 0.95,
+      height: areaH,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _panel,
+          border: Border.all(color: _panel, width: 3),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: switch (chat.state) {
+          ChatLoadState.loading => const Center(
+              child: CircularProgressIndicator(color: _c, strokeWidth: 3),
+            ),
+          ChatLoadState.error => Center(
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.heavyImpact();
+                  chat.loadMessages();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _c,
+                    border: Border.all(color: _c, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.refresh, color: _darkText, size: 28),
+                ),
+              ),
+            ),
+          ChatLoadState.empty => Center(
+              child: Icon(
+                Icons.chat_bubble_outline,
+                color: _c.withValues(alpha: 0.5),
+                size: 60,
+              ),
+            ),
+          ChatLoadState.data => ListView.builder(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+              itemCount: chat.messages.length,
+              itemBuilder: (ctx, i) {
+                final m = chat.messages[i];
+                final isMine = m.fromUser == chat.myId;
+                return _SwipeToReply(
+                  onReply: () {
+                    HapticFeedback.mediumImpact();
+                    chat.setReplyTo(m);
+                    _focusNode.requestFocus();
+                  },
+                  child: _MessageTile(
+                    message: m,
+                    isMine: isMine,
+                    theme: t,
+                    downloading: chat.isDownloading(m.id),
+                    onLongPress: () => _showReactionBar(m),
+                    onReactionTap: (key) => chat.toggleReaction(m, key),
+                    onDownload: () => chat.downloadMedia(m),
+                  ),
+                );
+              },
+            ),
+        },
+      ),
+    );
+  }
+
+  Widget _inputArea(double w, double h, ChatProvider chat) {
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
+    final recLabel = _recording && _recordStarted != null
+        ? '${DateTime.now().difference(_recordStarted!).inSeconds}s'
+        : '';
+
+    return Positioned(
+      left: w * 0.04,
+      bottom: keyboard + 8,
+      width: w * 0.92,
+      height: h * 0.09,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _inputBg,
+          border: Border.all(color: _inputBg, width: 3),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: chat.sending ? null : _showAttachSheet,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _darkText,
+                  border: Border.all(color: _darkText, width: 2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.add, color: _c, size: 20),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _recording
+                  ? Text(
+                      'Grabando $recLabel',
+                      style: GoogleFonts.bangers(
+                        color: _darkText,
+                        fontSize: 14,
+                      ),
+                    )
+                  : TextField(
+                      controller: _msgCtrl,
+                      focusNode: _focusNode,
+                      style: GoogleFonts.bangers(
+                        color: _darkText,
+                        fontSize: 14,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Mensaje...',
+                        hintStyle: TextStyle(color: Color(0xFF5A2200)),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _sendText(),
+                    ),
+            ),
+            GestureDetector(
+              onTap: chat.sending ? null : _toggleRecord,
+              child: Container(
+                width: 36,
+                height: 36,
+                margin: const EdgeInsets.only(right: 4),
+                decoration: BoxDecoration(
+                  color: _recording ? const Color(0xFFFF1744) : _darkText,
+                  border: Border.all(
+                    color: _recording ? const Color(0xFFFF1744) : _darkText,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  _recording ? Icons.stop : Icons.mic,
+                  color: _recording ? Colors.white : _c,
+                  size: 18,
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: chat.sending ? null : _sendText,
+              child: Container(
+                width: 40,
+                height: 40,
+                margin: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: _darkText,
+                  border: Border.all(color: _darkText, width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: chat.sending
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _c,
+                        ),
+                      )
+                    : const Icon(Icons.send, color: _c, size: 18),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _replyBanner(double w, double h, ChatProvider chat) {
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
+    return Positioned(
+      left: w * 0.04,
+      bottom: keyboard + 8 + h * 0.09 + 4,
+      width: w * 0.92,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: _c,
+          border: Border.all(color: _c, width: 2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.reply, color: _darkText, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                chat.replyTo!.previewText,
+                style: GoogleFonts.bangers(color: _darkText, fontSize: 12),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            GestureDetector(
+              onTap: chat.clearReply,
+              child: const Icon(Icons.close, color: _darkText, size: 18),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ReactChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = selected ? _c : _bg;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border.all(color: bg, width: 2),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: label == '+' ? 22 : 18,
+              fontWeight: FontWeight.bold,
+              color: selected ? _darkText : Colors.white,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Swipe horizontal acumulado (WhatsApp-like) en CUALQUIER mensaje.
+class _SwipeToReply extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onReply;
+  const _SwipeToReply({required this.child, required this.onReply});
+
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  double _dx = 0;
+  static const _max = 72.0;
+  static const _threshold = 42.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    )..addListener(() {
+      if (_ctrl.isAnimating) {
+        setState(() => _dx = _ctrl.value * _max);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _snapBack() {
+    final from = _dx;
+    if (from <= 0) return;
+    _ctrl.value = from / _max;
+    _ctrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (_dx / _threshold).clamp(0.0, 1.0);
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: (_) {
+        _ctrl.stop();
+        setState(() => _dx = 0);
+      },
+      onHorizontalDragUpdate: (d) {
+        setState(() {
+          _dx = (_dx + d.delta.dx).clamp(0.0, _max);
+        });
+      },
+      onHorizontalDragEnd: (_) {
+        final trigger = _dx >= _threshold;
+        _snapBack();
+        if (trigger) widget.onReply();
+      },
+      onHorizontalDragCancel: _snapBack,
+      child: Stack(
+        alignment: Alignment.centerLeft,
+        children: [
+          Opacity(
+            opacity: progress,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Icon(Icons.reply, color: _c.withValues(alpha: progress), size: 22),
+            ),
+          ),
+          Transform.translate(
+            offset: Offset(_dx, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MessageTile extends StatelessWidget {
+  final Message message;
+  final bool isMine;
+  final ThemeSet theme;
+  final bool downloading;
+  final VoidCallback onLongPress;
+  final void Function(String key) onReactionTap;
+  final VoidCallback onDownload;
+
+  const _MessageTile({
+    required this.message,
+    required this.isMine,
+    required this.theme,
+    required this.downloading,
+    required this.onLongPress,
+    required this.onReactionTap,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final blockColor = isMine ? theme.a : theme.e;
+    final textColor = isMine ? theme.dark : theme.light;
+    final subColor = isMine ? theme.dark.withValues(alpha: 0.6) : Colors.white38;
+    final raw = message.createdAt;
+    final timeStr = raw != null
+        ? '${raw.hour.toString().padLeft(2, '0')}:${raw.minute.toString().padLeft(2, '0')}'
+        : '';
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: message.reactions.isEmpty ? 8 : 14,
+        left: isMine ? 48 : 4,
+        right: isMine ? 4 : 48,
+      ),
+      child: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: GestureDetector(
+          onLongPress: onLongPress,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.72,
+                ),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: blockColor,
+                  border: Border.all(color: blockColor, width: 3),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (message.replyContent != null &&
+                        message.replyContent!.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _panel,
+                          border: Border.all(
+                            color: _panel,
+                            width: 2,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          message.replyContent!,
+                          style: GoogleFonts.bangers(
+                            fontSize: 11,
+                            color: _c,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    _MediaBody(
+                      message: message,
+                      textColor: textColor,
+                      downloading: downloading,
+                      onDownload: onDownload,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          timeStr,
+                          style: GoogleFonts.bangers(fontSize: 10, color: subColor),
+                        ),
+                        if (isMine) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            message.read ? Icons.done_all : Icons.done,
+                            size: 14,
+                            color: subColor,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (message.reactions.isNotEmpty)
+                Positioned(
+                  bottom: -12,
+                  right: isMine ? 8 : null,
+                  left: isMine ? null : 8,
+                  child: _ReactionsRow(
+                    reactions: message.reactions,
+                    onTap: onReactionTap,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactionsRow extends StatelessWidget {
+  final Map<String, List<String>> reactions;
+  final void Function(String key) onTap;
+  const _ReactionsRow({required this.reactions, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: _panel,
+        border: Border.all(color: _panel, width: 2),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final e in reactions.entries)
+            GestureDetector(
+              onTap: () => onTap(e.key),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Text(
+                  e.value.length > 1 ? '${e.key}${e.value.length}' : e.key,
+                  style: const TextStyle(fontSize: 13, color: Colors.white),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MediaBody extends StatelessWidget {
+  final Message message;
+  final Color textColor;
+  final bool downloading;
+  final VoidCallback onDownload;
+
+  const _MediaBody({
+    required this.message,
+    required this.textColor,
+    required this.downloading,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!message.isMedia) {
+      return Text(
+        message.content,
+        style: GoogleFonts.bangers(
+          fontWeight: FontWeight.bold,
+          fontSize: 15,
+          color: textColor,
+        ),
+      );
+    }
+
+    if (message.hasLocalMedia) {
+      return _LocalMediaView(message: message, textColor: textColor);
+    }
+
+    if (message.needsCloudDownload || downloading) {
+      return GestureDetector(
+        onTap: downloading ? null : onDownload,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF3A2418),
+            border: Border.all(color: const Color(0xFF3A2418), width: 2),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (downloading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _c),
+                )
+              else
+                Icon(_iconFor(message.messageType), color: textColor, size: 22),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  downloading
+                      ? 'Descargando...'
+                      : (message.attachmentName ?? message.previewText),
+                  style: GoogleFonts.bangers(fontSize: 13, color: textColor),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (!downloading) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.download, color: textColor, size: 18),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // cloud borrado y sin local
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.cloud_off, color: textColor.withValues(alpha: 0.7), size: 18),
+        const SizedBox(width: 6),
+        Text(
+          message.attachmentName ?? message.previewText,
+          style: GoogleFonts.bangers(fontSize: 13, color: textColor),
+        ),
+      ],
+    );
+  }
+
+  IconData _iconFor(String type) {
+    switch (type) {
+      case 'image':
+      case 'gif':
+        return Icons.image;
+      case 'video':
+        return Icons.videocam;
+      case 'voice':
+        return Icons.mic;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
+}
+
+class _LocalMediaView extends StatelessWidget {
+  final Message message;
+  final Color textColor;
+  const _LocalMediaView({required this.message, required this.textColor});
+
+  @override
+  Widget build(BuildContext context) {
+    final path = message.localPath!;
+    switch (message.messageType) {
+      case 'image':
+      case 'gif':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(
+                File(path),
+                width: 220,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  Icons.broken_image,
+                  color: textColor,
+                  size: 40,
+                ),
+              ),
+            ),
+            if (message.content.isNotEmpty &&
+                message.content != message.attachmentName) ...[
+              const SizedBox(height: 6),
+              Text(
+                message.content,
+                style: GoogleFonts.bangers(fontSize: 14, color: textColor),
+              ),
+            ],
+          ],
+        );
+      case 'video':
+        return _VideoThumb(path: path, textColor: textColor);
+      case 'voice':
+        return _AudioPlayerTile(path: path, textColor: textColor);
+      default:
+        return GestureDetector(
+          onTap: () => OpenFilex.open(path),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.insert_drive_file, color: textColor, size: 22),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  message.attachmentName ?? message.content,
+                  style: GoogleFonts.bangers(fontSize: 13, color: textColor),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(Icons.open_in_new, color: textColor, size: 16),
+            ],
+          ),
+        );
+    }
+  }
+}
+
+class _VideoThumb extends StatefulWidget {
+  final String path;
+  final Color textColor;
+  const _VideoThumb({required this.path, required this.textColor});
+
+  @override
+  State<_VideoThumb> createState() => _VideoThumbState();
+}
+
+class _VideoThumbState extends State<_VideoThumb> {
+  VideoPlayerController? _ctrl;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = VideoPlayerController.file(File(widget.path))
+      ..initialize().then((_) {
+        if (mounted) setState(() => _ready = true);
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready || _ctrl == null) {
+      return SizedBox(
+        width: 200,
+        height: 120,
+        child: Center(
+          child: CircularProgressIndicator(color: widget.textColor, strokeWidth: 2),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: () {
+        final c = _ctrl!;
+        setState(() {
+          c.value.isPlaying ? c.pause() : c.play();
+        });
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 220,
+          child: AspectRatio(
+            aspectRatio: _ctrl!.value.aspectRatio == 0
+                ? 16 / 9
+                : _ctrl!.value.aspectRatio,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                VideoPlayer(_ctrl!),
+                if (!_ctrl!.value.isPlaying)
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _bg,
+                      border: Border.all(color: _bg, width: 2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(Icons.play_arrow, color: _c, size: 28),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AudioPlayerTile extends StatefulWidget {
+  final String path;
+  final Color textColor;
+  const _AudioPlayerTile({required this.path, required this.textColor});
+
+  @override
+  State<_AudioPlayerTile> createState() => _AudioPlayerTileState();
+}
+
+class _AudioPlayerTileState extends State<_AudioPlayerTile> {
+  final _player = AudioPlayer();
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    if (_playing) {
+      await _player.stop();
+      setState(() => _playing = false);
+      return;
+    }
+    await _player.play(DeviceFileSource(widget.path));
+    setState(() => _playing = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _toggle,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _playing ? Icons.stop : Icons.play_arrow,
+            color: widget.textColor,
+            size: 26,
+          ),
+          const SizedBox(width: 6),
+          Icon(Icons.graphic_eq, color: widget.textColor, size: 20),
+          const SizedBox(width: 6),
+          Text(
+            'Audio',
+            style: GoogleFonts.bangers(fontSize: 13, color: widget.textColor),
+          ),
+        ],
+      ),
+    );
   }
 }
