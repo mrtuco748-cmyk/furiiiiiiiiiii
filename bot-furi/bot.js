@@ -262,6 +262,37 @@ async function verificarYNotificar(sock) {
     }
   }
 
+  // ── 1b. CLASS_SCHEDULES (clases recurrentes por dia de semana) ──
+  const { data: classSchedules } = await supabase
+    .from('class_schedules')
+    .select('*');
+
+  if (classSchedules && classSchedules.length > 0) {
+    // day_of_week se guarda con convencion Dart (1=lunes ... 7=domingo),
+    // mientras que Date.getDay() es 0=domingo ... 6=sabado.
+    const jsDia = new Date().getDay();
+    const diaDeHoy = jsDia === 0 ? 7 : jsDia;
+    for (const c of classSchedules) {
+      if (c.day_of_week !== diaDeHoy) continue;
+      const inicio = new Date(`${hoy}T${c.start_time}`);
+      if (inicio <= enDosHoras && inicio > ahora) {
+        const key = `class-${c.id}-${hoy}-${c.start_time}`;
+        if (!(await yaNotificado('class_schedules', key))) {
+          const minutos = Math.round((inicio - ahora) / 60000);
+          const horario = c.end_time
+            ? `${formatHora(c.start_time)} - ${formatHora(c.end_time)}`
+            : formatHora(c.start_time);
+          mensajes.push(
+            `📚 *Clase: ${c.title}*\n` +
+            `⏰ ${horario}\n` +
+            `⏳ En ${minutos} minutos`
+          );
+          await marcarNotificado('class_schedules', key, 'proximo', MI_NUMERO, c.title);
+        }
+      }
+    }
+  }
+
   // ── 2. ANNIVERSARIES ──
   const { data: anniversaries } = await supabase
     .from('anniversaries')

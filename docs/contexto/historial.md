@@ -1,5 +1,31 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-06] - BUGFIX - Notificaciones del chat duplicadas con la app abierta
+**Resumen**: Cada mensaje nuevo generaba 2 notificaciones locales cuando la app estaba abierta. Habia dos mecanismos simultaneos para el mismo evento: el push FCM (trigger `notify_new_message` -> Edge Function `send-push` -> `onMessage` -> `_showLocalNotification`) y el Realtime local (`startListening` escucha INSERT en `messages` -> `_showLocalNotification`). Ambos mostraban una notificacion para el mismo mensaje.
+**Cambios realizados**:
+- `lib/services/notification_service.dart` (`_listenFCMForeground`): ahora ignora los mensajes de FCM con `data['type'] == 'message'`, porque ese caso ya lo cubre el Realtime cuando la app esta abierta. El push FCM sigue funcionando para app cerrada (background handler), y el Realtime cubre app abierta. Resultado: 1 notificacion por mensaje.
+- Tests 45 verdes, analyze sin errores nuevos en el archivo.
+**Lecciones**:
+- En este stack hay doble via de notificacion para el chat: FCM (por trigger de BD, pensado para app cerrada) y Realtime local (para app abierta). Cuando la app esta en foreground ambos se disparan y duplican. La solucion es que FCM foreground no muestre el tipo `message` y delegue al Realtime.
+- El `onMessage` de FCM se dispara tambien con la app abierta; no hay que mostrar localmente lo que ya muestra el canal Realtime.
+**Impacto**: `lib/services/notification_service.dart`
+**Relacionado con**: D-7 (FCM), errores-conocidos (sin nuevo)
+
+## [2026-08-06] - FEATURE - Bot WhatsApp: clases recurrentes en Supabase + aviso antes de empezar
+**Resumen**: Las clases configuradas vivian solo en SQLite local (`class_schedules` del dispositivo), por lo que el bot de WhatsApp (que solo consulta Supabase) no podia avisar cuando empiezan. Se agrego la tabla `class_schedules` en Supabase, doble escritura en el provider, y una categoria #14 de clases en el bot que avisa el titulo y horario de las clases de hoy en las proximas 2h.
+**Cambios realizados**:
+- `supabase/migration_class_schedules.sql` (nuevo): crea la tabla `class_schedules` (id BIGSERIAL PK, `day_of_week` int, `class_type_id` bigint, `start_time`/`end_time` text, `title`, `professor`, `user_id` text, `color` int default 4286262670 = 0xFF7B2D8E, `created_at`/`updated_at` timestamptz) + indice por `day_of_week`. Idempotente (IF NOT EXISTS). Pendiente ejecutar en SQL Editor.
+- `lib/models/class_schedule.dart`: nuevo `toSupabaseMap()` que mapea a snake_case (`day_of_week`, `start_time`, `end_time`, `user_id`, `color`).
+- `lib/providers/class_schedule_provider.dart`: `addSchedule`, `updateSchedule` y `deleteSchedule` ahora sincronizan con Supabase (ademas de SQLite). Insert reserva el id autoincremental de SQLite (no se usa como PK cloud); `_pushToSupabase(map, id)` hace update vs insert segun corresponda.
+- `bot-furi/bot.js`: nueva categoria #14 `CLASS_SCHEDULES`. Consulta `class_schedules`, filtra las de hoy (`day_of_week === hoy`), y avisa las que empiecen en las proximas 2h con `📚 *Clase: titulo*` + horario (inicio o inicio-fin) + "En X minutos". Tracking key `class-{id}-{date}-{start_time}`.
+- `docs/contexto/bot-whatsapp.md`: tabla ahora lista 14 categorias (arreglado: antes decia 14 pero el titulo era "12"). `docs/contexto/glosario.md`: `class_schedules` ahora SQLite + Supabase.
+**Lecciones**:
+- No hay RPC `pg_sql` disponible en el proyecto; para DDL hay que ejecutar la migracion en el SQL Editor de Supabase (manual, como las demas).
+- La conversel de dia es trampa: Dart `DateTime.weekday` es 1=lunes..7=domingo, pero JS `Date.getDay()` es 0=domingo..6=sabado. Hay que convertir `jsDia === 0 ? 7 : jsDia` antes de comparar con `day_of_week`.
+- El bot avisa clases a TODOS los destinatarios (no separa por `user_id`); el `user_id` de la clase se usa para saber de quien es, pero el aviso se manda a FACU y ROCIO por igual (la app es de pareja compartida).
+**Impacto**: `supabase/migration_class_schedules.sql`, `lib/models/class_schedule.dart`, `lib/providers/class_schedule_provider.dart`, `bot-furi/bot.js`, docs.
+**Relacionado con**: D-3 (SQLite), D-10 (bot), bot-whatsapp.md
+
 ## [2026-08-06] - FEATURE - Bot WhatsApp: categoria #13 de preguntas del boton ❓
 **Resumen**: El bot no avisaba cuando alguien creaba/respondia una pregunta en la seccion "Nosotros" (boton ❓). La causa: esa pantalla guarda las preguntas en la tabla `custom_questions` (no en `daily_questions`/`question_answers`, que estaban vacias), y el bot no tenia categoria para esa tabla. El usuario creo carta, reto, pregunta y favorito, corrio el bot manualmente en GitHub Actions y no le llego nada por WhatsApp.
 **Cambios realizados**:

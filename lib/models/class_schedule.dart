@@ -44,4 +44,15 @@ class ClassSchedule {
     userId: (map['userId'] as String?) ?? '',
     color: (map['color'] as int?) ?? 0xFF7B2D8E,
   );
+
+  Map<String, dynamic> toSupabaseMap() => {
+    'day_of_week': dayOfWeek,
+    'class_type_id': classTypeId,
+    'start_time': startTime,
+    'title': title,
+    'end_time': endTime,
+    'professor': professor,
+    'user_id': userId,
+    'color': color,
+  };
 }

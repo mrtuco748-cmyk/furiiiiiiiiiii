@@ -52,7 +52,7 @@ CREATE TABLE bot_notificaciones (
 ```
 Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro_id)` ya existe.
 
-## Categorias notificadas (12)
+## Categorias notificadas (14)
 
 | # | Tabla | Icono | Regla | Tracking key |
 |---|-------|-------|-------|-------------|
@@ -69,6 +69,7 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 | 11 | gallery | 🖼️ | Ultima 1h | `gallery-{id}` |
 | 12 | timeline_events | 🕐 | Ultima 1h | `timeline-{id}` |
 | 13 | custom_questions | ❓ | Ultima 1h (nueva/respondida) | `question-{id}` |
+| 14 | class_schedules | 📚 | Clases de hoy en proximas 2h (titulo + horario) | `class-{id}-{date}-{startTime}` |
 
 **No notifica**: messages (ya tienen push via FCM)
 
@@ -86,7 +87,7 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
    └── Si no hay sesion guardada, muestra QR en terminal
 6. saveSessionToSupabase() (guarda por si acaba de escanear QR)
 7. verificarYNotificar(sock)
-   └── Itera las 13 categorias
+   └── Itera las 14 categorias
    └── yaNotificado(tabla, key) para cada registro
    └── Acumula mensajes[]
    └── Si hay mensajes, los une con header y envia
