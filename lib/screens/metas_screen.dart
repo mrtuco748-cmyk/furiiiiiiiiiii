@@ -33,7 +33,10 @@ class _MetasScreenState extends State<MetasScreen> {
 
   Future<void> _toggle(Map<String, dynamic> m) async {
     final completed = m['completed'] as bool? ?? false;
-    await SupabaseConfig.client.from('goals').update({'completed': !completed}).eq('id', m['id']);
+    await SupabaseConfig.client.from('goals').update({
+      'completed': !completed,
+      'completed_by': completed ? null : AppState.myId,
+    }).eq('id', m['id']);
     _loadMetas();
   }
 
@@ -103,10 +106,16 @@ class _MetasScreenState extends State<MetasScreen> {
     return Positioned(left: pad, top: top, width: w - pad * 2, height: h - top - pad,
       child: ListView.builder(itemCount: _metas.length, itemBuilder: (context, i) {
         final meta = _metas[i]; final completed = meta['completed'] as bool? ?? false; final title = meta['title'] as String? ?? ''; final description = meta['description'] as String? ?? '';
+        final myInitial = AppState.identity?.substring(0, 1).toUpperCase() ?? '?';
+        final completedBy = meta['completed_by'] as String?;
+        final doneInitial = completed && completedBy != null ? (completedBy == AppState.myId ? myInitial : (myInitial == 'F' ? 'R' : 'F')) : null;
         return Padding(padding: const EdgeInsets.only(bottom: 8), child: ClipRRect(borderRadius: BorderRadius.circular(18),
           child: Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: completed ? t.e.withValues(alpha: 0.15) : t.e.withValues(alpha: 0.20), border: Border.all(color: completed ? t.d : t.e, width: 3), borderRadius: BorderRadius.circular(18), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)]),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              GestureDetector(onTap: () => _toggle(meta), child: Icon(completed ? Icons.emoji_events : Icons.emoji_events_outlined, color: completed ? t.d : t.e, size: 24)),
+              Column(children: [
+                GestureDetector(onTap: () => _toggle(meta), child: Icon(completed ? Icons.emoji_events : Icons.emoji_events_outlined, color: completed ? t.d : t.e, size: 24)),
+                if (doneInitial != null) Padding(padding: const EdgeInsets.only(top: 2), child: Container(width: 18, height: 18, alignment: Alignment.center, decoration: BoxDecoration(color: completed ? t.d : t.mid, borderRadius: BorderRadius.circular(6)), child: Text(doneInitial, style: GoogleFonts.bangers(color: t.light, fontSize: 10, fontWeight: FontWeight.w900)))),
+              ]),
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(title, style: GoogleFonts.bangers(color: t.light, fontSize: 14, fontWeight: FontWeight.bold, decoration: completed ? TextDecoration.lineThrough : null)),

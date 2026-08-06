@@ -237,7 +237,27 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         .eq('from_user', widget.partnerId!)
         .order('created_at', ascending: false)
         .limit(1);
-    return data.isNotEmpty ? data[0] : null;
+    if (data.isEmpty) return null;
+    final letter = data[0] as Map<String, dynamic>;
+    // Solo presenta cartas no leidas por el usuario actual.
+    await _markSeen(letter, 'letters');
+    return letter['seen_by'] != null &&
+            (letter['seen_by'] as List).contains(widget.myId)
+        ? null
+        : letter;
+  }
+
+  // Marca como "visto" el registro actual (agrega myId al array seen_by).
+  Future<void> _markSeen(Map<String, dynamic> record, String table) async {
+    final list = (record['seen_by'] as List?)?.cast<String>() ?? <String>[];
+    if (list.contains(widget.myId)) return;
+    list.add(widget.myId);
+    record['seen_by'] = list;
+    try {
+      await SupabaseConfig.client.from(table).update({'seen_by': list}).eq('id', record['id']);
+    } catch (e) {
+      debugPrint('Nosotros _markSeen error: $e');
+    }
   }
 
   Future<List<Map<String, dynamic>>> _loadTodayMoods() async {
@@ -426,8 +446,8 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
 
   Widget _buildCartasIcon(ThemeSet t) {
     if (_partnerLetter != null) {
-      final isOpened = _partnerLetter!['is_opened'] as bool? ?? false;
-      if (!isOpened) {
+      final seenByMe = ((_partnerLetter!['seen_by'] as List?) ?? []).contains(widget.myId);
+      if (!seenByMe) {
         return Icon(Icons.markunread_mailbox, color: t.light, size: 80);
       }
     }
@@ -435,7 +455,9 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
   }
 
   List<Map<String, dynamic>> get _partnerRetos =>
-      _challenges.where((c) => c['couple_id'] == widget.partnerId).toList();
+      _challenges.where((c) =>
+          c['couple_id'] == widget.partnerId &&
+          (c['completed'] as bool? ?? false) == false).toList();
 
   Widget _buildRetosSwapContent(ThemeSet t) {
     final retos = _partnerRetos;
@@ -444,6 +466,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
     }
     final random = retos[Random().nextInt(retos.length)];
     final title = random['title'] as String? ?? '';
+    _markSeen(random, 'challenges');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(6),
