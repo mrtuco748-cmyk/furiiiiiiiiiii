@@ -1,5 +1,29 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-06] - BUGFIX - Chat: barra de escribir saltaba arriba con el teclado
+**Resumen**: Al tocar el campo de escribir aparecía el teclado y la barra de input se iba super arriba. Causa: doble-conteo de insets. `Scaffold` tenía `resizeToAvoidBottomInset: true` (default), así que el body ya se encogía con el teclado; además `_inputArea` y `_replyBanner` sumaban `MediaQuery.of(context).viewInsets.bottom`, volviendo a reservar el alto del teclado → el input flotaba ~`keyboard` px por arriba.
+**Cambios realizados**:
+- `lib/screens/chat_screen.dart`: `Scaffold` ahora con `resizeToAvoidBottomInset: false` (el layout se posiciona manualmente).
+- `_msgArea` dejó de usar `height: areaH = h * 0.76` fija y ahora usa `bottom: keyboard + 8 + h * 0.09 + 4`, así la lista se acorta contra el input cuando el teclado aparece (la última línea queda visible sobre la barra).
+- `_inputArea`/`_replyBanner` ya usaban `viewInsets` — ahora sin doble-conteo son correctos.
+- Tests 42 verdes, `flutter analyze` sin issues.
+**Lecciones**:
+- Con `resizeToAvoidBottomInset: true` (default) el Scaffold ya completa el teclado; sumar `viewInsets.bottom` en los `Positioned` del Stack produce doble reserva. Hay que elegir un solo mecanismo: o dejar que el Scaffold encoga el body y NO usar `viewInsets`, o poner `resizeToAvoidBottomInset: false` y posicionar con `viewInsets` explícito.
+- Un `Positioned` en un `Stack` con `bottom: keyboard + X` es la forma de subir el input con el teclado cuando el body no se encoge.
+**Impacto**: `lib/screens/chat_screen.dart`
+**Relacionado con**: D-4 (skill_visual — sin cambio de estilo, solo layout), errores-conocidos (sin nuevo)
+
+## [2026-08-06] - BUGFIX - Migración favorites: columna subtitle inexistente
+**Resumen**: La migración `migration_favorites_dual_rating.sql` fallaba con `ERROR 42703: column "subtitle" does not exist`. En la BD la columna legacy era `title` (no `subtitle`). PostgreSQL compila el `UPDATE ... SET critica = subtitle` al vuelo y falla aunque después haya un `DROP COLUMN IF EXISTS`, porque el parseo del statement __ completo antes de ejecutarse.
+**Cambios realizados**:
+- `supabase/migration_favorites_dual_rating.sql`: reescrita con bloque `DO $$ ... $$` PL/pgSQL que consulta `information_schema.columns` para saber si `subtitle`/`rating` existen antes de referenciarlas, usando `EXECUTE` dinámico solo cuando la columna está presente.
+- Sigue siendo idempotente: `ADD COLUMN IF NOT EXISTS` + chequeos condicionales.
+**Lecciones**:
+- PostgreSQL valida la existencia de columnas al compilar el statement completo, NO línea por línea. Un `UPDATE` que referencia una columna inexistente falla con 42703 en runtime aunque venga un `DROP COLUMN` después.
+- Para migraciones que tocan columnas legacy opcionales, hay que chequear `information_schema.columns` dentro de un bloque `DO` y usar `EXECUTE` con SQL dinámico.
+**Impacto**: `supabase/migration_favorites_dual_rating.sql`
+**Relacionado con**: D-2 (Supabase), errores-conocidos (migración favorites)
+
 ## [2026-08-06] - BUGFIX - Bot WhatsApp fallaba en GitHub Actions (validación de sesión rota)
 **Resumen**: El bot en GitHub Actions dejó de funcionar: timeout de 60s porque nunca lograba restaurar la sesión. La causa era una validación JS rota y un fix previo que la agravó.
 **Cambios realizados**:

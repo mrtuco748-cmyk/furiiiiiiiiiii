@@ -442,6 +442,7 @@ class _ChatViewState extends State<_ChatView> {
 
     return Scaffold(
       backgroundColor: _bg,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: ResponsiveWrapper(
           builder: (context, w, h) {
@@ -539,13 +540,13 @@ class _ChatViewState extends State<_ChatView> {
   }
 
   Widget _msgArea(double w, double h, ChatProvider chat, ThemeSet t) {
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
     final top = h * 0.08;
-    final areaH = h * 0.76;
     return Positioned(
       left: w * 0.025,
       top: top,
       width: w * 0.95,
-      height: areaH,
+      bottom: keyboard + 8 + h * 0.09 + 4,
       child: Container(
         decoration: BoxDecoration(
           color: _panel,
