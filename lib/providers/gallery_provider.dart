@@ -5,6 +5,24 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
 import '../app_state.dart';
 
+class GalleryComment {
+  final int? id;
+  final int? galleryId;
+  final String? userId;
+  final String content;
+  final DateTime createdAt;
+
+  GalleryComment({
+    this.id, this.galleryId, this.userId, required this.content, DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  factory GalleryComment.fromMap(Map<String, dynamic> m) => GalleryComment(
+    id: m['id'] as int?, galleryId: m['gallery_id'] as int?,
+    userId: m['user_id'] as String?, content: m['content'] as String? ?? '',
+    createdAt: m['created_at'] != null ? DateTime.tryParse(m['created_at'] as String) : DateTime.now(),
+  );
+}
+
 class GalleryItem {
   final int? id;
   final String? userId;
@@ -13,43 +31,71 @@ class GalleryItem {
   final String type;
   final String? album;
   final String? label;
+  final String? description;
+  final Map<String, List<String>> reactions;
   final double rotation;
   final double size;
   final DateTime createdAt;
 
   GalleryItem({
     this.id, required this.url, this.thumbnail, this.type = 'photo',
-    this.album, this.label, this.rotation = 0, this.size = 1.0, this.userId, DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+    this.album, this.label, this.description, this.rotation = 0, this.size = 1.0,
+    this.userId, Map<String, List<String>>? reactions, DateTime? createdAt,
+  }) : reactions = reactions ?? const {},
+       createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() => {
     if (id != null) 'id': id, 'url': url, 'thumbnail': thumbnail, 'type': type,
-    'album': album, 'label': label, 'rotation': rotation, 'size': size,
+    'album': album, 'label': label, 'description': description,
+    'reactions': reactions, 'rotation': rotation, 'size': size,
     'user_id': AppState.myId ?? '', 'created_at': createdAt.toIso8601String(),
   };
 
   factory GalleryItem.fromMap(Map<String, dynamic> m) => GalleryItem(
     id: m['id'] as int?, url: m['url'] as String? ?? '', thumbnail: m['thumbnail'] as String?,
     type: m['type'] as String? ?? 'photo', album: m['album'] as String?,
-    label: m['label'] as String?, rotation: (m['rotation'] as num?)?.toDouble() ?? 0,
+    label: m['label'] as String?, description: m['description'] as String?,
+    reactions: parseReactions(m['reactions']),
+    rotation: (m['rotation'] as num?)?.toDouble() ?? 0,
     size: (m['size'] as num?)?.toDouble() ?? 1.0,
     userId: m['user_id'] as String?,
     createdAt: m['created_at'] != null ? DateTime.parse(m['created_at'] as String) : DateTime.now(),
   );
+
+  GalleryItem copyWith({String? description, Map<String, List<String>>? reactions}) => GalleryItem(
+    id: id, userId: userId, url: url, thumbnail: thumbnail, type: type,
+    album: album, label: label, description: description ?? this.description,
+    reactions: reactions ?? this.reactions, rotation: rotation, size: size, createdAt: createdAt,
+  );
+
+  static Map<String, List<String>> parseReactions(dynamic raw) {
+    if (raw == null || raw is! Map) return {};
+    final out = <String, List<String>>{};
+    raw.forEach((k, v) {
+      final key = k.toString();
+      if (v is List) out[key] = v.map((e) => e.toString()).toList();
+    });
+    return out;
+  }
 }
 
 class GalleryProvider extends ChangeNotifier {
   List<GalleryItem> _items = [];
+  List<GalleryComment> _comments = [];
   bool _loading = false;
   String? _error;
   RealtimeChannel? _channel;
 
   List<GalleryItem> get items => _items;
+  List<GalleryComment> get comments => List.unmodifiable(_comments);
   bool get loading => _loading;
   String? get error => _error;
   bool get hasError => _error != null;
 
   void clearError() { _error = null; notifyListeners(); }
+
+  List<GalleryComment> commentsFor(int? galleryId) =>
+      _comments.where((c) => c.galleryId == galleryId).toList();
 
   List<String> get albums => _items.map((i) => i.album ?? '✨').toSet().toList();
   List<GalleryItem> byAlbum(String album) => _items.where((i) => (i.album ?? '✨') == album).toList();
@@ -124,6 +170,89 @@ class GalleryProvider extends ChangeNotifier {
     try {
       await SupabaseConfig.client.from('gallery').delete().eq('id', id).timeout(const Duration(seconds: 10));
     } catch (e) { await load(); }
+  }
+
+  Future<void> updateDescription(int id, String description) async {
+    final idx = _items.indexWhere((i) => i.id == id);
+    if (idx < 0) return;
+    final next = _items[idx].copyWith(description: description);
+    _items[idx] = next;
+    notifyListeners();
+    try {
+      await SupabaseConfig.client.from('gallery')
+          .update({'description': description}).eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('GalleryProvider.updateDescription error: $e');
+    }
+  }
+
+  Future<void> toggleReaction(int id, String key) async {
+    final idx = _items.indexWhere((i) => i.id == id);
+    if (idx < 0) return;
+    final current = _items[idx];
+    final reactions = <String, List<String>>{};
+    current.reactions.forEach((k, v) => reactions[k] = List<String>.from(v));
+    final already = reactions[key]?.contains(AppState.myId) ?? false;
+    reactions.forEach((k, list) {
+      list.remove(AppState.myId);
+      if (list.isEmpty) reactions.remove(k);
+    });
+    if (!already) {
+      reactions.putIfAbsent(key, () => <String>[]).add(AppState.myId ?? '');
+    }
+    final next = current.copyWith(reactions: reactions);
+    _items[idx] = next;
+    notifyListeners();
+    try {
+      await SupabaseConfig.client.from('gallery')
+          .update({'reactions': reactions}).eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      _items[idx] = current;
+      debugPrint('GalleryProvider.toggleReaction error: $e');
+      notifyListeners();
+    }
+  }
+
+  Future<void> addComment(int galleryId, String content) async {
+    final text = content.trim();
+    if (text.isEmpty) return;
+    try {
+      final row = await SupabaseConfig.client.from('gallery_comments')
+          .insert({
+            'gallery_id': galleryId,
+            'user_id': AppState.myId ?? '',
+            'content': text,
+          }).select().single().timeout(const Duration(seconds: 10));
+      _comments.add(GalleryComment.fromMap(Map<String, dynamic>.from(row as Map)));
+      notifyListeners();
+    } catch (e) {
+      _error = 'No se pudo comentar';
+      debugPrint('GalleryProvider.addComment error: $e');
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteComment(int id) async {
+    _comments.removeWhere((c) => c.id == id); notifyListeners();
+    try {
+      await SupabaseConfig.client.from('gallery_comments').delete().eq('id', id).timeout(const Duration(seconds: 10));
+    } catch (e) { debugPrint('GalleryProvider.deleteComment error: $e'); }
+  }
+
+  Future<void> loadComments(int galleryId) async {
+    try {
+      final res = await SupabaseConfig.client.from('gallery_comments')
+          .select().eq('gallery_id', galleryId)
+          .order('created_at', ascending: true).timeout(const Duration(seconds: 10));
+      final existing = _comments.where((c) => c.galleryId != galleryId).toList();
+      existing.addAll((res as List).map((e) => GalleryComment.fromMap(e as Map<String, dynamic>)));
+      _comments = existing;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('GalleryProvider.loadComments error: $e');
+    }
   }
 
   @override
