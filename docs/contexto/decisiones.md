@@ -81,6 +81,14 @@
 - **Limitacion**: No es tiempo real (polling cada 30 min). Para tiempo real se necesitaria servidor 24/7 + WhatsApp Cloud API
 - **Revisable**: Sí — si se necesita tiempo real, migrar a Edge Function + WhatsApp Cloud API
 
+### D-12: Media del chat con delete-on-download
+- **Fecha**: 2026-08-05
+- **Qué se decidió**: Los adjuntos del chat se suben a Supabase Storage (`chat-media`). Al descargarlos el receptor, se guardan solo en el dispositivo (SQLite `chat_media_local` + app docs) y se borran del bucket; el mensaje queda con `cloud_deleted=true` y sin `attachment_url`.
+- **Por qué**: Privacidad/espacio — el media no vive en la nube indefinidamente; solo hace falta el puente de entrega.
+- **Alternativas descartadas**: base64 en columna (pesado, ya usado en gallery), URLs publicas permanentes, sync bidireccional offline completo.
+- **Impacto**: Flujo upload/download en `ChatMediaService` + `ChatProvider.downloadMedia`. Requiere ejecutar `supabase/migration_chat_media_reactions.sql`.
+- **Revisable**: Sí — si se necesita reenviar media viejo, habria que no borrar o re-subir desde local del emisor.
+
 ### D-11: Rating dual por usuario + critica compartida en Favoritos
 - **Fecha**: 2026-08-05
 - **Qué se decidió**: Cada favorito se califica con estrellas de forma independiente por Facu (`rating_facu`) y por Rocio (`rating_rocio`), y existe una sola critica de texto compartida (`critica`). El rating se asigna por identidad (`AppState.identity`) en el provider (`setRating(id, identity, value)`).

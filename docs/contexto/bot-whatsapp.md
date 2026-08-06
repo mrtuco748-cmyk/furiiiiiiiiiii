@@ -77,7 +77,7 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 1. main()
 2. loadSessionFromSupabase()
    └── SELECT session_data FROM bot_sessions WHERE id=1
-   └── Valida que la sesion coincida con MI_NUMERO
+   └── Valida que la sesion coincida con MI_NUMERO leyendo creds.json (me.id)
    └── Escribe archivos en auth/
 3. useMultiFileAuthState(auth/)
 4. makeWASocket({ auth, printQRInTerminal: false })
@@ -220,7 +220,8 @@ Secrets requeridos:
 | Problema | Causa | Solucion |
 |---------|-------|---------|
 | "Sesion cerrada. Vuelve a ejecutar localmente" | Sesion WhatsApp expiro | `node bot.js` local, re-escanear QR |
-| Timeout 60s en CI | No pudo restaurar sesion de Supabase | Verificar tabla bot_sessions, re-escanear |
+| Timeout 60s en CI | No pudo restaurar sesion de Supabase (validacion de numero fallida o sesion expirada) | Verificar tabla bot_sessions, re-escanear |
+| "Sesion guardada no coincide..." en CI aunque el numero es correcto | Bug viejo: validacion usaba `Array.first` (undefined en JS) sobre los nombres de archivo | Ya corregido: se valida por contenido de `creds.json` (`me.id`) con `[0]` |
 | "Falta SUPABASE_URL o SUPABASE_KEY" | No cargo .env o secrets | Verificar dotenv local, GitHub Secrets en CI |
 | Mensajes duplicados | Error en tracking key | Verificar formato de registro_id en bot_notificaciones |
 | "ERR_REQUIRE_ESM" | Baileys v6+ es ESM-only | Asegurar `"type": "module"` en package.json |

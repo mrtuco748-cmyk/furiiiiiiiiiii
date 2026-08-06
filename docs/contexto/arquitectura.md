@@ -88,16 +88,26 @@ CalendarHomeScreen:
   → Por cada día mostrado, genera eventos sintéticos de tipo `Clase` a partir de `class_schedules.dayOfWeek`
 ```
 
-### Chat (tiempo real)
+### Chat (tiempo real + media)
 ```
 ChatScreen abre
-  → loadMessages() (Supabase messages table)
+  → ChatProvider.init()
+  → carga paths locales SQLite chat_media_local
+  → loadMessages() (Supabase messages, ultimos 100)
   → RealtimeChannel suscribe a messages
-  → Nuevo mensaje:
+  → Nuevo mensaje texto:
      1. Insert en Supabase messages
      2. Trigger DB → Edge Function send-push → FCM
      3. RealtimeChannel recibe cambio → UI actualiza
-     4. NotificationService.startListening() muestra local notif
+  → Nuevo mensaje media:
+     1. Copia local + upload bucket chat-media
+     2. Insert messages (attachment_url, message_type, ...)
+     3. Receptor toca descargar → download a app docs
+     4. Guarda path en chat_media_local
+     5. Borra objeto Storage + update cloud_deleted/attachment_url null
+  → Reply: swipe horizontal cualquier mensaje
+  → Reacciones: long-press → 🥰😘😍 :v xD :0 + custom (max 5 keys)
+  → Ticks de visto: markIncomingRead() → update messages read/delivered_at/read_at → doble tick
 ```
 
 ### Notificaciones Push

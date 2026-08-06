@@ -19,12 +19,15 @@
 | Entidad | Descripción | Tabla Supabase |
 |---------|------------|---------------|
 | Profile | Perfil de usuario | `profiles` |
-| Message | Mensaje del chat | `messages` |
+| Message | Mensaje del chat (texto/media, reply, reacciones max 5, delete-on-download, ticks `delivered_at`/`read_at`) | `messages` + SQLite `chat_media_local` |
+| Reacción | Emoji/texto en un mensaje; max 5 keys; 1 por usuario | `messages.reactions` JSONB |
+| Chat media | Adjunto (image/video/voice/gif/document); se borra de Storage al descargar | bucket `chat-media` |
 | Mood | Estado de ánimo diario | `moods` |
-| Letter | Carta programada | `letters` |
+| Letter | Carta programada; leída por quién vía `seen_by` (JSONB) | `letters` |
 | Anniversary | Fecha importante | `anniversaries` |
-| Goal | Meta compartida | `goals` |
-| Challenge | Reto de pareja | `challenges` |
+| Goal | Meta compartida con `completed_by` (quién la hizo) | `goals` |
+| GalleryComment | Comentario de una foto | `gallery_comments` |
+| Challenge | Reto de pareja; `seen_by` (JSONB) | `challenges` |
 | DailyQuestion | Pregunta del día | `daily_questions` |
 | QuestionAnswer | Respuesta a pregunta | `question_answers` |
 | Notification | Notificación in-app | `notifications` |

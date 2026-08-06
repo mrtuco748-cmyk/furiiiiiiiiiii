@@ -76,16 +76,29 @@ test: agregar tests para W
 
 ## Proceso de Deploy
 
-### Android
-```bash
-flutter build apk --release
-# El APK está en build/app/outputs/flutter-apk/
+### Build con script (recomendado - un solo comando)
+```powershell
+# Windows + APK en un solo comando
+pwsh scripts/build-all.ps1
+
+# Solo Windows
+pwsh scripts/build-windows.ps1
+# Output: build/windows/x64/runner/Release/furi_app.exe
+
+# Solo APK
+pwsh scripts/build-apk.ps1
+# Output: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-### Windows
+Los scripts verifican que Flutter este en PATH, que JAVA_HOME sea valido (APK) y reportan el tamaño del binario final. Los settings de Gradle (daemon off, heap 6G, compileSdk override) ya estan en `android/gradle.properties` y `android/build.gradle.kts` - no hay que pasar variables de entorno a mano.
+
+### Build manual (sin script)
 ```bash
 flutter build windows --release
-# El ejecutable está en build/windows/x64/runner/Release/
+# Exe en build/windows/x64/runner/Release/
+
+flutter build apk --release
+# APK en build/app/outputs/flutter-apk/
 ```
 
 ### Supabase Edge Function
