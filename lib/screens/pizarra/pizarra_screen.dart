@@ -33,6 +33,7 @@ class _PizarraScreenState extends State<PizarraScreen> {
     super.initState();
     Future.microtask(() => context.read<BoardDataProvider>().load());
     _transformController.addListener(_onTransformChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _goToCenter());
   }
 
   void _onTransformChanged() {

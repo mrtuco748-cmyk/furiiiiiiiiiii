@@ -979,9 +979,15 @@ class _MessageTile extends StatelessWidget {
                         if (isMine) ...[
                           const SizedBox(width: 4),
                           Icon(
-                            message.read ? Icons.done_all : Icons.done,
+                            switch (message.tickState) {
+                              MessageTick.read => Icons.done_all,
+                              MessageTick.delivered => Icons.done_all,
+                              MessageTick.sent => Icons.done,
+                            },
                             size: 14,
-                            color: subColor,
+                            color: message.tickState == MessageTick.read
+                                ? const Color(0xFF4FC3FF)
+                                : subColor,
                           ),
                         ],
                       ],

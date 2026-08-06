@@ -1,3 +1,6 @@
+/// Estado de entrega/lectura de un mensaje (palomitas).
+enum MessageTick { sent, delivered, read }
+
 class Message {
   static const int maxReactions = 5;
   static const List<String> defaultReactionEmojis = [
@@ -61,6 +64,14 @@ class Message {
   }) : reactions = reactions ?? const {};
 
   bool get isMedia => mediaTypes.contains(messageType);
+
+  /// Palomita del mensaje: enviado / entregado / leido.
+  /// Se prioriza leido (readAt) sobre entregado (deliveredAt) sobre enviado.
+  MessageTick get tickState {
+    if (readAt != null) return MessageTick.read;
+    if (deliveredAt != null) return MessageTick.delivered;
+    return MessageTick.sent;
+  }
 
   bool get needsCloudDownload =>
       isMedia &&

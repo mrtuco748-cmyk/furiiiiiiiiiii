@@ -7,6 +7,9 @@ void main() {
     int? replyToId,
     String messageType = 'text',
     String? attachmentUrl,
+    bool read = false,
+    DateTime? deliveredAt,
+    DateTime? readAt,
   }) =>
       Message(
         id: 1,
@@ -17,7 +20,25 @@ void main() {
         messageType: messageType,
         attachmentUrl: attachmentUrl,
         reactions: reactions,
+        read: read,
+        deliveredAt: deliveredAt,
+        readAt: readAt,
       );
+
+  test('tickState es sent sin delivered_at ni read', () {
+    expect(base().tickState, MessageTick.sent);
+  });
+
+  test('tickState es delivered con delivered_at y sin read', () {
+    expect(base(deliveredAt: DateTime.now()).tickState, MessageTick.delivered);
+  });
+
+  test('tickState es read cuando readAt no es nulo', () {
+    expect(
+      base(deliveredAt: DateTime.now(), readAt: DateTime.now()).tickState,
+      MessageTick.read,
+    );
+  });
 
   test('fromMap parsea reply_to_id int y reactions JSONB', () {
     final msg = Message.fromMap({

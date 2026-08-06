@@ -117,7 +117,7 @@ class ChatProvider extends ChangeNotifier {
             _state = ChatLoadState.data;
             notifyListeners();
             if (msg.toUser == myId) {
-              markIncomingRead();
+              markIncomingDelivered();
             }
           },
         )
@@ -333,19 +333,45 @@ class ChatProvider extends ChangeNotifier {
         .map((m) => m.id)
         .toList();
     if (unread.isEmpty) return;
+    final now = DateTime.now().toUtc().toIso8601String();
     try {
       await SupabaseConfig.client.from('messages').update({
         'read': true,
-        'read_at': DateTime.now().toUtc().toIso8601String(),
+        'read_at': now,
       }).inFilter('id', unread);
       for (var i = 0; i < _messages.length; i++) {
         if (unread.contains(_messages[i].id)) {
-          _messages[i] = _messages[i].copyWith(read: true);
+          _messages[i] = _messages[i].copyWith(read: true, readAt: DateTime.now());
         }
       }
       notifyListeners();
     } catch (_) {}
   }
+
+  /// Marca como entregados (delivered_at) los mensajes recibidos por realtime
+  /// que todavia no estan marcados. No los marca como leidos: eso solo ocurre
+  /// cuando el usuario abre el chat (markIncomingRead).
+  Future<void> markIncomingDelivered() async {
+    final undelivered = _messages
+        .where((m) => m.toUser == myId && m.deliveredAt == null)
+        .map((m) => m.id)
+        .toList();
+    if (undelivered.isEmpty) return;
+    final now = DateTime.now().toUtc().toIso8601String();
+    try {
+      await SupabaseConfig.client.from('messages').update({
+        'delivered_at': now,
+      }).inFilter('id', undelivered);
+      for (var i = 0; i < _messages.length; i++) {
+        if (undelivered.contains(_messages[i].id)) {
+          _messages[i] =
+              _messages[i].copyWith(deliveredAt: DateTime.now());
+        }
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
 
   void clearError() {
     _error = null;

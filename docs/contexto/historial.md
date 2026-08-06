@@ -1,5 +1,28 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-06] - FEATURE - Ticks de chat en 3 estados (enviado/entregado/leído)
+**Resumen**: El chat ahora distingue 1 palomita (enviado), 2 palomitas (entregado) y 2 palomitas azules (leído), tipo WhatsApp. Antes solo había enviado (✓) y leído (✓✓).
+**Cambios realizados**:
+- `lib/models/message.dart`: nuevo enum `MessageTick { sent, delivered, read }` y getter `tickState` que prioriza `readAt` > `deliveredAt` > `sent`. El modelo ya tenía `deliveredAt`/`readAt`.
+- `lib/providers/chat_provider.dart`: nuevo `markIncomingDelivered()` que escribe `delivered_at` en los mensajes recibidos por realtime sin marcarlos como leídos. El callback de realtime insert ahora llama a `markIncomingDelivered()` en vez de `markIncomingRead()`. `markIncomingRead()` se mantiene para cuando se abre el chat (escribe `read` + `read_at`).
+- `lib/screens/chat_screen.dart`: el tick renderiza según `message.tickState` — sent → `Icons.done`, delivered → `Icons.done_all`, read → `Icons.done_all` en azul `#4FC3FF`.
+- `test/models/message_test.dart`: 3 tests nuevos para `tickState`. Total 45 tests verdes, analyze sin errores.
+**Lecciones**:
+- "Entregado" en una arquitectura servidor-local sin push de entrega confiado se define como "el dispositivo de la pareja recibió el mensaje por realtime sin abrirlo". "Leído" = abrir el chat. No hay confirmación de servidor de "entregado" como en WhatsApp; es una aproximación.
+- El `copyWith` del modelo ya soportaba `deliveredAt`/`readAt`, solo faltaba propagarlos y renderizarlos.
+- Separar el mark de realtime (entregado) del de apertura (leído) evita que el mensaje salte directo a azul antes de que la pareja abra el chat.
+**Impacto**: `lib/models/message.dart`, `lib/providers/chat_provider.dart`, `lib/screens/chat_screen.dart`, `test/models/message_test.dart`
+**Relacionado con**: feature chat media/reacciones previo, errores-conocidos (ticks de chat)
+
+## [2026-08-06] - BUGFIX - Pizarrón abría en la esquina, ahora aparece centrada
+**Resumen**: Al abrir la pizarra, el lienzo quedaba en la esquina superior izquierda (posición identidad). Ahora se centra automáticamente al primer frame.
+**Cambios realizados**:
+- `lib/screens/pizarra/pizarra_screen.dart`: `initState` agrega `WidgetsBinding.instance.addPostFrameCallback((_) => _goToCenter())` para centrar la transformación tras el primer frame, reusando `_goToCenter()` existente (`translate(-500, -400)`).
+**Lecciones**:
+- `TransformationController` arranca en identidad; para mostrar un lienzo infinito centrado hay que setear la transformación después del primer frame con `addPostFrameCallback`.
+**Impacto**: `lib/screens/pizarra/pizarra_screen.dart`
+**Relacionado con**: D-4 (skill_visual — sin cambio de estilo)
+
 ## [2026-08-06] - BUGFIX - Chat: barra de escribir saltaba arriba con el teclado
 **Resumen**: Al tocar el campo de escribir aparecía el teclado y la barra de input se iba super arriba. Causa: doble-conteo de insets. `Scaffold` tenía `resizeToAvoidBottomInset: true` (default), así que el body ya se encogía con el teclado; además `_inputArea` y `_replyBanner` sumaban `MediaQuery.of(context).viewInsets.bottom`, volviendo a reservar el alto del teclado → el input flotaba ~`keyboard` px por arriba.
 **Cambios realizados**:
