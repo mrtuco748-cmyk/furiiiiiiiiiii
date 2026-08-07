@@ -92,6 +92,14 @@ pwsh scripts/build-apk.ps1
 
 Los scripts verifican que Flutter este en PATH, que JAVA_HOME sea valido (APK) y reportan el tamaño del binario final. Los settings de Gradle (daemon off, heap 6G, compileSdk override) ya estan en `android/gradle.properties` y `android/build.gradle.kts` - no hay que pasar variables de entorno a mano.
 
+### Firma de release (APK instalable en celulares)
+
+Desde 2026-08-06 el APK release se firma con un **keystore propio** (`android/app/upload-keystore.jks`), no con la firma debug. Esto permite reinstalar sobre versiones anteriores sin conflicto de firma.
+
+- Credenciales en `android/key.properties` (storePassword/keyPassword/keyAlias/storeFile) — **NO se commitea** (en `.gitignore`).
+- Si borrás `key.properties` o el keystore, el release compila con firma vacía y Android no lo instala. Guardalos en lugar seguro.
+- ⚠️ **IMPORTANTE**: nunca borres `android/app/upload-keystore.jks`. Si se pierde, no se puede actualizar la app sobre una instalación existente (habría que desinstalar y perder datos).
+
 ### Build manual (sin script)
 ```bash
 flutter build windows --release

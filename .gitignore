@@ -41,6 +41,11 @@ app.*.symbols
 .env
 .env.*
 
+# Keystore / signing secrets
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+
 # Obfuscation related
 app.*.map.json
 
