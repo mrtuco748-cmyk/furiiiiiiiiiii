@@ -1,5 +1,16 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-07] - BUGFIX - Bot WhatsApp: enviarMensaje reintentaba y duplicaba la entrega 3x
+**Resumen**: Tras re-vincular la sesión (fix LID), el bot ya entregaba pero cada mensaje llegaba 3 veces. Causa: `enviarMensaje` tenía bucle de reintentos (hasta 3) pensado para el escenario LID roto donde no se confirmaba la entrega. Una vez que la sesión quedó sana, el ACK tarda >8s en una sesión restaurada de Supabase, así que el timeout de 8s vencía antes del ACK y el bot volvía a mandar el mismo texto → duplicado 3x.
+**Cambios realizados**:
+- `bot-furi/bot.js`: `enviarMensaje` ya NO reintenta. Con la sesión sana, reenviar el mismo mensaje duplica la entrega: WhatsApp ya lo recibió aunque el ACK tarde. Ahora manda una vez, espera ACK con ventana generosa (20s), y cuenta como entregado si `sendMessage` resolvió aunque no llegue ACK oportuno. Devuelve `false` solo si `sendMessage` lanza.
+**Lecciones**:
+- La verificación con datos reales (insertar reto + correr el bot) reveló que "el mensaje no se confirma" ≠ "el mensaje no se entregó". Cuando el destinatario recibe pero el ACK se pierde, reintentar solo duplica.
+- El reintento como parche de disponibilidad (para LID roto) es contraproducente una vez que la causa raíz (claves LID) se resuelve. Hay que quitar el reintento cuando la entrega ya funciona, o condicionarlo.
+- El ACK en sesión restaurada de Supabase tarda más de 8s; usa una ventana de espera generosa (20s) para no mandar copias extra.
+**Impacto**: `bot-furi/bot.js`
+**Relacionado con**: D-10 (bot WhatsApp), fix sesión LID previo (mismo día)
+
 ## [2026-08-07] - BUGFIX - Bot WhatsApp: mensajes se quedaban "en cola" sin entregarse y se marcaban como notificados igual
 **Resumen**: El bot "enviaba" mensajes que nadie recibía. Investigación end-to-end (inserción real de datos + ejecución del bot + seguimiento de ACK de entrega) reveló dos problemas:
 1. **Entrega no confirmada**: `sendMessage` de Baileys resuelve apenas escribe al socket, NO cuando WhatsApp entrega. El bot cerraba la conexión ~1s después sin esperar el ACK, así que en CI (sesión efímera restaurada de Supabase) el mensaje quedaba encolado y se perdía.

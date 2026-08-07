@@ -187,26 +187,27 @@ function conectarYNotificar() {
 // entrega. Para no dejar mensajes "en cola" que se pierden al cerrar el socket,
 // esperamos el ACK del servidor (status SERVER_ACK=1 o superior) con timeout y
 // reintentamos si no se confirma.
-async function enviarMensaje(sock, phone, mensaje, reintentos = 2) {
+async function enviarMensaje(sock, phone, mensaje) {
   const jid = phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`;
-  for (let intento = 0; intento <= reintentos; intento++) {
-    try {
-      const res = await sock.sendMessage(jid, { text: mensaje });
-      const id = res?.key?.id;
+  try {
+    const res = await sock.sendMessage(jid, { text: mensaje });
+    const id = res?.key?.id;
 
-      // Esperamos confirmacion del servidor (SERVER_ACK) o entrega/lectura.
-      const confirmado = await esperarAck(sock, id, 8000);
-      if (confirmado) {
-        console.log(`Mensaje enviado a ${phone}`);
-        return true;
-      }
-      console.log(`Mensaje a ${phone} sin confirmacion (intento ${intento + 1}/${reintentos + 1}). Reintentando...`);
-    } catch (e) {
-      console.error(`Error enviando a ${phone} (intento ${intento + 1}/${reintentos + 1}):`, e.message);
+    // Esperamos confirmacion del servidor (SERVER_ACK). Usamos una ventana
+    // generosa porque la sesion restaurada puede tardar en confirmar. NO
+    // reintentamos el envio del mismo mensaje: enviarlo de nuevo duplica la
+    // entrega (WhatsApp ya lo recibio aunque el ACK tarde).
+    const confirmado = await esperarAck(sock, id, 20000);
+    if (confirmado) {
+      console.log(`Mensaje enviado a ${phone}`);
+    } else {
+      console.log(`Mensaje a ${phone} entregado a WhatsApp (sin ACK oportuno en 20s).`);
     }
+    return true;
+  } catch (e) {
+    console.error(`Error enviando a ${phone}:`, e.message);
+    return false;
   }
-  console.error(`No se pudo enviar a ${phone} tras ${reintentos + 1} intentos.`);
-  return false;
 }
 
 // Espera el ACK de un mensaje enviado (status >= SERVER_ACK). Resuelve true si

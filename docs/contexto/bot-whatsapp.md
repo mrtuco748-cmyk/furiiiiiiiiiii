@@ -251,8 +251,11 @@ Secrets requeridos:
 ## Confirmacion de entrega (desde 2026-08-07)
 
 `enviarMensaje` NO confia en que `sendMessage` resuelve (solo escribe al socket).
-Espera el ACK del servidor (`messages.update` con status >= SERVER_ACK, timeout 8s)
-con hasta 2 reintentos, y devuelve `true` solo si WhatsApp confirma la entrega.
+Espera el ACK del servidor (`messages.update` con status >= SERVER_ACK, timeout
+20s). NO reintenta el envio del mismo mensaje: una vez que la sesion esta sana
+(con claves LID), reenviar duplica la entrega porque WhatsApp ya recibio el
+texto aunque el ACK tarde mas de 8s en una sesion restaurada de Supabase.
+Devuelve `false` solo si `sendMessage` lanza.
 
 El registro "notificado" en `bot_notificaciones` solo se persiste DESPUES de una
 entrega confirmada (`flushMarksPendientes(num)`). Si el envio falla, el registro
