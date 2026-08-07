@@ -247,3 +247,33 @@ Secrets requeridos:
 - No es tiempo real (polling cada 30 min)
 - WhatsApp puede desconectar sesion en CI (se requiere re-escanear localmente)
 - Depende de GitHub Actions uptime y Supabase disponibilidad
+
+## Confirmacion de entrega (desde 2026-08-07)
+
+`enviarMensaje` NO confia en que `sendMessage` resuelve (solo escribe al socket).
+Espera el ACK del servidor (`messages.update` con status >= SERVER_ACK, timeout 8s)
+con hasta 2 reintentos, y devuelve `true` solo si WhatsApp confirma la entrega.
+
+El registro "notificado" en `bot_notificaciones` solo se persiste DESPUES de una
+entrega confirmada (`flushMarksPendientes(num)`). Si el envio falla, el registro
+queda sin marcar y se reintenta en la proxima corrida — nunca se pierde silenciosamente.
+
+### Si los mensajes se quedan "en cola" sin entregarse
+
+Sintoma: `sendMessage` resuelve pero el destinatario no recibe nada y no llega ACK.
+Causa: la sesion guardada esta desincronizada con los IDs de dispositivo vinculado
+(LID) de WhatsApp. La sesion tiene claves de cifrado (`session-*.json`) para los
+numeros normales (`@s.whatsapp.net`) pero no para los `@lid` a los que WhatsApp
+ahora enruta los contactos → `SessionError: No session record` → no se cifra →
+no se entrega. Los logs de fondo muestran errores `failed to decrypt message`.
+
+Fix: re-vincular WhatsApp del bot (escanear QR nuevo) para regenerar claves LID:
+```powershell
+$env:Path = "D:\nodejs\node-v20.18.0-win-x64;" + $env:Path
+cd D:\projetcs\proyectos\F.U.R.I\bot-furi
+Remove-Item -Recurse -Force auth   # borrar sesion vieja
+node bot.js                         # escanear QR nuevo
+# La sesion nueva se sube automaticamente a bot_sessions en Supabase
+```
+Sin este re-vinculo, el codigo mejora (no marca ni pierde registros) pero WhatsApp
+sigue sin poder cifrar a los contactos ya migrados a LID.

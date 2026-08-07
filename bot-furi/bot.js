@@ -182,17 +182,54 @@ function conectarYNotificar() {
   }
 }
 
-// ─── UTIL: ENVIAR MENSAJE ─────────────────────────────────────
-async function enviarMensaje(sock, phone, mensaje) {
+// ─── UTIL: ENVIAR MENSAJE (espera confirmacion + reintento) ──
+// Baileys: sendMessage resuelve apenas escribe al socket, NO cuando WhatsApp
+// entrega. Para no dejar mensajes "en cola" que se pierden al cerrar el socket,
+// esperamos el ACK del servidor (status SERVER_ACK=1 o superior) con timeout y
+// reintentamos si no se confirma.
+async function enviarMensaje(sock, phone, mensaje, reintentos = 2) {
   const jid = phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`;
-  try {
-    await sock.sendMessage(jid, { text: mensaje });
-    console.log(`Mensaje enviado a ${phone}`);
-    return true;
-  } catch (e) {
-    console.error(`Error enviando a ${phone}:`, e.message);
-    return false;
+  for (let intento = 0; intento <= reintentos; intento++) {
+    try {
+      const res = await sock.sendMessage(jid, { text: mensaje });
+      const id = res?.key?.id;
+
+      // Esperamos confirmacion del servidor (SERVER_ACK) o entrega/lectura.
+      const confirmado = await esperarAck(sock, id, 8000);
+      if (confirmado) {
+        console.log(`Mensaje enviado a ${phone}`);
+        return true;
+      }
+      console.log(`Mensaje a ${phone} sin confirmacion (intento ${intento + 1}/${reintentos + 1}). Reintentando...`);
+    } catch (e) {
+      console.error(`Error enviando a ${phone} (intento ${intento + 1}/${reintentos + 1}):`, e.message);
+    }
   }
+  console.error(`No se pudo enviar a ${phone} tras ${reintentos + 1} intentos.`);
+  return false;
+}
+
+// Espera el ACK de un mensaje enviado (status >= SERVER_ACK). Resuelve true si
+// WhatsApp confirma que el mensaje fue recibido por su servidor.
+function esperarAck(sock, id, timeoutMs) {
+  return new Promise((resolve) => {
+    if (!id) return resolve(false);
+    const timer = setTimeout(() => {
+      sock.ev.off('messages.update', handler);
+      resolve(false);
+    }, timeoutMs);
+    const handler = (updates) => {
+      for (const u of updates) {
+        if (u.key?.id === id && (u.status === 1 || u.status === 2 || u.status === 3)) {
+          clearTimeout(timer);
+          sock.ev.off('messages.update', handler);
+          resolve(true);
+          return;
+        }
+      }
+    };
+    sock.ev.on('messages.update', handler);
+  });
 }
 
 // ─── UTIL: YA FUE NOTIFICADO? ─────────────────────────────────
@@ -210,15 +247,30 @@ async function yaNotificado(tabla, registroId, phone) {
   return data && data.length > 0;
 }
 
-// ─── UTIL: MARCAR COMO NOTIFICADO ─────────────────────────────
-async function marcarNotificado(tabla, registroId, tipo, phone, mensaje) {
-  await supabase.from(NOTIF_TABLE).insert({
-    tabla,
-    registro_id: String(registroId),
-    tipo,
-    phone,
-    mensaje,
-  });
+// ─── UTIL: MARCAR COMO NOTIFICADO (pendiente hasta confirmar envio) ──
+// No escribe en la BD inmediatamente: acumula en memoria y solo se persiste
+// cuando el mensaje se confirmo como enviado (ver flushMarksPendientes).
+const marksPendientes = [];
+function marcarNotificado(tabla, registroId, tipo, phone, mensaje) {
+  marksPendientes.push({ tabla, registro_id: String(registroId), tipo, phone, mensaje });
+}
+
+// Persiste en la BD las notificaciones pendientes SOLO del numero indicado,
+// despues de confirmar que el mensaje fue enviado. Si el envio fallo, no se
+// marca, por lo que en la proxima corrida el bot lo re-enviara (no se pierde).
+async function flushMarksPendientes(phone) {
+  const pendientes = marksPendientes.filter(m => m.phone === phone);
+  if (pendientes.length === 0) return;
+  for (const m of pendientes) {
+    const { error } = await supabase.from(NOTIF_TABLE).insert(m);
+    if (error) console.error(`Error marcando notificado (${m.tabla}/${m.registro_id}):`, error.message);
+  }
+  // Eliminamos los que ya flusheamos (marcamos como escritos)
+  const escritos = new Set(pendientes.map(m => m.tabla + '|' + m.registro_id + '|' + m.phone));
+  for (let i = marksPendientes.length - 1; i >= 0; i--) {
+    const m = marksPendientes[i];
+    if (escritos.has(m.tabla + '|' + m.registro_id + '|' + m.phone)) marksPendientes.splice(i, 1);
+  }
 }
 
 // ─── USUARIOS (mapeo user_id de la app → identidad) ──────────
@@ -603,7 +655,12 @@ async function verificarYNotificar(sock) {
 
   for (const num of numerosConMensajes) {
     const texto = header + mensajesPorNum[num].join('\n\n');
-    await enviarMensaje(sock, num, texto);
+    const ok = await enviarMensaje(sock, num, texto);
+    if (ok) {
+      // Solo marcamos como notificados los pendientes de este numero cuando el
+      // mensaje se confirmo. Si fallo, quedan sin marcar y se reintentaran.
+      await flushMarksPendientes(num);
+    }
   }
   console.log(`Se enviaron notificaciones a ${numerosConMensajes.length} destinatarios.`);
 }

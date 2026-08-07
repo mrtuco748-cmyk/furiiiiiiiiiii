@@ -1,5 +1,54 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-07] - BUGFIX - Bot WhatsApp: mensajes se quedaban "en cola" sin entregarse y se marcaban como notificados igual
+**Resumen**: El bot "enviaba" mensajes que nadie recibía. Investigación end-to-end (inserción real de datos + ejecución del bot + seguimiento de ACK de entrega) reveló dos problemas:
+1. **Entrega no confirmada**: `sendMessage` de Baileys resuelve apenas escribe al socket, NO cuando WhatsApp entrega. El bot cerraba la conexión ~1s después sin esperar el ACK, así que en CI (sesión efímera restaurada de Supabase) el mensaje quedaba encolado y se perdía.
+2. **Marcado prematuro**: el bot marcaba el registro como "notificado" en `bot_notificaciones` ANTES de confirmar la entrega, por lo que nunca reintentaba — de ahí "el bot dice que las envió pero no llegaron".
+3. **Causa raíz de la no-entrega**: la sesión guardada en Supabase está desincronizada con los nuevos IDs de dispositivo vinculado (LID) de WhatsApp. La sesión tiene `me.lid` (`36130036682897:2@lid`) y claves de cifrado (`session-*.json`) solo para los números normales, pero WhatsApp ahora enruta los contactos a `@lid` (ej. `83189842346022@lid`) para los que NO hay `session record` → `SessionError: No session record` → no se cifra → no se entrega → sin ACK. Las emociones sí llegaban porque matcheaban claves viejas; el resto (notas, metas, cartas, etc.) no.
+**Cambios realizados**:
+- `bot-furi/bot.js`: `enviarMensaje` ahora espera la confirmación del servidor (`esperarAck` escuchando `messages.update` con status >= SERVER_ACK, timeout 8s) con hasta 2 reintentos, y devuelve `true` solo si se confirma.
+- `bot-furi/bot.js`: `marcarNotificado` ahora acumula en memoria (`marksPendientes`) en vez de escribir en la BD. Se persiste solo tras envío confirmado vía `flushMarksPendientes(num)`. Si el envío falla, el registro NO se marca y se reintenta en la próxima corrida (no se pierde).
+**Lecciones**:
+- `sendMessage` NO garantiza entrega: resuelve al escribir en el socket. Para CI efímero hay que esperar el ACK (`messages.update` status 1/2/3) y reintentar.
+- Nunca marcar un registro como "notificado" antes de confirmar la entrega: causa pérdida silenciosa e irreversible.
+- WhatsApp migró de enrutar por número (`@s.whatsapp.net`) a IDs de dispositivo vinculado (`@lid`). Si la sesión guardada no tiene claves de cifrado para los `@lid` de los contactos, los mensajes se encolan pero jamás se cifran/entregan. **Fix permanente**: re-vincular el número del bot escaneando QR de nuevo (borrar `auth/` + re-escanear) para regenerar claves LID válidas, y luego subir la sesión nueva a Supabase.
+**Impacto**: `bot-furi/bot.js`
+**Pendiente**: re-vincular WhatsApp del bot (escaneo QR) para regenerar claves LID; sin eso, el código mejora el comportamiento pero WhatsApp seguirá sin poder cifrar a los contactos migrados a LID.
+**Relacionado con**: D-10 (bot WhatsApp), bot-whatsapp.md
+
+## [2026-08-07] - FEATURE - Pizarrón Milanote-style: selección+resize, imágenes, links y conectores
+**Resumen**: Primera etapa de acercar el pizarrón a Milanote. Se extendió el modelo de elementos para soportar capas (z), metadatos flexibles (data JSONB) y 3 tipos nuevos: imagen, link y conector. Se agregó selección con borde, 8 handles de resize, traer al frente, subida de imágenes a Supabase Storage, cards de link con favicon y líneas/flechas que siguen a los elementos.
+**Cambios realizados**:
+- `lib/models/board_element.dart` (nuevo): modelo extraído del provider. Campos nuevos `z` (int, capas) y `data` (Map JSONB). Tipos `image`, `link`, `connector`. `copyWith` ampliado (width/height/data/z), getter `center`. Test en `test/models/board_element_test.dart`.
+- `lib/providers/board_data_provider.dart`: importa el modelo. Nuevos `resizeLocal`/`resize`, `bringToFront` (z=max+1 persistido), `updateDataLocal`/`_updateData`. `move`/`resize` con throttle unificado en `_flushPending` (moves + resizes). Realtime reescrito: maneja delete vía `oldRecord['id']` y evita el null-check de `newRecord`. Getter `zOrdered`. Test en `test/providers/board_data_provider_test.dart`.
+- `lib/services/board_media_service.dart` (nuevo): bucket privado `board-media`, `uploadImage` (XFile→File), `downloadImage` con cache en memoria, `deleteImage`.
+- `supabase/migration_board_milanote.sql` (nuevo): `ALTER board_elements ADD z INTEGER`, `ADD data JSONB`, crea bucket `board-media` privado + policies. **PENDIENTE ejecutar en SQL Editor**. `supabase_schema.sql` actualizado.
+- `lib/screens/pizarra/pizarra_screen.dart`: reescrito. Selección con borde, 8 handles de resize (esquinas + bordes, mínimo 40px), traer al frente, render de imagen (bytes con cache), card de link con favicon (google s2) y host, conectores dibujados en capa `CustomPaint` que se autoposicionan entre los centros de los elementos y siguen al moverlos (flecha, opcional punteada). Modo conector: elegir origen → icono timeline → elegir destino.
+**Lecciones**:
+- Un modelo `const` no puede inicializar `createdAt` con `DateTime.now()` en el initializer; hay que sacar el `const` del constructor o recibir el valor.
+- La pantalla quedó dos veces "casi lista" con código muerto y métodos sin definir (`_deleteDot`, extensiones `moveElement` que no existían en el provider). Lección: verificar cada símbolo referenciado contra el provider/API real antes de asumir que compila, y no encolar archivos con clases placeholder.
+- Supabase Storage `.upload` espera `File` (dart:io), no `XFile` de image_picker; hay que convertir con `File(file.path)`.
+- El callback de realtime: en eventos DELETE `newRecord` puede venir vacío/no-null; usar `oldRecord['id']` para resolver el id borrado.
+**Impacto**: 4 archivos nuevos/modificados en `lib/`, `supabase_schema.sql`, `supabase/migration_board_milanote.sql`, 2 archivos de test.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), errores-conocidos (sin nuevos)
+**Pendiente**: ejecutar `migration_board_milanote.sql` en prod; en la etapa 2 (B/D/G/H) quedan notas con formato rico, tareas/checkbox, tableros anidados, cursor de la pareja y menciones.
+
+## [2026-08-06] - BUILD - Firma de release propia (keystore) para APK instalable en otro celular
+**Resumen**: El APK release usaba la firma `debug` (el default de Flutter), lo que impedía reinstalar sobre versiones previas y era marcada como no fiable por Realme. Se configuró un keystore de release propio y la firma automática del build release.
+**Cambios realizados**:
+- Generado `android/app/upload-keystore.jks` (SHA256withRSA 2048, validez 10000 días, alias `upload`) vía `keytool` de JDK en `D:\jdk17\jdk17`.
+- Creado `android/key.properties` con storePassword/keyPassword/keyAlias/storeFile.
+- `android/build.gradle.kts`: carga `key.properties`, agrega `signingConfigs { create("release") }` y lo usa como `signingConfig` del `buildTypes.release` (en vez de `debug`).
+- `.gitignore`: excluye `android/key.properties` y `android/app/*.jks`/`*.keystore`.
+- `documentacion/GUIA_INSTALACION_APK.md`: guía de instalación para el Realme C11 (permiso apps desconocidas, desinstalar versión vieja). `docs/contexto/flujo-de-trabajo.md`: sección de firma de release.
+- Compilado `app-release.apk` (63.5 MB) y verificado con `apksigner` que el certificado es `CN=Furi, ..., C=AR` (no el debug).
+**Lecciones**:
+- Flutter firma el release con `debug` por defecto; para entregar un APK re-instalable hay que definir un `signingConfig` de release con keystore propio. Sin `key.properties`, el release compila pero con firma vacía → Android no lo instala.
+- Realme/Android piden permisos de "instalar apps desconocidas" por-app y no permiten reemplazar otra firma sin desinstalar. Son dos causas distintas a comunicarle a quien instala.
+- El `jarsigner -verify` no reporta el CN en entradas de ZIP de v2 signing; usar `apksigner arbitrio --print-certs` del build-tools para confirmar.
+**Impacto**: `android/app/upload-keystore.jks` (nuevo, no commiteado), `android/key.properties` (nuevo, no commiteado), `android/app/build.gradle.kts`, `.gitignore`, `documentacion/GUIA_INSTALACION_APK.md`, `docs/contexto/flujo-de-trabajo.md`
+**Relacionado con**: flujo-de-trabajo (build APK), errores-conocidos (pantalla negra), instalación en otro celular
+
 ## [2026-08-06] - FEATURE+BUGFIX - Bot segmentado por usuario, sync de clases viejo, errores y schema
 **Resumen**: Sesión de cierre de pendientes: el bot de WhatsApp ahora enruta cada notificación solo a la persona que NO la generó (cada uno ve solo lo que agrega la otra), sincronización automática de las clases existentes de SQLite que jamás se subieron a Supabase, logging para catches silenciosos, y schema SQL maestro completo.
 **Cambios realizados**:

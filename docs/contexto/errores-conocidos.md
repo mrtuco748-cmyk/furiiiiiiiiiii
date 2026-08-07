@@ -7,6 +7,14 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ALTA - Bot WhatsApp: mensajes en cola que no se entregan (sesión desincronizada con LID)
+- **Dónde**: `bot-furi/bot.js` + sesión en `bot_sessions` (Supabase)
+- **Qué pasaba**: El bot "enviaba" (sendMessage resolvía) pero nadie recibía, y además marcaba como notificado sin confirmar. Investigación: `sendMessage` resuelve al escribir al socket, no al entregar; y al cerrar el socket ~1s después en CI efímera, el mensaje quedaba en cola. La causa raíz de fondo: WhatsApp migró el enrutamiento a IDs de dispositivo vinculado (`@lid`), y la sesión guardada en Supabase solo tenía claves de cifrado (`session-*.json`) para los números normales, no para los `@lid` de los contactos → `SessionError: No session record` → no cifra → no entrega → sin ACK. Las emociones pasaban (matcheaban claves viejas); el resto no.
+- **Fix parcial (código)**: `enviarMensaje` espera ACK (status >= 1) con 2 reintentos y devuelve `true` solo si confirmó. `marcarNotificado` acumula en memoria y `flushMarksPendientes(num)` solo persiste tras envío confirmado — si falla, NO se marca y se reintenta.
+- **Fix permanente (pendiente de acción manual)**: re-vincular WhatsApp del bot escaneando el QR de nuevo (borrar `bot-furi/auth/`, re-ejecutar localmente, subir la sesión nueva a Supabase) para regenerar claves de cifrado LID válidas. Sin esto, el código no reintroduce el bug de marcado prematuro pero WhatsApp seguirá sin poder cifrar a contactos migrados a LID.
+- **Nota**: las `bot_notificaciones` viejas con `phone = MI_NUMERO` (el propio bot) correspondían a código previo a la segmentación por usuario; el código actual registra `FACU_NUMERO`/`ROCIO_NUMERO` correctos.
+- **Prioridad**: ALTA (activo — requiere re-vincular)
+
 ### ~~ALTA - Sync de clases usaba el id local de SQLite como PK cloud~~ ✅ RESUELTO
 - **Dónde**: `lib/providers/class_schedule_provider.dart` + `lib/database/database_helper.dart`
 - **Qué pasaba**: Las clases se sincronizaban a Supabase usando `eq('id', idLocalDeSQLite)` para update/delete, pero Supabase asigna su propio BIGSERIAL (id distinto al autoincremental local). Como las clases viejas jamás se habían subido, quedaban solo en SQLite y el bot no las conocía; además los update/delete apuntaban a filas que no existen.
