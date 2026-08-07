@@ -312,6 +312,8 @@ CREATE TABLE IF NOT EXISTS board_elements (
   height DOUBLE PRECISION DEFAULT 80,
   rotation DOUBLE PRECISION DEFAULT 0,
   color TEXT,
+  z INTEGER DEFAULT 0,
+  data JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

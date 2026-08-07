@@ -1,44 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
-import '../app_state.dart';
-
-class BoardElement {
-  final int? id;
-  final String type;
-  final String content;
-  final double x, y, width, height, rotation;
-  final String? color;
-  final String? userId;
-  final DateTime createdAt;
-
-  BoardElement({
-    this.id, required this.type, this.content = '', this.x = 20, this.y = 20,
-    this.width = 100, this.height = 80, this.rotation = 0, this.color, this.userId, DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
-
-  Map<String, dynamic> toMap() => {
-    if (id != null) 'id': id, 'type': type, 'content': content,
-    'x': x, 'y': y, 'width': width, 'height': height, 'rotation': rotation,
-    'color': color, 'user_id': AppState.myId ?? '', 'created_at': createdAt.toIso8601String(),
-  };
-
-  factory BoardElement.fromMap(Map<String, dynamic> m) => BoardElement(
-    id: m['id'] as int?, type: m['type'] as String? ?? 'note',
-    content: m['content'] as String? ?? '', x: (m['x'] as num?)?.toDouble() ?? 20,
-    y: (m['y'] as num?)?.toDouble() ?? 20, width: (m['width'] as num?)?.toDouble() ?? 100,
-    height: (m['height'] as num?)?.toDouble() ?? 80, rotation: (m['rotation'] as num?)?.toDouble() ?? 0,
-    color: m['color'] as String?, userId: m['user_id'] as String?,
-    createdAt: m['created_at'] != null ? DateTime.parse(m['created_at'] as String) : DateTime.now(),
-  );
-
-  BoardElement copyWith({double? x, double? y}) => BoardElement(
-    id: id, type: type, content: content, x: x ?? this.x, y: y ?? this.y,
-    width: width, height: height, rotation: rotation, color: color, userId: userId, createdAt: createdAt,
-  );
-
-  bool get isMine => userId == AppState.myId;
-}
+import '../models/board_element.dart';
 
 class BoardDataProvider extends ChangeNotifier {
   List<BoardElement> _elements = [];
@@ -46,6 +9,7 @@ class BoardDataProvider extends ChangeNotifier {
   String? _error;
   RealtimeChannel? _channel;
   final Map<int, _PendingMove> _pendingMoves = {};
+  final Map<int, _PendingResize> _pendingResizes = {};
   DateTime _lastSync = DateTime.now();
 
   List<BoardElement> get elements => _elements;
@@ -53,7 +17,22 @@ class BoardDataProvider extends ChangeNotifier {
   String? get error => _error;
   bool get hasError => _error != null;
 
-  void clearError() { _error = null; notifyListeners(); }
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setElementsForTest(List<BoardElement> els) {
+    _elements = List.of(els);
+  }
+
+  // Ordenar por z para respetar capas (mayor z = adelante).
+  List<BoardElement> get zOrdered {
+    final list = [..._elements];
+    list.sort((a, b) => a.z.compareTo(b.z));
+    return list;
+  }
 
   void _subscribeRealtime() {
     _channel?.unsubscribe();
@@ -64,21 +43,21 @@ class BoardDataProvider extends ChangeNotifier {
           schema: 'public',
           table: 'board_elements',
           callback: (payload) {
-            final row = payload.newRecord;
-            if (row == null) {
-              load();
+            if (payload.eventType == PostgresChangeEvent.delete) {
+              final oldId = payload.oldRecord['id'] as int?;
+              if (oldId != null) {
+                _elements.removeWhere((e) => e.id == oldId);
+                notifyListeners();
+              }
               return;
             }
-            final el = BoardElement.fromMap(row as Map<String, dynamic>);
+            final el = BoardElement.fromMap(payload.newRecord);
             final idx = _elements.indexWhere((e) => e.id == el.id);
-            if (payload.eventType == PostgresChangeEvent.delete) {
-              _elements.removeWhere((e) => e.id == el.id);
-              notifyListeners();
-            } else if (idx >= 0) {
+            if (idx >= 0) {
               _elements[idx] = el;
               notifyListeners();
             } else {
-              _elements.insert(0, el);
+              _elements.add(el);
               notifyListeners();
             }
           },
@@ -87,11 +66,17 @@ class BoardDataProvider extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    _loading = true; _error = null; notifyListeners();
+    _loading = true;
+    _error = null;
+    notifyListeners();
     try {
-      final res = await SupabaseConfig.client.from('board_elements').select()
-          .order('created_at', ascending: false).timeout(const Duration(seconds: 10));
-      _elements = (res as List).map((e) => BoardElement.fromMap(e as Map<String, dynamic>)).toList();
+      final res = await SupabaseConfig.client
+          .from('board_elements')
+          .select()
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+      _elements =
+          (res as List).map((e) => BoardElement.fromMap(e as Map<String, dynamic>)).toList();
       _error = null;
       if (_channel == null) _subscribeRealtime();
     } catch (e) {
@@ -99,15 +84,19 @@ class BoardDataProvider extends ChangeNotifier {
       _error = 'No se pudieron cargar los elementos de la pizarra';
       debugPrint('BoardDataProvider.load error: $e');
     }
-    _loading = false; notifyListeners();
+    _loading = false;
+    notifyListeners();
   }
 
   Future<void> add(BoardElement el) async {
     _error = null;
-    _elements.insert(0, el);
+    _elements.add(el);
     notifyListeners();
     try {
-      await SupabaseConfig.client.from('board_elements').insert(el.toMap()).timeout(const Duration(seconds: 10));
+      await SupabaseConfig.client
+          .from('board_elements')
+          .insert(el.toMap())
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       _error = 'No se pudo agregar el elemento';
       debugPrint('BoardDataProvider.add error: $e');
@@ -118,7 +107,11 @@ class BoardDataProvider extends ChangeNotifier {
   Future<void> update(BoardElement el) async {
     if (el.id == null) return;
     try {
-      await SupabaseConfig.client.from('board_elements').update(el.toMap()).eq('id', el.id!).timeout(const Duration(seconds: 10));
+      await SupabaseConfig.client
+          .from('board_elements')
+          .update(el.toMap())
+          .eq('id', el.id!)
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       _error = 'No se pudo actualizar el elemento';
       debugPrint('BoardDataProvider.update error: $e');
@@ -126,25 +119,7 @@ class BoardDataProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> move(int id, double x, double y) async {
-    final idx = _elements.indexWhere((e) => e.id == id);
-    if (idx == -1) return;
-    if (id == 0) return;
-    _elements[idx] = _elements[idx].copyWith(x: x, y: y);
-    _pendingMoves[id] = _PendingMove(x, y);
-    notifyListeners();
-
-    final now = DateTime.now();
-    if (now.difference(_lastSync).inMilliseconds < 300) return;
-    _lastSync = now;
-    await _flushMoves();
-  }
-
-  /// Mueve un elemento localmente (optimista) sin requerir ID de BD.
-  /// Si el elemento ya tiene ID, tambien persiste hacia Supabase (vía move()).
-  /// Si no tiene ID (recién creado, esperando respuesta de BD), solo actualiza
-  /// la copia local para que el drag funcione de inmediato. Cuando llegue el ID
-  /// desde la BD (realtime o reload), los proximos moves ya persistirán.
+  /// Mueve un elemento localmente (optimista). Con ID persiste hacia Supabase.
   void moveLocal(BoardElement el, double x, double y) {
     if (el.id != null) {
       move(el.id!, x, y);
@@ -156,43 +131,99 @@ class BoardDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _flushMoves() async {
-    if (_pendingMoves.isEmpty) return;
-    final moves = Map<int, _PendingMove>.from(_pendingMoves);
-    _pendingMoves.clear();
-    for (final entry in moves.entries) {
-      try {
-        await SupabaseConfig.client.from('board_elements')
-            .update({'x': entry.value.x, 'y': entry.value.y})
-            .eq('id', entry.key)
-            .timeout(const Duration(seconds: 5));
-      } catch (e) {
-        debugPrint('BoardDataProvider._flushMoves error: $e');
-      }
+  Future<void> move(int id, double x, double y) async {
+    final idx = _elements.indexWhere((e) => e.id == id);
+    if (idx == -1 || id == 0) return;
+    _elements[idx] = _elements[idx].copyWith(x: x, y: y);
+    _pendingMoves[id] = _PendingMove(x, y);
+    notifyListeners();
+    _scheduleFlush();
+  }
+
+  /// Redimensiona un elemento (optimista). Con ID persiste hacia Supabase.
+  void resizeLocal(BoardElement el, double width, double height) {
+    if (el.id != null) {
+      resize(el.id!, width, height);
+      return;
+    }
+    final idx = _elements.indexWhere((e) => identical(e, el));
+    if (idx == -1) return;
+    _elements[idx] = _elements[idx].copyWith(width: width, height: height);
+    notifyListeners();
+  }
+
+  Future<void> resize(int id, double width, double height) async {
+    final idx = _elements.indexWhere((e) => e.id == id);
+    if (idx == -1 || id == 0) return;
+    _elements[idx] = _elements[idx].copyWith(width: width, height: height);
+    _pendingResizes[id] = _PendingResize(width, height);
+    notifyListeners();
+    _scheduleFlush();
+  }
+
+  /// Trae un elemento al frente ajustando su z al máximo + 1 y persistiendo.
+  Future<void> bringToFront(int id) async {
+    final idx = _elements.indexWhere((e) => e.id == id);
+    if (idx == -1) return;
+    final maxZ = _elements.fold<int>(0, (acc, e) => e.z > acc ? e.z : acc);
+    _elements[idx] = _elements[idx].copyWith(z: maxZ + 1);
+    notifyListeners();
+    try {
+      await SupabaseConfig.client
+          .from('board_elements')
+          .update({'z': maxZ + 1})
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('BoardDataProvider.bringToFront error: $e');
+    }
+  }
+
+  /// Actualiza el mapa `data` de un elemento (persiste). Funciona con y sin ID.
+  void updateDataLocal(BoardElement el, Map<String, dynamic> data) {
+    if (el.id != null) {
+      _updateData(el.id!, data);
+      return;
+    }
+    final idx = _elements.indexWhere((e) => identical(e, el));
+    if (idx == -1) return;
+    _elements[idx] = _elements[idx].copyWith(data: data);
+    notifyListeners();
+  }
+
+  Future<void> _updateData(int id, Map<String, dynamic> data) async {
+    final idx = _elements.indexWhere((e) => e.id == id);
+    if (idx == -1) return;
+    _elements[idx] = _elements[idx].copyWith(data: data);
+    notifyListeners();
+    try {
+      await SupabaseConfig.client
+          .from('board_elements')
+          .update({'data': data})
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('BoardDataProvider._updateData error: $e');
     }
   }
 
   Future<void> updateContent(int id, String content) async {
     final idx = _elements.indexWhere((e) => e.id == id);
     if (idx == -1) return;
-    _elements[idx] = BoardElement(
-      id: _elements[idx].id, type: _elements[idx].type,
-      content: content, x: _elements[idx].x, y: _elements[idx].y,
-      width: _elements[idx].width, height: _elements[idx].height,
-      rotation: _elements[idx].rotation, color: _elements[idx].color,
-      userId: _elements[idx].userId, createdAt: _elements[idx].createdAt,
-    );
+    _elements[idx] = _elements[idx].copyWith(content: content);
     notifyListeners();
     try {
-      await SupabaseConfig.client.from('board_elements').update({'content': content}).eq('id', id).timeout(const Duration(seconds: 10));
+      await SupabaseConfig.client
+          .from('board_elements')
+          .update({'content': content})
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       debugPrint('BoardDataProvider.updateContent error: $e');
     }
   }
 
-  /// Actualiza el contenido localmente por referencia (funciona para elementos
-  /// recién creados que aún no tienen ID de BD). Si el elemento tiene ID,
-  /// delega a updateContent() para persistir.
+  /// Actualiza el contenido localmente por referencia (elementos recién creados).
   void updateContentLocal(BoardElement el, String content) {
     if (el.id != null) {
       updateContent(el.id!, content);
@@ -200,20 +231,19 @@ class BoardDataProvider extends ChangeNotifier {
     }
     final idx = _elements.indexWhere((e) => identical(e, el));
     if (idx == -1) return;
-    _elements[idx] = BoardElement(
-      id: null, type: _elements[idx].type,
-      content: content, x: _elements[idx].x, y: _elements[idx].y,
-      width: _elements[idx].width, height: _elements[idx].height,
-      rotation: _elements[idx].rotation, color: _elements[idx].color,
-      userId: _elements[idx].userId, createdAt: _elements[idx].createdAt,
-    );
+    _elements[idx] = _elements[idx].copyWith(content: content);
     notifyListeners();
   }
 
   Future<void> delete(int id) async {
-    _elements.removeWhere((e) => e.id == id); notifyListeners();
+    _elements.removeWhere((e) => e.id == id);
+    notifyListeners();
     try {
-      await SupabaseConfig.client.from('board_elements').delete().eq('id', id).timeout(const Duration(seconds: 10));
+      await SupabaseConfig.client
+          .from('board_elements')
+          .delete()
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       _error = 'No se pudo eliminar el elemento';
       debugPrint('BoardDataProvider.delete error: $e');
@@ -221,9 +251,45 @@ class BoardDataProvider extends ChangeNotifier {
     }
   }
 
+  void _scheduleFlush() {
+    final now = DateTime.now();
+    if (now.difference(_lastSync).inMilliseconds < 300) return;
+    _lastSync = now;
+    _flushPending();
+  }
+
+  Future<void> _flushPending() async {
+    final moves = Map<int, _PendingMove>.from(_pendingMoves);
+    final resizes = Map<int, _PendingResize>.from(_pendingResizes);
+    _pendingMoves.clear();
+    _pendingResizes.clear();
+    for (final entry in moves.entries) {
+      try {
+        await SupabaseConfig.client
+            .from('board_elements')
+            .update({'x': entry.value.x, 'y': entry.value.y})
+            .eq('id', entry.key)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('BoardDataProvider._flushPending(move) error: $e');
+      }
+    }
+    for (final entry in resizes.entries) {
+      try {
+        await SupabaseConfig.client
+            .from('board_elements')
+            .update({'width': entry.value.w, 'height': entry.value.h})
+            .eq('id', entry.key)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('BoardDataProvider._flushPending(resize) error: $e');
+      }
+    }
+  }
+
   @override
   void dispose() {
-    _flushMoves();
+    _flushPending();
     _channel?.unsubscribe();
     super.dispose();
   }
@@ -232,4 +298,9 @@ class BoardDataProvider extends ChangeNotifier {
 class _PendingMove {
   final double x, y;
   _PendingMove(this.x, this.y);
+}
+
+class _PendingResize {
+  final double w, h;
+  _PendingResize(this.w, this.h);
 }
