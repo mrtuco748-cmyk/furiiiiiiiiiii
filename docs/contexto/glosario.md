@@ -34,7 +34,7 @@
 | Note | Nota compartida | `notes` |
 | DeviceToken | Token FCM | `device_tokens` |
 | Schedule | Evento de calendario | SQLite `schedules` + Supabase `schedules` |
-| ClassSchedule | Clase recurrente por día de la semana | SQLite `class_schedules` + Supabase `class_schedules` |
+| ClassSchedule | Clase recurrente por día de la semana; `cloudId` = id cloud (BIGSERIAL de Supabase) distinto del id local de SQLite | SQLite `class_schedules` + Supabase `class_schedules` |
 | Transaction | Transacción financiera | `transactions` |
 | Task | Tarea kanban | `tasks` |
 | Favorite | Favorito por categoría, con `rating_facu`/`rating_rocio` (rating dual por usuario) y `critica` texto compartido | `favorites` |

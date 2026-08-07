@@ -49,4 +49,33 @@ void main() {
     expect(legacy.userId, '');
     expect(legacy.color, 0xFF7B2D8E);
   });
+
+  test('ClassSchedule serializa cloudId y fromMap lo recupera', () {
+    final original = ClassSchedule(
+      id: 7,
+      cloudId: 42,
+      dayOfWeek: 2,
+      startTime: '08:00',
+      title: 'Clase',
+    );
+
+    final map = original.toMap();
+    expect(map['cloudId'], 42);
+
+    final restored = ClassSchedule.fromMap({'id': 7, 'cloudId': 42, 'dayOfWeek': 2, 'startTime': '08:00', 'title': 'Clase'});
+    expect(restored.cloudId, 42);
+
+    final sinCloud = ClassSchedule.fromMap({'id': 7, 'dayOfWeek': 2, 'startTime': '08:00', 'title': 'Clase'});
+    expect(sinCloud.cloudId, isNull);
+  });
+
+  test('copyWith actualiza cloudId sin tocar el resto', () {
+    final original = ClassSchedule(id: 7, dayOfWeek: 2, startTime: '08:00', title: 'Clase');
+    final updated = original.copyWith(cloudId: 99);
+
+    expect(updated.cloudId, 99);
+    expect(updated.id, 7);
+    expect(updated.title, 'Clase');
+    expect(updated.dayOfWeek, 2);
+  });
 }

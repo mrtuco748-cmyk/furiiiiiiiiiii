@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -100,7 +101,9 @@ class _ChatViewState extends State<_ChatView> {
       await chat.sendText(text);
       _scrollToBottom();
       _focusNode.unfocus();
-    } catch (_) {}
+    } catch (e) {
+      developer.log('sendText fallo: $e');
+    }
   }
 
   Future<void> _pickImage({required bool fromCamera}) async {
@@ -195,7 +198,9 @@ class _ChatViewState extends State<_ChatView> {
         size: size,
       );
       _scrollToBottom();
-    } catch (_) {}
+    } catch (e) {
+      developer.log('sendMedia fallo: $e');
+    }
   }
 
   Future<void> _toggleRecord() async {

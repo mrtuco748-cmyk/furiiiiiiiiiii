@@ -1,5 +1,19 @@
 # Errores Conocidos de F.U.R.I
 
+> **PROPÓSITO**: Este archivo es un registro de **lecciones aprendidas** — bugs que ya se
+> resolvieron (o se están resolviendo) y las causas raíz que los provocaron, para **NO
+> reintroducirlos** en el futuro. NO es una lista de tareas pendientes, ni un backlog de
+> features. Antes de cada cambio de código, revisar aquí para evitar repetir los mismos
+> errores. Los errores **activos/pendientes** que requieren acción se documentan en
+> `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
+
+### ~~ALTA - Sync de clases usaba el id local de SQLite como PK cloud~~ ✅ RESUELTO
+- **Dónde**: `lib/providers/class_schedule_provider.dart` + `lib/database/database_helper.dart`
+- **Qué pasaba**: Las clases se sincronizaban a Supabase usando `eq('id', idLocalDeSQLite)` para update/delete, pero Supabase asigna su propio BIGSERIAL (id distinto al autoincremental local). Como las clases viejas jamás se habían subido, quedaban solo en SQLite y el bot no las conocía; además los update/delete apuntaban a filas que no existen.
+- **Fix**: SQLite v6 agrega `cloudId` a `class_schedules`. El provider guarda el id cloud devuelto por el insert y lo usa como PK cloud. `_syncUnsyncedToSupabase()` (dentro de `loadSchedules()`) sube cualquier clase con `cloudId == null`.
+- **Nota**: Para que el bot vea las clases ya configuradas, alcanza con abrir la app una vez (el sync sube las que faltan).
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-06
+
 ### ~~ALTA - Bot WhatsApp timeout en GitHub Actions (validación de sesión rota)~~ ✅ RESUELTO
 - **Dónde**: `bot-furi/bot.js` (`loadSessionFromSupabase`)
 - **Qué pasaba**: En GitHub Actions el bot moría por timeout de 60s porque nunca restauraba la sesión desde Supabase. La validación de sesión usaba `Object.keys(session).some(f => f.includes(MI_NUMERO))` (chequeaba el número en los NOMBRES de archivo) y, tras reescribirla, se usó `split(':').first` — `.first` no existe en arrays de JS, devuelve `undefined` → la validación fallaba siempre → pedía QR (imposible en CI) → timeout.
@@ -63,14 +77,12 @@
 - **Fix**: Eliminados 6, registrados 2 útiles. Total: 13 providers activos.
 - **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-07-29
 
-### CRÍTICA - 8+ tablas Supabase faltan en schema SQL
+### ~~CRÍTICA - 8+ tablas Supabase faltan en schema SQL~~ ✅ RESUELTO
 - **Dónde**: `supabase_schema.sql` vs `lib/providers/`
-- **Qué pasa**: Tablas como `transactions`, `tasks`, `photos`, `albums`, `board_elements`, `study_sessions`, `timeline_events`, `schedules` se usan en código pero no están definidas en el schema SQL
-- **Por qué es problema**: Las llamadas a Supabase para esas tablas fallarán
-- **Solución temporal**: Ninguna
-- **Fix permanente**: Agregar todas las tablas faltantes al schema y ejecutar en Supabase
-- **Nota**: `favorites` sí está completa desde 2026-08-05 (con `rating_facu`, `rating_rocio`, `critica`); ver `supabase/migration_favorites_dual_rating.sql` para migrar DBs existentes
-- **Prioridad**: CRÍTICA
+- **Qué pasaba**: Tablas como `transactions`, `tasks`, `photos`, `albums`, `board_elements`, `study_sessions`, `timeline_events`, `schedules` se usan en código pero no estaban definidas en el schema SQL, o las columnas nuevas vivían solo en migraciones sueltas y no en el schema maestro.
+- **Fix**: `supabase_schema.sql` consolidado como schema master completo e idempotente. Ya definía `transactions`, `tasks`, `favorites`, `board_elements`, `study_sessions`, `gallery`, `timeline_events`, `schedules`, `notes`, `custom_questions`, etc. Se agregaron al CREATE las tablas nuevas `class_schedules` y `gallery_comments` (con índices + RLS + policies), y las columnas nuevas `gallery.description`, `gallery.reactions`, `goals.completed_by`, `letters.seen_by`, `challenges.seen_by`.
+- **Nota**: Para DBs ya existentes en prod, ejecutar las migraciones en `supabase/` (`migration_class_schedules.sql`, `migration_gallery_comments.sql`, `migration_goals_completed_by.sql`, `migration_seen_system.sql`, `migration_favorites_dual_rating.sql`, `migration_chat_media_reactions.sql`).
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-06 (schema master listo; falta ejecutar migraciones en prod)
 
 ### ALTA - API key de Gemini con placeholder incorrecto
 - **Dónde**: `lib/services/ai_config.dart:3` y `lib/services/ai_service.dart:16-18`
@@ -88,13 +100,12 @@
 - **Fix permanente**: Implementar TDD — tests antes que código
 - **Prioridad**: ALTA
 
-### MEDIA - Sin manejo de errores en llamadas Supabase
+### ~~MEDIA - Sin manejo de errores en llamadas Supabase~~ 🟡 PARCIALMENTE RESUELTO
 - **Dónde**: Múltiples providers
-- **Qué pasa**: `catch (_) {}` sin logging, sin feedback al usuario
-- **Por qué es problema**: Errores silenciosos que el usuario nunca ve
-- **Solución temporal**: Ninguna
-- **Fix permanente**: Implementar manejo de errores con feedback visual y logging
-- **Prioridad**: MEDIA
+- **Qué pasaba**: `catch (_) {}` sin logging, sin feedback al usuario
+- **Fix parcial**: Se reemplazaron los `catch (_) {}` silenciosos por `developer.log` con contexto en `chat_provider.dart` (markIncomingRead/Delivered), `chat_media_service.dart` (deleteFromCloud), `chat_screen.dart` (sendText/sendMedia), `home_screen.dart`, `calendar_home_screen.dart`, `metas_screen.dart`, `retos_screen.dart`. Se dejan silenciosos (intencional) `sound_service.dart` y el parse de color de la pizarra (no-Supabase).
+- **Pendiente**: feedback visual al usuario (banners) en screens; se conserva solo el patrón de `_error` ya existente en los providers CRUD.
+- **Prioridad**: ~~MEDIA~~ → PARCIAL 2026-08-06
 
 ### MEDIA - chat_screen.dart demasiado grande
 - **Dónde**: `lib/screens/chat_screen.dart` (699 líneas)

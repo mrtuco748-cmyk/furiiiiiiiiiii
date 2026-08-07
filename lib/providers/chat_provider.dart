@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -345,7 +347,9 @@ class ChatProvider extends ChangeNotifier {
         }
       }
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      developer.log('markIncomingRead fallo: $e');
+    }
   }
 
   /// Marca como entregados (delivered_at) los mensajes recibidos por realtime
@@ -369,7 +373,9 @@ class ChatProvider extends ChangeNotifier {
         }
       }
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      developer.log('markIncomingDelivered fallo: $e');
+    }
   }
 
 

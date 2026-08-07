@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -76,7 +78,9 @@ class _BrutalGridState extends State<_BrutalGrid> {
           if (mounted) pv.loadSchedules();
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      developer.log('checkClassSetup fallo: $e');
+    }
   }
 
   @override

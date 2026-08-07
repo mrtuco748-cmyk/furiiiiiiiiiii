@@ -1,5 +1,37 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-06] - FEATURE+BUGFIX - Bot segmentado por usuario, sync de clases viejo, errores y schema
+**Resumen**: Sesión de cierre de pendientes: el bot de WhatsApp ahora enruta cada notificación solo a la persona que NO la generó (cada uno ve solo lo que agrega la otra), sincronización automática de las clases existentes de SQLite que jamás se subieron a Supabase, logging para catches silenciosos, y schema SQL maestro completo.
+**Cambios realizados**:
+1. **Bot segmentado por destinatario** (`bot-furi/bot.js`):
+   - Nuevo `cargarUsuarios()` que mapea `profiles.id` → identidad (facu/rocio).
+   - Nuevo `destinosPara(usuarios, creatorId)`: si el creador del registro es Facu vai a ROCIO_NUMERO y viceversa; si no se identifica el creador, va a ambos (default).
+   - `yaNotificado()` ahora filtra por `phone` además de `(tabla, registro_id)` para permitir tracking por destinatario.
+   - `verificarYNotificar()` acumula en `mensajesPorNum` (map phone → textos) en vez de un array único, y envía a cada destinatario solo su difusión.
+   - Aniversarios seguien compartidos (van a ambos, son fechas de pareja).
+   - Mapeo por columna de creador por tabla: schedules→`user_id`, class_schedules→`user_id`, moods→`user_id`, letters→`from_user`, challenges→`couple_id`, goals→`couple_id`, tasks→`created_by`, transactions/gallery/notes/timeline→`user_id`, custom_questions→`from_user`.
+2. **Sync automático de clases viejas**:
+   - SQLite sube a versión 6 (`cloudId INTEGER` en `class_schedules`).
+   - `ClassSchedule` gana `cloudId`.
+   - `ClassScheduleProvider._syncUnsyncedToSupabase()` corre dentro de `loadSchedules()`: sube a Supabase toda clase con `cloudId == null` y guarda el id cloud devuelto.
+   - `_pushToSupabase()` ahora usa `cloudId` como PK cloud para update/delete (antes usaba el id local de SQLite, que NO coincide con el BIGSERIAL de Supabase → update/delete apuntaban a fila equivocada).
+   - `addSchedule()` persiste `cloudId`; `deleteSchedule()` borra por id cloud.
+3. **Errores silenciosos con logging** (`lib/`):
+   - `catch (_) {}` reemplazados por `developer.log` con contexto en: `chat_provider.dart` (marks), `chat_media_service.dart` (delete cloud), `chat_screen.dart` (sendText/sendMedia), `home_screen.dart` (checkClassSetup), `calendar_home_screen.dart`, `metas_screen.dart`, `retos_screen.dart`.
+   - Excepción: `sound_service.dart` y pizarra (parse de color) se dejan silenciosos (fallo intencional/no-Supabase).
+4. **Schema master completo** (`supabase_schema.sql`):
+   - Aclaraba `class_schedules` (tabla nueva) + índice `day_of_week`.
+   - `gallery_comments` (tabla) + índice.
+   - Columnas nuevas consolidadas en el CREATE: `gallery.description`, `gallery.reactions`, `goals.completed_by`, `letters.seen_by`, `challenges.seen_by`.
+   - RLS + policies para `gallery_comments` y `class_schedules`.
+   - Pendiente: ejecutar las migraciones en prod (class_schedules, gallery_comments, seen_by, etc.) para DBs ya existentes.
+**Lecciones**:
+- El problema del sync de clases era doble: (a) las clases viejas se quedaron solo en SQLite porque el sync se agregó después; (b) el update/delete en código usaba `eq('id', idLocalDeSQLite)` pero Supabase asigna su propio BIGSERIAL → update/delete apuntaban a filas que no existen (o a otras). La solución correcta es guardar explícitamente el `cloudId` devuelto por el insert y usarlo como PK cloud.
+- Para enrutar notificaciones por usuario, el bot necesitó conocer el mapeo `user_id` (UUID) → identidad, que vive en `profiles`. No basta comparar strings de identidad (algunas tablas guardan `profile.id`, otras guardan `text`).
+- La tabla `bot_notificaciones` no estaba diseñada para enviar distinto a cada destinatario: había que agregar el filtro por `phone` en el `yaNotificado`, de lo contrario la primera verificación marcaria el key y bloquearía el envío al segundo destino.
+**Impacto**: `bot-furi/bot.js`, `lib/models/class_schedule.dart`, `lib/providers/class_schedule_provider.dart`, `lib/database/database_helper.dart`, `lib/providers/chat_provider.dart`, `lib/services/chat_media_service.dart`, `lib/screens/chat_screen.dart`, `lib/screens/home_screen.dart`, `lib/screens/calendar/calendar_home_screen.dart`, `lib/screens/metas_screen.dart`, `lib/screens/retos_screen.dart`, `supabase_schema.sql`, `test/models/class_schedule_test.dart`, docs
+**Relacionado con**: D-10 (bot), D-3 (SQLite), errores-conocidos (schema faltante, bot)
+
 ## [2026-08-06] - BUGFIX - Notificaciones del chat duplicadas con la app abierta
 **Resumen**: Cada mensaje nuevo generaba 2 notificaciones locales cuando la app estaba abierta. Habia dos mecanismos simultaneos para el mismo evento: el push FCM (trigger `notify_new_message` -> Edge Function `send-push` -> `onMessage` -> `_showLocalNotification`) y el Realtime local (`startListening` escucha INSERT en `messages` -> `_showLocalNotification`). Ambos mostraban una notificacion para el mismo mensaje.
 **Cambios realizados**:

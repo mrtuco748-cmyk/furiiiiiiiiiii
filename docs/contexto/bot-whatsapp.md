@@ -73,6 +73,18 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 
 **No notifica**: messages (ya tienen push via FCM)
 
+## Regla de destinatario
+
+Cada registro se enruta **solo a la persona que NO lo generó**: si el creador es Facu
+va a `ROCIO_NUMERO`, y si es Rocio va a `FACU_NUMERO`. Si no se puede identificar el
+creador, se envía a ambos (default). Aplica a schedules (user_id), class_schedules
+(user_id), moods (user_id), letters (from_user), challenges (couple_id), goals
+(couple_id), tasks (created_by), transactions/gallery/notes/timeline (user_id),
+custom_questions (from_id). **Aniversarios van a ambos** (son fechas de pareja).
+
+El tracking en `bot_notificaciones` filtra por `phone` además de `(tabla, registro_id)`,
+así cada destinatario tiene su propio registro anti-duplicado.
+
 ## Flujo de ejecucion
 
 ```
@@ -87,11 +99,13 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
    └── Si no hay sesion guardada, muestra QR en terminal
 6. saveSessionToSupabase() (guarda por si acaba de escanear QR)
 7. verificarYNotificar(sock)
+   └── cargarUsuarios() (mapea profiles.id → facu/rocio)
    └── Itera las 14 categorias
-   └── yaNotificado(tabla, key) para cada registro
-   └── Acumula mensajes[]
-   └── Si hay mensajes, los une con header y envia
-8. enviarMensaje(sock, num, texto) para FACU_NUMERO y ROCIO_NUMERO
+   └── Para cada registro: yaNotificado(tabla, key, phone) + destinosPara(usuarios, creatorId)
+   └── Acumula mensajesPorNum{} (map phone → textos)
+   └── Por la regla "cada quien ve lo que agrega la otra": cada registro se enruta
+       solo al destinatario que NO lo genero (si no se identifica el creador, a ambos)
+8. Por cada numero con mensajes, une textos con header y envia
 9. sock.end()
 10. process.exit(0)
 ```

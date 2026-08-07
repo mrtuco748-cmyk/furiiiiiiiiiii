@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS letters (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   is_opened BOOLEAN DEFAULT false,
+  seen_by JSONB DEFAULT '[]'::jsonb,  -- array de user_id que ya lo vieron
   scheduled_open TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS goals (
   title TEXT NOT NULL,
   description TEXT,
   completed BOOLEAN DEFAULT false,
+  completed_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -85,6 +87,7 @@ CREATE TABLE IF NOT EXISTS challenges (
   current_day INT DEFAULT 0,
   started BOOLEAN DEFAULT false,
   completed BOOLEAN DEFAULT false,
+  seen_by JSONB DEFAULT '[]'::jsonb,  -- array de user_id que ya lo vieron
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -331,8 +334,19 @@ CREATE TABLE IF NOT EXISTS gallery (
   type TEXT DEFAULT 'photo',
   album TEXT,
   label TEXT,
+  description TEXT,
+  reactions JSONB DEFAULT '{}'::jsonb,  -- {"key": ["user-id-1", ...]}
   rotation DOUBLE PRECISION DEFAULT 0,
   size DOUBLE PRECISION DEFAULT 1.0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 20b. GALLERY COMMENTS (comentarios por foto)
+CREATE TABLE IF NOT EXISTS gallery_comments (
+  id BIGSERIAL PRIMARY KEY,
+  gallery_id BIGINT NOT NULL REFERENCES gallery(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  content TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -362,6 +376,21 @@ CREATE TABLE IF NOT EXISTS schedules (
   updatedAt TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 23. CLASS SCHEDULES (clases recurrentes por dia de semana)
+CREATE TABLE IF NOT EXISTS class_schedules (
+  id BIGSERIAL PRIMARY KEY,
+  day_of_week INTEGER NOT NULL,  -- convencion Dart: 1=lunes ... 7=domingo
+  class_type_id BIGINT,
+  start_time TEXT NOT NULL,
+  title TEXT NOT NULL,
+  end_time TEXT DEFAULT '',
+  professor TEXT DEFAULT '',
+  user_id TEXT DEFAULT '',
+  color INTEGER DEFAULT 4286262670,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- INDEXES for new tables
 CREATE INDEX IF NOT EXISTS idx_tasks_column ON tasks("column");
 CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by);
@@ -374,6 +403,8 @@ CREATE INDEX IF NOT EXISTS idx_study_sessions_type ON study_sessions(type);
 CREATE INDEX IF NOT EXISTS idx_gallery_user_id ON gallery(user_id);
 CREATE INDEX IF NOT EXISTS idx_timeline_events_user_id ON timeline_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
+CREATE INDEX IF NOT EXISTS idx_class_schedules_day ON class_schedules(day_of_week);
+CREATE INDEX IF NOT EXISTS gallery_comments_gallery_id_idx ON gallery_comments(gallery_id);
 
 -- RLS for new tables
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
@@ -382,8 +413,10 @@ ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE board_elements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gallery ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gallery_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE timeline_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_schedules ENABLE ROW LEVEL SECURITY;
 
 -- Policies for new tables
 DO $$ BEGIN
@@ -393,8 +426,10 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "full_access_board_elements" ON board_elements;
   DROP POLICY IF EXISTS "full_access_study_sessions" ON study_sessions;
   DROP POLICY IF EXISTS "full_access_gallery" ON gallery;
+  DROP POLICY IF EXISTS "full_access_gallery_comments" ON gallery_comments;
   DROP POLICY IF EXISTS "full_access_timeline_events" ON timeline_events;
   DROP POLICY IF EXISTS "full_access_schedules" ON schedules;
+  DROP POLICY IF EXISTS "full_access_class_schedules" ON class_schedules;
 END $$;
 
 CREATE POLICY "full_access_tasks" ON tasks FOR ALL USING (true);
@@ -403,5 +438,7 @@ CREATE POLICY "full_access_favorites" ON favorites FOR ALL USING (true);
 CREATE POLICY "full_access_board_elements" ON board_elements FOR ALL USING (true);
 CREATE POLICY "full_access_study_sessions" ON study_sessions FOR ALL USING (true);
 CREATE POLICY "full_access_gallery" ON gallery FOR ALL USING (true);
+CREATE POLICY "full_access_gallery_comments" ON gallery_comments FOR ALL USING (true);
 CREATE POLICY "full_access_timeline_events" ON timeline_events FOR ALL USING (true);
 CREATE POLICY "full_access_schedules" ON schedules FOR ALL USING (true);
+CREATE POLICY "full_access_class_schedules" ON class_schedules FOR ALL USING (true);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -28,7 +29,7 @@ class _MetasScreenState extends State<MetasScreen> {
       final data = await SupabaseConfig.client.from('goals').select('*')
           .or('couple_id.eq.${AppState.myId ?? ''},couple_id.eq.${AppState.partnerId ?? ''}').order('created_at', ascending: false);
       if (mounted) setState(() { _metas = List<Map<String, dynamic>>.from(data); _loading = false; });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (e) { developer.log('cargar metas fallo: $e'); if (mounted) setState(() => _loading = false); }
   }
 
   Future<void> _toggle(Map<String, dynamic> m) async {

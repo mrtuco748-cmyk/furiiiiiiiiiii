@@ -15,10 +15,13 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 5, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 6, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 6) {
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN cloudId INTEGER");
+    }
     if (oldVersion < 2) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS menu_plans (
@@ -91,7 +94,8 @@ class DatabaseHelper {
         endTime TEXT DEFAULT '',
         professor TEXT DEFAULT '',
         userId TEXT DEFAULT '',
-        color INTEGER DEFAULT 0xFF7B2D8E
+        color INTEGER DEFAULT 0xFF7B2D8E,
+        cloudId INTEGER
       )
     ''');
     await db.execute('''

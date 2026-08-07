@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:developer' as developer;
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -108,8 +109,9 @@ class ChatMediaService {
     if (storagePath.isEmpty) return;
     try {
       await _client.storage.from(bucket).remove([storagePath]);
-    } catch (_) {
+    } catch (e) {
       // El archivo puede ya no existir; no bloquear el flujo local.
+      developer.log('deleteFromCloud fallo (ignorable): $e');
     }
   }
 

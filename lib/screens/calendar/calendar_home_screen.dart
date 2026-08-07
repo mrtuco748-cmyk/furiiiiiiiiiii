@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -51,7 +53,8 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       await context.read<EventTypeProvider>().loadTypes();
       await context.read<ClassScheduleProvider>().loadSchedules();
       if (mounted) setState(() => _initialized = true);
-    } catch (_) {
+    } catch (e) {
+      developer.log('cargar calendario fallo: $e');
       if (mounted) setState(() => _initialized = true);
     }
   }

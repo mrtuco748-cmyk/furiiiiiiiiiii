@@ -1,5 +1,6 @@
 class ClassSchedule {
   final int? id;
+  final int? cloudId;
   final int dayOfWeek;
   final int? classTypeId;
   final String startTime;
@@ -11,6 +12,7 @@ class ClassSchedule {
 
   ClassSchedule({
     this.id,
+    this.cloudId,
     required this.dayOfWeek,
     this.classTypeId,
     required this.startTime,
@@ -23,6 +25,7 @@ class ClassSchedule {
 
   Map<String, dynamic> toMap() => {
     if (id != null) 'id': id,
+    if (cloudId != null) 'cloudId': cloudId,
     'dayOfWeek': dayOfWeek,
     'classTypeId': classTypeId,
     'startTime': startTime,
@@ -35,6 +38,7 @@ class ClassSchedule {
 
   factory ClassSchedule.fromMap(Map<String, dynamic> map) => ClassSchedule(
     id: map['id'] as int?,
+    cloudId: map['cloudId'] as int?,
     dayOfWeek: map['dayOfWeek'] as int,
     classTypeId: map['classTypeId'] as int?,
     startTime: map['startTime'] as String,
@@ -43,6 +47,30 @@ class ClassSchedule {
     professor: (map['professor'] as String?) ?? '',
     userId: (map['userId'] as String?) ?? '',
     color: (map['color'] as int?) ?? 0xFF7B2D8E,
+  );
+
+  ClassSchedule copyWith({
+    int? id,
+    int? cloudId,
+    int? dayOfWeek,
+    int? classTypeId,
+    String? startTime,
+    String? title,
+    String? endTime,
+    String? professor,
+    String? userId,
+    int? color,
+  }) => ClassSchedule(
+    id: id ?? this.id,
+    cloudId: cloudId ?? this.cloudId,
+    dayOfWeek: dayOfWeek ?? this.dayOfWeek,
+    classTypeId: classTypeId ?? this.classTypeId,
+    startTime: startTime ?? this.startTime,
+    title: title ?? this.title,
+    endTime: endTime ?? this.endTime,
+    professor: professor ?? this.professor,
+    userId: userId ?? this.userId,
+    color: color ?? this.color,
   );
 
   Map<String, dynamic> toSupabaseMap() => {
