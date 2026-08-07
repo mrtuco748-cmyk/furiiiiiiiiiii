@@ -12,6 +12,58 @@ class BoardDataProvider extends ChangeNotifier {
   final Map<int, _PendingResize> _pendingResizes = {};
   DateTime _lastSync = DateTime.now();
 
+  // ---- Tableros anidados ----
+  int _boardId = 1;
+  List<Map<String, dynamic>> _boards = [];
+
+  int get boardId => _boardId;
+  List<Map<String, dynamic>> get boards => _boards;
+  String get boardName {
+    for (final b in _boards) {
+      if (b['id'] == _boardId) return b['name'] as String? ?? 'Pizarra';
+    }
+    return 'Pizarra';
+  }
+
+  void setBoard(int id) {
+    if (id == _boardId) return;
+    _boardId = id;
+    load();
+  }
+
+  /// Carga la lista de tableros para el menú/breadcrumb.
+  Future<void> loadBoards() async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('boards')
+          .select()
+          .order('id', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      _boards = (res as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('BoardDataProvider.loadBoards error: $e');
+    }
+  }
+
+  /// Crea un tablero hijo del actual y devuelve su id.
+  Future<int?> createBoard(String name, int parentId) async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('boards')
+          .insert({'name': name, 'parent_id': parentId})
+          .select('id')
+          .single()
+          .timeout(const Duration(seconds: 10));
+      final newId = res['id'] as int;
+      await loadBoards();
+      return newId;
+    } catch (e) {
+      _error = 'No se pudo crear el tablero';
+      debugPrint('BoardDataProvider.createBoard error: $e');
+      return null;
+    }
+  }
+
   List<BoardElement> get elements => _elements;
   bool get loading => _loading;
   String? get error => _error;
@@ -52,6 +104,7 @@ class BoardDataProvider extends ChangeNotifier {
               return;
             }
             final el = BoardElement.fromMap(payload.newRecord);
+            if (el.boardId != _boardId) return;
             final idx = _elements.indexWhere((e) => e.id == el.id);
             if (idx >= 0) {
               _elements[idx] = el;
@@ -73,12 +126,14 @@ class BoardDataProvider extends ChangeNotifier {
       final res = await SupabaseConfig.client
           .from('board_elements')
           .select()
+          .eq('board_id', _boardId)
           .order('created_at', ascending: false)
           .timeout(const Duration(seconds: 10));
       _elements =
           (res as List).map((e) => BoardElement.fromMap(e as Map<String, dynamic>)).toList();
       _error = null;
       if (_channel == null) _subscribeRealtime();
+      await loadBoards();
     } catch (e) {
       _elements = [];
       _error = 'No se pudieron cargar los elementos de la pizarra';
@@ -90,6 +145,7 @@ class BoardDataProvider extends ChangeNotifier {
 
   Future<void> add(BoardElement el) async {
     _error = null;
+    el = el.copyWith(boardId: _boardId);
     _elements.add(el);
     notifyListeners();
     try {

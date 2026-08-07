@@ -14,6 +14,7 @@ class BoardElement {
   final String? color;
   final String? userId;
   final int z;
+  final int boardId;
   final Map<String, dynamic> data;
   final DateTime createdAt;
 
@@ -29,6 +30,7 @@ class BoardElement {
     this.color,
     this.userId,
     this.z = 0,
+    this.boardId = 1,
     this.data = const {},
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -45,6 +47,7 @@ class BoardElement {
         'color': color,
         'z': z,
         'data': data,
+        'board_id': boardId,
         'user_id': AppState.myId ?? '',
         'created_at': createdAt.toIso8601String(),
       };
@@ -63,6 +66,7 @@ class BoardElement {
         data: m['data'] is Map<String, dynamic>
             ? Map<String, dynamic>.from(m['data'] as Map)
             : {},
+        boardId: (m['board_id'] as num?)?.toInt() ?? 1,
         userId: m['user_id'] as String?,
         createdAt: m['created_at'] != null
             ? DateTime.parse(m['created_at'] as String)
@@ -78,6 +82,7 @@ class BoardElement {
     String? content,
     Map<String, dynamic>? data,
     int? z,
+    int? boardId,
   }) =>
       BoardElement(
         id: id,
@@ -91,11 +96,14 @@ class BoardElement {
         color: color,
         userId: userId,
         z: z ?? this.z,
+        boardId: boardId ?? this.boardId,
         data: data ?? this.data,
         createdAt: createdAt,
       );
 
   bool get isMine => userId == AppState.myId;
+
+  bool get isDone => type == 'task' && data['done'] == true;
 
   Offset2D get center => Offset2D(x + width / 2, y + height / 2);
 }

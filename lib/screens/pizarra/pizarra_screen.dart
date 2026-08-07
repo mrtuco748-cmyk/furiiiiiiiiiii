@@ -36,6 +36,9 @@ class _PizarraScreenState extends State<PizarraScreen> {
   final _transformController = TransformationController();
   int? _selectedId;
   int? _connSourceId;
+  bool _searchOpen = false;
+  String _searchText = '';
+  final _boardStack = <int>[1];
   final _editCtrls = <int, TextEditingController>{};
   final _editing = <int, bool>{};
   final _visibleRect = ValueNotifier<Rect>(Rect.zero);
@@ -81,6 +84,27 @@ class _PizarraScreenState extends State<PizarraScreen> {
     _transformController.value = Matrix4.translationValues(-500, -400, 0);
   }
 
+  Iterable<BoardElement> get _searchResults {
+    final q = _searchText.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return _pv.elements.where((e) =>
+        e.type != 'connector' &&
+        (e.content.toLowerCase().contains(q) ||
+            ((e.data['title'] as String?) ?? '').toLowerCase().contains(q)));
+  }
+
+  void _goToElement(BoardElement el) {
+    final size = MediaQuery.of(context).size;
+    final px = size.width / 2 - el.center.dx;
+    final py = size.height / 2 - el.center.dy;
+    _transformController.value = Matrix4.translationValues(px, py, 0);
+    setState(() {
+      _selectedId = el.id;
+      _searchOpen = false;
+      _searchText = '';
+    });
+  }
+
   double _randPos() {
     final t = _transformController.value.getTranslation();
     final base = t.x.isFinite ? t.x.abs() : 500.0;
@@ -95,7 +119,9 @@ class _PizarraScreenState extends State<PizarraScreen> {
     final isMedia = type == 'image' || type == 'link';
     _pv.add(BoardElement(
       type: type,
-      content: content.isNotEmpty ? content : (type == 'note' || type == 'postit' ? 'Doble tap...' : ''),
+      content: content.isNotEmpty
+          ? content
+          : (type == 'note' || type == 'postit' ? 'Doble tap...' : (type == 'task' ? 'Nueva tarea' : '')),
       x: _randPos(),
       y: _randPos(),
       width: isArrow ? 160 : width,
@@ -146,6 +172,48 @@ class _PizarraScreenState extends State<PizarraScreen> {
     final raw = url.trim().contains('://') ? url.trim() : 'https://${url.trim()}';
     final host = Uri.tryParse(raw)?.host;
     _spawnAdd('link', content: url.trim(), width: 260, height: 96, data: {'url': url.trim(), 'title': (host == null || host.isEmpty) ? url.trim() : host});
+  }
+
+  void _openBoard(int boardId) {
+    _boardStack.add(boardId);
+    _pv.setBoard(boardId);
+    _goToCenter();
+  }
+
+  void _goBackBoard() {
+    if (_boardStack.length <= 1) return;
+    _boardStack.removeLast();
+    _pv.setBoard(_boardStack.last);
+    _goToCenter();
+  }
+
+  Future<void> _createSubBoard() async {
+    HapticFeedback.heavyImpact();
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF12331a),
+        title: const Text('Nuevo tablero', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: ctrl, autofocus: true, maxLength: 30,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(hintText: 'Nombre del tablero', hintStyle: TextStyle(color: Color(0xFF88FF99))),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: ctrl.text.isNotEmpty ? () => Navigator.pop(ctx, ctrl.text) : null, child: const Text('Crear', style: TextStyle(color: _c))),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.trim().isEmpty) return;
+    final newId = await _pv.createBoard(name.trim(), _pv.boardId);
+    if (newId == null || !mounted) return;
+    _pv.add(BoardElement(
+      type: 'board', content: name.trim(), width: 240, height: 70, z: 1,
+      color: '#39FF14', data: {'boardId': newId}, userId: AppState.myId,
+    ));
   }
 
   void _enterConnectorMode() {
@@ -225,16 +293,40 @@ class _PizarraScreenState extends State<PizarraScreen> {
         _boardCanvas(),
         _headerFloating(),
         _toolsFloating(),
+        if (_searchOpen) _searchPanel(),
         if (_connSourceId != null) _connectorHint(),
       ])),
     );
   }
 
   Widget _headerFloating() {
+    final pv = _pv;
     return Positioned(left: 12, top: 8, right: 12, height: 48,
       child: Row(children: [
+        if (_boardStack.length > 1)
+          Padding(padding: const EdgeInsets.only(right: 6),
+            child: TapTile(onTap: _goBackBoard, child: Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(14), border: Border.all(color: _c, width: 2)),
+              child: const Icon(Icons.arrow_back, color: _c, size: 20)))),
+        Padding(padding: const EdgeInsets.only(right: 8),
+          child: TapTile(onTap: () => _createSubBoard(), child: Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(14), border: Border.all(color: _c, width: 2)),
+            child: const Icon(Icons.create_new_folder, color: _c, size: 20)))),
+        Container(
+          width: 150,
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.centerLeft,
+          decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(14)),
+          child: Text(pv.boardName, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.bangers(color: _c, fontSize: 15)),
+        ),
+        TapTile(onTap: () { HapticFeedback.selectionClick(); setState(() => _searchOpen = !_searchOpen); },
+          child: Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(14), border: Border.all(color: _c, width: 2)),
+            child: const Icon(Icons.search, color: _c, size: 22))),
         const Spacer(),
         if (_selectedId != null) ...[
+          Padding(padding: const EdgeInsets.only(right: 8),
+            child: TapTile(onTap: () => _openComments(), child: Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(14), border: Border.all(color: _c, width: 2)),
+              child: const Icon(Icons.mode_comment, color: _c, size: 20)))),
           Padding(padding: const EdgeInsets.only(right: 8),
             child: TapTile(onTap: _bringToFront, child: Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(14), border: Border.all(color: _c, width: 2)),
               child: const Icon(Icons.vertical_align_top, color: _c, size: 20)))),
@@ -253,7 +345,8 @@ class _PizarraScreenState extends State<PizarraScreen> {
     final tools = <(IconData, VoidCallback, Color)>[
       (Icons.note_add, () => _spawnAdd('note'), const Color(0xFF00F0FF)),
       (Icons.push_pin, () => _spawnAdd('postit'), const Color(0xFFFFDE59)),
-      (Icons.arrow_forward, () => _spawnAdd('arrow'), const Color(0xFF39FF14)),
+      (Icons.task_alt, () => _spawnAdd('task', width: 200, height: 70), const Color(0xFF39FF14)),
+      (Icons.arrow_forward, () => _spawnAdd('arrow'), const Color(0xFF00FF66)),
       (Icons.image, _addImageFromPicker, const Color(0xFF9D00FF)),
       (Icons.link, _addLinkFromDialog, const Color(0xFF0088FF)),
     ];
@@ -276,6 +369,64 @@ class _PizarraScreenState extends State<PizarraScreen> {
         decoration: BoxDecoration(color: const Color(0xFF16233a), borderRadius: BorderRadius.circular(14)),
         child: const Text('Toca la nota de destino para conectarla', style: TextStyle(color: _c, fontWeight: FontWeight.bold)))),
     );
+  }
+
+  Widget _searchPanel() {
+    final results = _searchResults.toList();
+    return Positioned(
+      left: 12,
+      right: 12,
+      top: 64,
+      child: Material(
+        color: const Color(0xFF12331a),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(border: Border.all(color: _c, width: 2), borderRadius: BorderRadius.circular(14)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              autofocus: true,
+              onChanged: (v) => setState(() => _searchText = v),
+              style: GoogleFonts.bangers(color: Colors.white, fontSize: 16),
+              decoration: InputDecoration(
+                hintText: 'Buscar notas, links...',
+                hintStyle: const TextStyle(color: Color(0xFF88FF99)),
+                border: InputBorder.none,
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => setState(() { _searchOpen = false; _searchText = ''; }),
+                ),
+              ),
+            ),
+            if (results.isNotEmpty)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: ListView(shrinkWrap: true, children: [
+                  for (final el in results)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(_typeIcon(el.type), color: _c, size: 18),
+                      title: Text(el.content.isEmpty ? (el.data['title'] as String? ?? el.type) : el.content,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.bangers(color: Colors.white, fontSize: 13)),
+                      onTap: () => _goToElement(el),
+                    ),
+                ]),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  IconData _typeIcon(String type) {
+    switch (type) {
+      case 'image': return Icons.image;
+      case 'link': return Icons.link;
+      case 'task': return Icons.task_alt;
+      case 'arrow': return Icons.arrow_forward;
+      case 'postit': return Icons.push_pin;
+      default: return Icons.note_add;
+    }
   }
 
   Widget _boardCanvas() {
@@ -338,7 +489,10 @@ class _PizarraScreenState extends State<PizarraScreen> {
         },
         onDoubleTap: () {
           if (el.id == null) return;
-          if (el.type == 'note' || el.type == 'postit' || el.type == 'arrow') {
+          if (el.type == 'board') {
+            final b = el.data['boardId'] as int?;
+            if (b != null) _openBoard(b);
+          } else if (el.type == 'note' || el.type == 'postit' || el.type == 'arrow' || el.type == 'task') {
             _startEditing(id, el.content);
           } else if (el.type == 'link') {
             _editLink(el);
@@ -363,6 +517,38 @@ class _PizarraScreenState extends State<PizarraScreen> {
         child: _BoardImage(storagePath: el.content));
     } else if (el.type == 'link') {
       body = _LinkCard(url: el.content, title: el.data['title'] as String? ?? el.content, w: w, h: h);
+    } else if (el.type == 'task') {
+      body = Container(width: w, height: h, padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
+        child: Row(children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              final done = el.isDone;
+              _pv.updateDataLocal(el, {...el.data, 'done': !done});
+            },
+            child: Container(width: 18, height: 18,
+              decoration: BoxDecoration(color: el.isDone ? const Color(0xFF111111) : const Color(0x33FFFFFF), borderRadius: BorderRadius.circular(4)),
+              child: el.isDone ? const Icon(Icons.check, color: _c, size: 14) : null),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(el.content,
+            maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.bangers(color: const Color(0xFF111111), fontSize: 14,
+              decoration: el.isDone ? TextDecoration.lineThrough : null,
+              decorationThickness: 2))),
+        ]));
+    } else if (el.type == 'board') {
+      body = Container(width: w, height: h, padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: const Color(0xFF1A3A1A), border: Border.all(color: _c, width: 2), borderRadius: BorderRadius.circular(14)),
+        child: Row(children: [
+          const Icon(Icons.create_new_folder, color: _c, size: 26),
+          const SizedBox(width: 8),
+          Expanded(child: Text(el.content, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.bangers(color: Colors.white, fontSize: 14))),
+          const Icon(Icons.chevron_right, color: Colors.white54, size: 20),
+        ]));
     } else if (el.type == 'arrow') {
       body = Container(width: w, height: h, padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
@@ -389,6 +575,11 @@ class _PizarraScreenState extends State<PizarraScreen> {
           decoration: BoxDecoration(border: Border.all(color: _c, width: 3), borderRadius: BorderRadius.circular(14))))),
         ..._buildHandles(el, w, h),
       ],
+      if (!selected && commentCount(el) > 0)
+        Positioned(right: 4, bottom: 4, child: Container(width: 18, height: 18,
+          decoration: BoxDecoration(color: const Color(0xFF1A3A1A), borderRadius: BorderRadius.circular(9), border: Border.all(color: _c, width: 1)),
+          child: Center(child: Text('${commentCount(el)}', style: GoogleFonts.bangers(color: _c, fontSize: 10)))),
+      ),
     ]));
   }
 
@@ -429,6 +620,137 @@ class _PizarraScreenState extends State<PizarraScreen> {
     if (newUrl == null || newUrl.trim().isEmpty) return;
     final raw = newUrl.trim().contains('://') ? newUrl.trim() : 'https://${newUrl.trim()}';
     _pv.updateDataLocal(el, {'url': newUrl.trim(), 'title': Uri.tryParse(raw)?.host ?? newUrl});
+  }
+
+  // ---------- Comentarios + menciones ----------
+
+  List<dynamic> _commentsOf(BoardElement el) =>
+      (el.data['comments'] as List?) ?? const [];
+
+  int commentCount(BoardElement el) => _commentsOf(el).length;
+
+  void _openComments() {
+    final s = _selectedId;
+    final el = _firstWhereOrNull(_pv.elements, (e) => e.id == s);
+    if (el == null || el.type == 'connector') return;
+    HapticFeedback.selectionClick();
+    _showCommentsSheet(el);
+  }
+
+  Future<void> _showCommentsSheet(BoardElement el) {
+    final input = TextEditingController();
+    return showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF12331a),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      isScrollControlled: true,
+      builder: (ctx) {
+        int? replyingIndex;
+        return StatefulBuilder(builder: (ctx, setSheet) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.6,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Comentarios', style: GoogleFonts.bangers(color: _c, fontSize: 18)),
+                  const SizedBox(height: 8),
+                  Expanded(child: ListView(children: [
+                    for (final (i, c) in _commentsOf(el).indexed)
+                      _commentRow(el, i, c, () { replyingIndex = i; setSheet(() {}); }),
+                    if (_commentsOf(el).isEmpty)
+                      const Padding(padding: EdgeInsets.only(top: 24), child: Center(child: Text('Sin comentarios', style: TextStyle(color: Colors.white54)))),
+                  ])),
+                  const SizedBox(height: 8),
+                  if (replyingIndex != null)
+                    Row(children: [
+                      Text('Respondiendo...', style: const TextStyle(color: Color(0xFF88FF99), fontSize: 12)),
+                      IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 16), onPressed: () { replyingIndex = null; setSheet(() {}); }),
+                    ]),
+                  Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: input,
+                        autofocus: false,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(hintText: 'Escribí un comentario (@ para mencionar)', hintStyle: TextStyle(color: Color(0xFF88FF99))),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.send, color: _c),
+                      onPressed: () {
+                        final t = input.text.trim();
+                        if (t.isEmpty) return;
+                        _addComment(el, t, replyIndex: replyingIndex);
+                        input.clear();
+                        replyingIndex = null;
+                        setSheet(() {});
+                      },
+                    ),
+                  ]),
+                ]),
+              ),
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  void _addComment(BoardElement el, String text, {int? replyIndex}) {
+    final comments = List<dynamic>.from(_commentsOf(el));
+    comments.add({
+      'user': AppState.identity ?? '?',
+      'text': text,
+      'time': DateTime.now().millisecondsSinceEpoch,
+      'replyTo': replyIndex,
+    });
+    _pv.updateDataLocal(el, {...el.data, 'comments': comments});
+  }
+
+  void _deleteComment(BoardElement el, int i) {
+    final comments = List<dynamic>.from(_commentsOf(el))..removeAt(i);
+    _pv.updateDataLocal(el, {...el.data, 'comments': comments});
+  }
+
+  Widget _commentRow(BoardElement el, int i, dynamic c, VoidCallback onReply) {
+    final map = c as Map;
+    final isMine = (map['user'] as String? ?? '') == AppState.identity;
+    final reply = map['replyTo'];
+    return Padding(
+      padding: EdgeInsets.only(left: reply is int && reply >= 0 ? 16 : 0, bottom: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 26, height: 26, alignment: Alignment.center,
+          decoration: BoxDecoration(color: const Color(0xFF1f3352), borderRadius: BorderRadius.circular(8)),
+          child: Text((map['user'] as String? ?? '?').substring(0, 1).toUpperCase(), style: GoogleFonts.bangers(color: _c, fontSize: 12))),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(map['user'] as String? ?? '?', style: const TextStyle(color: Color(0xFF88FF99), fontSize: 11, fontWeight: FontWeight.bold)),
+            const Spacer(),
+            if (isMine)
+              GestureDetector(onTap: () => _deleteComment(el, i), child: const Icon(Icons.delete_outline, color: Colors.white54, size: 14)),
+          ]),
+          mentionRich(map['text'] as String? ?? ''),
+        ])),
+        GestureDetector(onTap: onReply, child: const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.reply, color: Colors.white38, size: 14))),
+      ]),
+    );
+  }
+
+  Widget mentionRich(String text) {
+    final spans = <TextSpan>[];
+    final re = RegExp(r'@\w+');
+    int last = 0;
+    for (final m in re.allMatches(text)) {
+      if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
+      spans.add(TextSpan(text: m.group(0), style: const TextStyle(color: _c, fontWeight: FontWeight.bold)));
+      last = m.end;
+    }
+    if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+    if (spans.isEmpty) spans.add(TextSpan(text: text));
+    return Text.rich(TextSpan(children: spans, style: const TextStyle(color: Colors.white, fontSize: 13)));
   }
 
   // ---------- Resize handles ----------

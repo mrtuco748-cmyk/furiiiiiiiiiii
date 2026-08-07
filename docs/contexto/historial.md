@@ -1,5 +1,32 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-07] - BUGFIX - Crash de Firebase Messaging en Windows (MissingPluginException)
+**Resumen**: Al abrir la app en desktop (Windows) tras el login, explotaba `MissingPluginException: No implementation found for method Messaging#getToken`. `NotificationService.initialize()` seteaba `_firebaseAvailable = true` (el singleton `FirebaseMessaging.instance` se crea sin tocar la plataforma) pero `firebase_messaging` no tiene plugin nativo en Windows → `registerTokenAfterLogin()` llamaba `getToken()` y lanzaba.
+**Cambios realizados**:
+- `lib/services/notification_service.dart`: nuevo getter `_supportsMessaging` (`!kIsWeb && (Platform.isAndroid || Platform.isIOS)`). En `initialize()` solo se instancia `_fcm` si la plataforma lo soporta; en desktop queda `null`. `registerTokenAfterLogin()` chequea `_supportsMessaging` y envuelve `getToken()`/`onTokenRefresh` en try/catch. Import de `foundation` para `kIsWeb`; removido import innecesario de `material`.
+- Recompilados exe + APKs split-per-abi.
+**Lecciones**:
+- `FirebaseMessaging.instance` no lanza en plataformas sin plugin: devuelve un objeto. El crash aparece recién en el primer `MethodChannel` (`getToken`, `requestPermission`, `onMessage`). Hay que gatear por plataforma, no por éxito del singleton.
+- Windows/Linux/macOS desktop no tienen `firebase_messaging` nativo; guardar con `kIsWeb` + `Platform.isAndroid/iOS`.
+**Impacto**: `lib/services/notification_service.dart`
+**Relacionado con**: D-7 (FCM), build exe Windows.
+
+## [2026-08-07] - FEATURE - Pizarrón: comentarios+menciones (I), búsqueda (J) y tableros anidados (K)
+**Resumen**: Etapa 2 de acercar el pizarrón a Milanote. Se agregaron comentarios por elemento con respuestas y highlight de menciones @, búsqueda integrada que zoom y selecciona el elemento, y tableros anidados (canvas por sub-tablero, breadcrumb, crear sub-tablero, elemento carpeta navegable).
+**Cambios realizados**:
+- **I. Comentarios**: métodos `_commentsOf`, `_openComments`, `_showCommentsSheet` (bottom sheet con lista + input, responder a un comentario con `replyTo`, highlight de `@menciones`), `_addComment`, `_deleteComment`, `_commentRow` y badge de contador en el elemento. Persisten en `data['comments']` vía `updateDataLocal`.
+- **J. Búsqueda**: botón lupa en header → panel `_searchPanel`, `_searchResults` filtra por `content` y `data['title']` (excluyendo conectores), `_goToElement` transpone el transform al centro del resultado y lo selecciona.
+- **K. Tableros anidados**: tabla `boards` (id, name, parent_id, created_at) con id=1 raíz "Pizarra" + RLS `full_access_boards`. Columna `board_elements.board_id BIGINT NOT NULL DEFAULT 1` + índice. `BoardElement` gana `boardId`. `BoardDataProvider` gana `_boardId`, `boardName`, `loadBoards`, `createBoard`, `setBoard`; `load()` filtra por `board_id`, el realtime ignora cambios de otros tableros, `add()` inyecta el tablero actual en el elemento. Pantalla: stack `_boardStack`, `_openBoard` (doble tap en elemento carpeta), `_goBackBoard`, `_createSubBoard` (dialog → crea board + agrega elemento tipo `board`), breadcrumb con nombre del tablero, body tipo `board` (carpeta + nombre + chevron).
+- `supabase_schema.sql` y `supabase/migration_board_milanote.sql` actualizados con `boards`, `board_id`, `full_access_boards`. **PENDIENTE ejecutar migración en SQL Editor.**
+- Tests: 2 nuevos en `board_element_test` (boardId default/serialización + copyWith). Total 59 verdes. `flutter analyze` sin issues en los 4 archivos tocados.
+**Lecciones**:
+- `firstOrNull` viene de `package:collection`; evitarlo con búsqueda manual para no sumar dependencia.
+- Al agregar RLS hay que habilitarlo (`ENABLE ROW LEVEL SECURITY`) + policy `FOR ALL USING (true)` y `GRANT` sobre la secuencia (`boards_id_seq`), igual que `board_elements`.
+- Un `showModalBottomSheet` con `StatefulBuilder` anidado en varios `Padding`/`SizedBox` es frágil de cerrar; reescribirlo plano (bloques indentados) reduce errores de paréntesis.
+- Los tableros anidados necesitan que `add()` inyecte el `boardId` actual vía `copyWith`, no que el modelo conozca el tablero.
+**Impacto**: `lib/models/board_element.dart`, `lib/providers/board_data_provider.dart`, `lib/screens/pizarra/pizarra_screen.dart`, `supabase_schema.sql`, `supabase/migration_board_milanote.sql`, `test/models/board_element_test.dart`.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual — tipo board usa fondo=borde, redondo, sin sombras), historial etapa 1 del pizarrón.
+
 ## [2026-08-07] - BUGFIX - Bot WhatsApp: enviarMensaje reintentaba y duplicaba la entrega 3x
 **Resumen**: Tras re-vincular la sesión (fix LID), el bot ya entregaba pero cada mensaje llegaba 3 veces. Causa: `enviarMensaje` tenía bucle de reintentos (hasta 3) pensado para el escenario LID roto donde no se confirmaba la entrega. Una vez que la sesión quedó sana, el ACK tarda >8s en una sesión restaurada de Supabase, así que el timeout de 8s vencía antes del ACK y el bot volvía a mandar el mismo texto → duplicado 3x.
 **Cambios realizados**:

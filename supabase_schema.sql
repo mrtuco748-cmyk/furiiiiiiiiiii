@@ -314,8 +314,23 @@ CREATE TABLE IF NOT EXISTS board_elements (
   color TEXT,
   z INTEGER DEFAULT 0,
   data JSONB DEFAULT '{}'::jsonb,
+  board_id BIGINT NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_board_elements_board_id ON board_elements(board_id);
+
+-- 18b. BOARDS (tableros anidables, proyecto a proyecto)
+CREATE TABLE IF NOT EXISTS boards (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT 'Pizarra',
+  parent_id BIGINT REFERENCES boards(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE boards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "full_access_boards" ON boards;
+CREATE POLICY "full_access_boards" ON boards FOR ALL USING (true);
 
 -- 19. STUDY SESSIONS
 CREATE TABLE IF NOT EXISTS study_sessions (

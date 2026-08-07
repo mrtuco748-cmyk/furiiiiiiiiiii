@@ -56,5 +56,28 @@ void main() {
       expect(mine.isMine, isTrue);
       expect(other.isMine, isFalse);
     });
+
+    test('isDone es falso si no es task o no tiene done', () {
+      expect(BoardElement(type: 'task').isDone, isFalse);
+      expect(BoardElement(type: 'note').isDone, isFalse);
+    });
+
+    test('isDone es verdadero cuando data.done es true en task', () {
+      final el = BoardElement(type: 'task', data: {'done': true});
+      expect(el.isDone, isTrue);
+    });
+
+    test('boardId por defecto es 1 y se serializa/deserializa', () {
+      expect(BoardElement(type: 'note').boardId, 1);
+      final el = BoardElement(type: 'note', boardId: 7);
+      final back = BoardElement.fromMap(el.toMap());
+      expect(back.boardId, 7);
+      expect(el.toMap()['board_id'], 7);
+    });
+
+    test('copyWith actualiza boardId', () {
+      final el = BoardElement(type: 'note').copyWith(boardId: 5);
+      expect(el.boardId, 5);
+    });
   });
 }
