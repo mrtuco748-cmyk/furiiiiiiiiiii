@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -25,6 +25,12 @@ class NotificationService {
   static bool _firebaseAvailable = false;
   static StreamSubscription<String>? _tokenRefreshSub;
 
+  /// Firebase Messaging solo tiene plugin nativo en Android/iOS.
+  /// En desktop (Windows, macOS) el MethodChannel no existe y lanza
+  /// MissingPluginException; por eso se desactiva fuera de móvil.
+  static bool get _supportsMessaging =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   static void Function(Map<String, dynamic> data)? onNotificationTap;
 
   static Future<void> initialize() async {
@@ -39,7 +45,7 @@ class NotificationService {
       _firebaseAvailable = false;
       print('[FURI] Firebase core error: $e');
     }
-    if (_firebaseAvailable) {
+    if (_firebaseAvailable && _supportsMessaging) {
       try {
         _fcm = FirebaseMessaging.instance;
         print('[FURI] Firebase messaging OK');
@@ -47,6 +53,8 @@ class NotificationService {
         _firebaseAvailable = false;
         print('[FURI] Firebase messaging error: $e');
       }
+    } else {
+      _fcm = null;
     }
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -78,14 +86,18 @@ class NotificationService {
   }
 
   static Future<void> registerTokenAfterLogin() async {
-    if (!_firebaseAvailable || _fcm == null) return;
-    final token = await _fcm!.getToken();
-    if (token != null) await _storeToken(token);
+    if (!_firebaseAvailable || _fcm == null || !_supportsMessaging) return;
+    try {
+      final token = await _fcm!.getToken();
+      if (token != null) await _storeToken(token);
 
-    _tokenRefreshSub?.cancel();
-    _tokenRefreshSub = _fcm!.onTokenRefresh.listen((token) {
-      _storeToken(token);
-    });
+      _tokenRefreshSub?.cancel();
+      _tokenRefreshSub = _fcm!.onTokenRefresh.listen((token) {
+        _storeToken(token);
+      });
+    } catch (e) {
+      debugPrint('NotificationService.registerTokenAfterLogin error: $e');
+    }
   }
 
   static Future<void> _requestPermission() async {
