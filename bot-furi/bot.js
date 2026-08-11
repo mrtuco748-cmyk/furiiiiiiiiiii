@@ -29,6 +29,99 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { transport: WebSocket },
 });
 
+// ─── RESOLUCION DE LIDS ────────────────────────────────────────
+// Desde ~2026-08-10 WhatsApp migro el enrutamiento de contactos a IDs de
+// dispositivo vinculado (@lid): enviar al JID con numero (@s.whatsapp.net)
+// resuelve sin error pero el servidor NO entrega (perdida silenciosa).
+// Resolvemos el LID con sock.onWhatsApp() y lo cacheamos en lids.json para
+// no depender de esa llamada (que puede romper el stream) en cada corrida.
+const LID_CACHE_FILE = path.join(__dirname, 'lids.json');
+const lidCache = {};
+
+function cargarLidsCache() {
+  try {
+    const data = JSON.parse(fs.readFileSync(LID_CACHE_FILE, 'utf-8'));
+    for (const [phone, lid] of Object.entries(data)) lidCache[phone] = lid;
+    const entries = Object.entries(lidCache);
+    if (entries.length > 0) {
+      console.log('LIDs cacheados: ' + entries.map(([p, l]) => `${p} -> ${l}`).join(', '));
+    }
+  } catch { /* todavia no existe el cache */ }
+}
+
+function guardarLidCache(phone, lid) {
+  lidCache[phone] = lid;
+  try { fs.writeFileSync(LID_CACHE_FILE, JSON.stringify(lidCache, null, 2)); } catch { /* noop */ }
+}
+
+// Devuelve el JID LID de un numero (usa cache si existe). Si no se puede
+// resolver, devuelve el JID normal como fallback (con LID roto no entrega,
+// pero es el mismo comportamiento que antes del fix).
+// NOTA: en Baileys 6.7.x el campo `lid` de onWhatsApp ya incluye el sufijo
+// "@lid" (ej: "83189842346022@lid"). Se normaliza por si alguna version
+// devuelve solo el numero.
+async function lidJid(sock, phone) {
+  if (!phone) return null;
+  const cached = lidCache[phone];
+  if (cached) return cached;
+  try {
+    const res = await sock.onWhatsApp(phone);
+    const lid = res?.[0]?.lid;
+    if (lid) {
+      const jid = lid.includes('@lid') ? lid : `${lid}@lid`;
+      guardarLidCache(phone, jid);
+      console.log(`LID resuelto: ${phone} -> ${jid}`);
+      return jid;
+    }
+    console.log(`No se encontro LID para ${phone}`);
+  } catch (e) {
+    console.error(`Error resolviendo LID de ${phone}:`, e.message);
+  }
+  return `${phone}@s.whatsapp.net`;
+}
+
+// Conexion DESCARTABLE para resolver LIDs. onWhatsApp() puede romper el
+// stream con "xml-not-well-formed" (bug de Baileys), asi que se ejecuta en
+// una conexion aparte que se descarta; la conexion principal solo usa el
+// cache y nunca llama onWhatsApp (su stream queda sano para enviar).
+function resolverLidsSolo() {
+  return new Promise(async (resolve) => {
+    let resuelto = false;
+    const finish = (motivo) => {
+      if (resuelto) return;
+      resuelto = true;
+      console.log(`Fin conexion descartable (${motivo})`);
+      try { sock.end(); } catch { /* noop */ }
+      resolve();
+    };
+
+    const { state } = await useMultiFileAuthState(AUTH_DIR);
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+      logger: pino({ level: 'warn' }),
+    });
+
+    sock.ev.on('connection.update', async (update) => {
+      if (update.connection === 'open') {
+        console.log('Conexion descartable abierta, resolviendo LIDs...');
+        try {
+          for (const num of [FACU_NUMERO, ROCIO_NUMERO]) {
+            if (num && !lidCache[num]) await lidJid(sock, num);
+          }
+        } catch (e) {
+          console.error('Error resolviendo LIDs:', e.message);
+        }
+        finish('lids ok');
+      }
+      if (update.connection === 'close') finish('close');
+    });
+
+    // timeout duro: nunca colgar
+    setTimeout(() => finish('timeout'), 45000);
+  });
+}
+
 // ─── SESION EN SUPABASE ───────────────────────────────────────
 async function loadSessionFromSupabase() {
   const { data, error } = await supabase
@@ -184,52 +277,78 @@ function conectarYNotificar() {
 
 // ─── UTIL: ENVIAR MENSAJE (espera confirmacion + reintento) ──
 // Baileys: sendMessage resuelve apenas escribe al socket, NO cuando WhatsApp
-// entrega. Para no dejar mensajes "en cola" que se pierden al cerrar el socket,
-// esperamos el ACK del servidor (status SERVER_ACK=1 o superior) con timeout y
-// reintentamos si no se confirma.
+// entrega. Esperamos el ACK del servidor (status >= SERVER_ACK). Si NO hay ACK,
+// devolvemos false: el registro NO se marca como notificado y se reintenta en
+// la proxima corrida (evita perdida silenciosa).
+//
+// IMPORTANTE: el listener de messages.update debe registrarse ANTES de llamar
+// sendMessage. Si se registra despues del await, los eventos del buffer de
+// Baileys ya se emitieron y el ACK se pierde (confirmado por diag 2026-08-11).
 async function enviarMensaje(sock, phone, mensaje) {
-  const jid = phone.includes('@s.whatsapp.net') ? phone : `${phone}@s.whatsapp.net`;
+  // SOLO cache: nunca llamar onWhatsApp aca (rompe el stream de la conexion
+  // principal). Si no hay LID, se manda al JID normal como antes.
+  const jid = phone.includes('@s.whatsapp.net')
+    ? phone
+    : (lidCache[phone] || `${phone}@s.whatsapp.net`);
+  const ack = esperarAck(sock, 20000);
   try {
     const res = await sock.sendMessage(jid, { text: mensaje });
     const id = res?.key?.id;
-
-    // Esperamos confirmacion del servidor (SERVER_ACK). Usamos una ventana
-    // generosa porque la sesion restaurada puede tardar en confirmar. NO
-    // reintentamos el envio del mismo mensaje: enviarlo de nuevo duplica la
-    // entrega (WhatsApp ya lo recibio aunque el ACK tarde).
-    const confirmado = await esperarAck(sock, id, 20000);
+    const confirmado = await ack(id);
     if (confirmado) {
-      console.log(`Mensaje enviado a ${phone}`);
+      console.log(`Mensaje enviado y confirmado a ${phone}`);
     } else {
-      console.log(`Mensaje a ${phone} entregado a WhatsApp (sin ACK oportuno en 20s).`);
+      console.log(`SIN CONFIRMACION para ${phone}: el mensaje no se marca como notificado y se reintentara.`);
     }
-    return true;
+    return confirmado;
   } catch (e) {
     console.error(`Error enviando a ${phone}:`, e.message);
     return false;
   }
 }
 
-// Espera el ACK de un mensaje enviado (status >= SERVER_ACK). Resuelve true si
-// WhatsApp confirma que el mensaje fue recibido por su servidor.
-function esperarAck(sock, id, timeoutMs) {
-  return new Promise((resolve) => {
-    if (!id) return resolve(false);
-    const timer = setTimeout(() => {
-      sock.ev.off('messages.update', handler);
-      resolve(false);
-    }, timeoutMs);
-    const handler = (updates) => {
-      for (const u of updates) {
-        if (u.key?.id === id && (u.status === 1 || u.status === 2 || u.status === 3)) {
-          clearTimeout(timer);
-          sock.ev.off('messages.update', handler);
-          resolve(true);
-          return;
+// Crea un "esperador de ACK" que registra el listener de inmediato y devuelve
+// una funcion que, dado el id del mensaje, resuelve true si WhatsApp confirma
+// la entrega (status >= SERVER_ACK) dentro del timeout.
+// NOTA: en Baileys 6.7.x el status llega en update.status (anidado), no en
+// status directo. Se soportan ambos formatos por compatibilidad.
+function esperarAck(sock, timeoutMs) {
+  const esperas = [];
+  // El event buffer de Baileys retiene messages.update durante
+  // AwaitingInitialSync; flush periodico libera los ACKs acumulados.
+  const flushInt = setInterval(() => {
+    try { sock.ev.flush?.(); } catch { /* noop */ }
+  }, 2000);
+  const handler = (updates) => {
+    for (const u of updates) {
+      const status = u.update?.status ?? u.status;
+      if (![1, 2, 3, 4].includes(status)) continue;
+      for (let i = esperas.length - 1; i >= 0; i--) {
+        const e = esperas[i];
+        if (e.id && e.id === u.key?.id && !e.done) {
+          e.done = true;
+          clearTimeout(e.timer);
+          esperas.splice(i, 1);
+          e.resolve(true);
         }
       }
-    };
-    sock.ev.on('messages.update', handler);
+    }
+  };
+  sock.ev.on('messages.update', handler);
+
+  return (id) => new Promise((resolve) => {
+    const e = { id, resolve, done: false, timer: null };
+    if (!id) { clearInterval(flushInt); resolve(false); return; }
+    e.timer = setTimeout(() => {
+      if (!e.done) {
+        e.done = true;
+        const idx = esperas.indexOf(e);
+        if (idx >= 0) esperas.splice(idx, 1);
+        clearInterval(flushInt);
+        resolve(false);
+      }
+    }, timeoutMs);
+    esperas.push(e);
   });
 }
 
@@ -669,7 +788,17 @@ async function verificarYNotificar(sock) {
 // ─── MAIN ──────────────────────────────────────────────────────
 async function main() {
   console.log('Bot F.U.R.I. iniciando...');
+  cargarLidsCache();
   await loadSessionFromSupabase();
+
+  // Si falta algun LID, resolverlos en una conexion descartable (onWhatsApp
+  // puede romper el stream; la conexion principal solo usa el cache).
+  const faltan = [FACU_NUMERO, ROCIO_NUMERO].filter(n => n && !lidCache[n]);
+  if (faltan.length > 0) {
+    console.log(`Faltan LIDs para: ${faltan.join(', ')}. Conexion descartable para resolverlos...`);
+    await resolverLidsSolo();
+  }
+
   await conectarYNotificar();
   console.log('Bot finalizado.');
   process.exit(0);

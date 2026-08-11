@@ -15,10 +15,68 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 6, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 7, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 7) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS board_elements_v2 (
+          id INTEGER PRIMARY KEY,
+          type TEXT NOT NULL DEFAULT 'note',
+          title TEXT DEFAULT '',
+          content TEXT DEFAULT '',
+          x REAL NOT NULL DEFAULT 0,
+          y REAL NOT NULL DEFAULT 0,
+          width REAL,
+          height REAL,
+          rotation REAL NOT NULL DEFAULT 0,
+          color TEXT,
+          text_color TEXT,
+          font_family TEXT,
+          font_size REAL,
+          text_align TEXT DEFAULT 'left',
+          is_bold INTEGER NOT NULL DEFAULT 0,
+          is_italic INTEGER NOT NULL DEFAULT 0,
+          is_underline INTEGER NOT NULL DEFAULT 0,
+          emoji_header TEXT,
+          tags TEXT DEFAULT '[]',
+          priority TEXT DEFAULT 'normal',
+          assigned_to TEXT,
+          user_id TEXT DEFAULT '',
+          status TEXT DEFAULT 'draft',
+          is_collapsed INTEGER NOT NULL DEFAULT 0,
+          is_locked INTEGER NOT NULL DEFAULT 0,
+          is_archived INTEGER NOT NULL DEFAULT 0,
+          board_id INTEGER NOT NULL DEFAULT 1,
+          z INTEGER NOT NULL DEFAULT 0,
+          data TEXT DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_new INTEGER NOT NULL DEFAULT 1,
+          synced INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS board_activity (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          element_id INTEGER,
+          element_type TEXT NOT NULL,
+          description TEXT NOT NULL,
+          timestamp TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS board_tags (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          color TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
     if (oldVersion < 6) {
       await db.execute("ALTER TABLE class_schedules ADD COLUMN cloudId INTEGER");
     }
@@ -129,6 +187,62 @@ class DatabaseHelper {
         local_path TEXT NOT NULL,
         file_name TEXT,
         mime_type TEXT
+      )
+    ''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS board_elements_v2 (
+          id INTEGER PRIMARY KEY,
+          type TEXT NOT NULL DEFAULT 'note',
+          title TEXT DEFAULT '',
+          content TEXT DEFAULT '',
+          x REAL NOT NULL DEFAULT 0,
+          y REAL NOT NULL DEFAULT 0,
+          width REAL,
+          height REAL,
+          rotation REAL NOT NULL DEFAULT 0,
+          color TEXT,
+          text_color TEXT,
+          font_family TEXT,
+          font_size REAL,
+          text_align TEXT DEFAULT 'left',
+          is_bold INTEGER NOT NULL DEFAULT 0,
+          is_italic INTEGER NOT NULL DEFAULT 0,
+          is_underline INTEGER NOT NULL DEFAULT 0,
+          emoji_header TEXT,
+          tags TEXT DEFAULT '[]',
+          priority TEXT DEFAULT 'normal',
+          assigned_to TEXT,
+          user_id TEXT DEFAULT '',
+          status TEXT DEFAULT 'draft',
+          is_collapsed INTEGER NOT NULL DEFAULT 0,
+          is_locked INTEGER NOT NULL DEFAULT 0,
+          is_archived INTEGER NOT NULL DEFAULT 0,
+          board_id INTEGER NOT NULL DEFAULT 1,
+          z INTEGER NOT NULL DEFAULT 0,
+          data TEXT DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_new INTEGER NOT NULL DEFAULT 1,
+          synced INTEGER NOT NULL DEFAULT 0
+        )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS board_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        element_id INTEGER,
+        element_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        timestamp TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS board_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL,
+        created_at TEXT NOT NULL
       )
     ''');
   }

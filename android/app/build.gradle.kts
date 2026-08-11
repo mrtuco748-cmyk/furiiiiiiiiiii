@@ -4,14 +4,6 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-import java.util.Properties
-
-val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(keystorePropertiesFile.inputStream())
-}
-
 android {
     namespace = "com.furiapp.furi_app"
     compileSdk = flutter.compileSdkVersion
@@ -34,20 +26,12 @@ android {
         versionName = flutter.versionName
     }
 
-    signingConfigs {
-        create("release") {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-            }
-        }
-    }
-
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // Firma debug (keystore ~/.android/debug.keystore, el mismo de todos
+            // los builds de Flutter): se instala sobre cualquier versión debug
+            // previa y no requiere keystore propio.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }

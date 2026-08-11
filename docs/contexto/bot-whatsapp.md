@@ -150,7 +150,7 @@ Archivo `bot-furi\.env` (NO se commitea, esta en .gitignore):
 
 ```env
 SUPABASE_URL=https://nruyjpvoplkilcxqnees.supabase.co
-SUPABASE_KEY=sb_secret_VrlUEpNWozmgP5JTKuLDxA_hE296gb-
+SUPABASE_KEY=sb_secret_xxx_poner_key_real
 MI_NUMERO=5493786499129
 FACU_NUMERO=5493786614189
 ROCIO_NUMERO=5493786513637
@@ -159,7 +159,7 @@ ROCIO_NUMERO=5493786513637
 | Variable | Descripcion | Donde obtenerla |
 |---------|------------|----------------|
 | `SUPABASE_URL` | URL del proyecto Supabase | Supabase Dashboard > Settings > API > Project URL |
-| `SUPABASE_KEY` | Service role key (lectura/escritura total) | Supabase Dashboard > Settings > API > service_role |
+| `SUPABASE_KEY` | Key de Supabase para lectura/escritura. Desde 2026-08-08 se usa una service role key nueva, porque la anterior fue invalidada por Supabase ("Unregistered API key"). La publishable key de la app (en `lib/supabase_config.dart`) tambien funciona para el bot (policies `FOR ALL USING (true)`) | Supabase Dashboard > Settings > API |
 | `MI_NUMERO` | Numero WhatsApp DEL BOT (cuenta que envia) | El numero que vinculaste al QR. Ej: 5493786499129 |
 | `FACU_NUMERO` | Numero de Facu que recibe notificaciones | 5493786614189 |
 | `ROCIO_NUMERO` | Numero de Rocio que recibe notificaciones | 5493786513637 |
@@ -261,22 +261,37 @@ El registro "notificado" en `bot_notificaciones` solo se persiste DESPUES de una
 entrega confirmada (`flushMarksPendientes(num)`). Si el envio falla, el registro
 queda sin marcar y se reintenta en la proxima corrida — nunca se pierde silenciosamente.
 
-### Si los mensajes se quedan "en cola" sin entregarse
+### ~~Si los mensajes se quedan "en cola" sin entregarse~~ ✅ RESUELTO 2026-08-11
 
 Sintoma: `sendMessage` resuelve pero el destinatario no recibe nada y no llega ACK.
-Causa: la sesion guardada esta desincronizada con los IDs de dispositivo vinculado
-(LID) de WhatsApp. La sesion tiene claves de cifrado (`session-*.json`) para los
-numeros normales (`@s.whatsapp.net`) pero no para los `@lid` a los que WhatsApp
-ahora enruta los contactos → `SessionError: No session record` → no se cifra →
-no se entrega. Los logs de fondo muestran errores `failed to decrypt message`.
+Causa raiz: desde ~2026-08-10 WhatsApp migro el enrutamiento de contactos a IDs de
+dispositivo vinculado (LID). Enviar al JID con numero normal (`549...@s.whatsapp.net`)
+resuelve sin error pero el servidor NO entrega (perdida silenciosa, sin receipt).
+Sintoma observable: el log de Baileys mostraba "sending message to 3 devices"
+(cuando antes decia 4) el mismo dia de la migracion, y los ACKs dejaron de llegar.
 
-Fix: re-vincular WhatsApp del bot (escanear QR nuevo) para regenerar claves LID:
-```powershell
-$env:Path = "D:\nodejs\node-v20.18.0-win-x64;" + $env:Path
-cd D:\projetcs\proyectos\F.U.R.I\bot-furi
-Remove-Item -Recurse -Force auth   # borrar sesion vieja
-node bot.js                         # escanear QR nuevo
-# La sesion nueva se sube automaticamente a bot_sessions en Supabase
-```
-Sin este re-vinculo, el codigo mejora (no marca ni pierde registros) pero WhatsApp
-sigue sin poder cifrar a los contactos ya migrados a LID.
+Fix implementado (2026-08-11): resolver los LIDs con `sock.onWhatsApp(numero)`
+(devuelve `lid: "83189842346022@lid"`, con el sufijo incluido) y enviar al JID LID
+(`83189842346022@lid`) en vez del numero normal.
+
+- `bot-furi/lids.json`: cache de LIDs (numero → `xxx@lid`), gitignored.
+- `main()`: si falta algun LID, los resuelve en una **conexion descartable**
+  (`resolverLidsSolo()`) ANTES de la conexion principal. Motivo: `onWhatsApp()`
+  puede romper el stream con `stream:error xml-not-well-formed` (bug de Baileys,
+  reproducible 2 de 3 veces); al ejecutarlo en una conexion aparte, la conexion
+  principal queda sana para enviar.
+- `enviarMensaje()` usa SOLO el cache de LIDs (nunca llama onWhatsApp en la
+  conexion principal). Si no hay LID cacheado, cae al JID normal.
+- `esperarAck()` agrego un `sock.ev.flush()` periodico cada 2s: el event buffer
+  de Baileys retiene `messages.update` durante `AwaitingInitialSync`; el flush
+  libera los ACKs acumulados para que la confirmacion llegue a tiempo.
+- Verificado end-to-end: mood de prueba → mensaje enviado al JID LID de Facu →
+  `status=4` (leido) en `83189842346022@lid` → registro marcado en
+  `bot_notificaciones` → limpieza del dato de prueba.
+
+Fix descartado: re-vincular WhatsApp (borrar `auth/` + re-escanear QR) NO sirve
+para este problema: la sesion tenia las claves LID de los contactos y aun asi no
+entregaba; el bloqueo era del JID destino, no de las claves de cifrado.
+
+Los logs de fondo mostraban errores `failed to decrypt message` (inofensivos,
+mensajes de estado) — no eran la causa.

@@ -1,5 +1,319 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-11] - BUGFIX - Bot WhatsApp: migración a LID de WhatsApp (resolución + cache + conexión descartable)
+**Resumen**: El bot dejó de entregar mensajes el ~2026-08-10. WhatsApp migró el enrutamiento de contactos a IDs de dispositivo vinculado (`@lid`): enviar al JID con número normal resuelve sin error pero el servidor NO entrega (pérdida silenciosa). Fix: resolver LIDs con `onWhatsApp()` en conexión descartable, cachear en `lids.json`, y enviar al JID LID. Verificado end-to-end con ACK `status=4` (leído).
+**Cambios realizados**:
+- `bot-furi/bot.js`: nueva sección de resolución de LIDs — `lidCache` + `cargarLidsCache()` + `guardarLidCache(phone, lid)` + `lidJid(sock, phone)` + `resolverLidsSolo()`. `main()` ahora resuelve LIDs en conexión descartable si faltan en cache. `enviarMensaje()` usa SOLO cache (nunca llama `onWhatsApp` en la conexión principal). `esperarAck()` agrega flush periódico (`sock.ev.flush()`) cada 2s para liberar ACKs retenidos por `AwaitingInitialSync`.
+- `bot-furi/lids.json` (nuevo, gitignored): cache de LIDs persistido.
+- `bot-furi/.gitignore`: agregados `lids.json` y `*.txt`.
+- Quitado `console.log([DEBUG-ACK])` temporal de `esperarAck`.
+- Verificación: mood-120 de prueba → enviado a `83189842346022@lid` (Facu) → ACK status=4 → marcado en `bot_notificaciones` → limpieza del test row.
+- `docs/contexto/bot-whatsapp.md`: sección de LID reescrita con fix real (no "re-vincular QR").
+- `docs/contexto/errores-conocidos.md`: entrada LID marcada RESUELTO 2026-08-11 con fix real.
+**Lecciones**:
+- `onWhatsApp()` devuelve `lid` YA con sufijo `@lid`; si se concatena otro `@lid` queda `xxx@lid@lid`.
+- `onWhatsApp()` puede romper el stream con `xml-not-well-formed` (2 de 3 corridas); la conexión descartable lo aísla.
+- El event buffer de Baileys (`AwaitingInitialSync`) retiene `messages.update`; el flush periódico los libera.
+- Re-vincular WhatsApp (borrar `auth/` + QR nuevo) NO servía: el bloqueo era del JID destino (LID), no de las claves de cifrado. La sesión ya tenía las claves LID de los contactos.
+- Los LIDs de contactos NO están en la sesión del bot: se obtienen con una query a WhatsApp (`onWhatsApp`) y se cachean.
+**Impacto**: `bot-furi/bot.js`, `bot-furi/.gitignore`, `bot-furi/lids.json` (nuevo), `docs/contexto/bot-whatsapp.md`, `docs/contexto/errores-conocidos.md`, `docs/contexto/historial.md`
+**Relacionado con**: D-10 (bot WhatsApp), errores-conocidos (mensajes en cola LID), bot-whatsapp.md
+
+## [2026-08-10] - BUGFIX+BUILD - Keystore eliminado + APK release firmado con firma debug (se instala sobre versiones previas)
+**Resumen**: La app no funcionaba en el Realme C11 de Rocio (sin acceso USB). El usuario pidió eliminar la keystore (que "no hace falta") y que el APK se instale sí o sí en todos los dispositivos. Se eliminó la firma custom (CN=Furi) y se volvió a la **firma debug estándar de Flutter** — la misma que usaban los APK que sí instalaban antes del 6/8 — que se instala sobre cualquier instalación debug previa sin desinstalar.
+**Cambios realizados**:
+- `android/app/build.gradle.kts`: eliminado el bloque `signingConfigs { create("release") }` con key.properties y el `signingConfig = signingConfigs.getByName("release")`. Ahora `release { signingConfig = signingConfigs.getByName("debug") }`.
+- Borrados `android/key.properties` y `android/app/upload-keystore.jks`.
+- **Hallazgo crítico**: tras quitar el signingConfig del release, el primer build generó un APK **COMPLETAMENTE SIN FIRMAR** (`apksigner verify` → `DOES NOT VERIFY: Missing META-INF/MANIFEST.MF`; sin bloque de firma v2 en el ZIP; META-INF sin MANIFEST.MF/CERT.RSA). AGP **NO** asigna automáticamente la firma debug en este proyecto cuando el buildType release queda sin signingConfig. Fix: `signingConfig = signingConfigs.getByName("debug")` explícito → `Verifies (v2 scheme: true)` con `CN=Android Debug`.
+- Build universal `app-release.apk` (64.6 MB, todas las ABIs: arm64-v8a + armeabi-v7a + x86_64, minSdk 24, targetSdk 36) verificado con apksigner 37.0.0.
+- Release GitHub `v1.0.2-debug-firma` creado (el link `releases/latest` apunta al nuevo). Subida por API REST (`uploads.github.com`) porque `gh release upload` colgaba; la velocidad de subida varía de ~3 KB/s a ~370 KB/s.
+**Lecciones**:
+- **Sin signingConfig explícito en release, AGP puede NO firmar el APK** (no siempre hace el fallback al debug config): el APK compila "√ Built" pero Android lo rechaza al instalar. SIEMPRE verificar `apksigner verify` después de tocar la firma — y antes de mandar un APK a otro celular.
+- La firma debug de Flutter (`~/.android/debug.keystore`) es la misma en todos los builds del mismo dev machine y es la más compatible para instalación manual: cualquier dispositivo que alguna vez aceptó un APK debug acepta el nuevo sin desinstalar.
+- La firma CN=Furi (keystore del 6/8) queda **huérfana**: los APK v1.0.1 instalados en el Realme C11 requieren desinstalación previa para aceptar la v1.0.2. Documentado en la guía de instalación.
+- El keystore propio era innecesario para instalación manual en 2 celulares; aportaba solo fricción (incompatibilidad de firma con los APK debug previos).
+**Impacto**: `android/app/build.gradle.kts`, `android/key.properties` (borrado), `android/app/upload-keystore.jks` (borrado), `build/app/outputs/flutter-apk/app-release.apk`, GitHub release `v1.0.2-debug-firma`, `docs/contexto/historial.md`, `docs/contexto/flujo-de-trabajo.md`, `documentacion/GUIA_INSTALACION_APK.md`, `docs/contexto/errores-conocidos.md`
+**Relacionado con**: errores-conocidos (firma release/APK no instalado), flujo-de-trabajo (build APK, firma), entrada keystore 2026-08-06
+
+## [2026-08-08] - BUGFIX - Bot WhatsApp: API key invalidada hacía parecer "sesión cerrada" (todo el día sin notificar)
+**Resumen**: El bot decía "No hay sesion guardada en Supabase" en cada corrida de CI y mostraba QR sin poder conectarse. La sesión de WhatsApp estaba **intacta** en `bot_sessions` (104 claves, `creds.json` presente, `updated_at` 10:24 UTC); el problema era que la `SUPABASE_KEY` en `bot-furi/.env` y el secret `SUPABASE_KEY` de GitHub (creado el 2026-08-05) eran la service role key vieja invalidada por Supabase → toda query respondía `Unregistered API key`/`Invalid API key` → `loadSessionFromSupabase()` encontraba error y trataba la sesión como inexistente → pedía QR y moría por timeout ("Sesión cerrada" aparente).
+**Cambios realizados**:
+- Verificación: query con la key vieja → `Unregistered API key`; con la key publicable de la app → lee/escribe todas las tablas del bot (16 tablas verificadas una por una, incluidas `bot_sessions` y `bot_notificaciones`).
+- `bot-furi/.env`: `SUPABASE_KEY` cambiada de service role key vieja a la **service role key nueva** (provista por el usuario).
+- GitHub secret `SUPABASE_KEY`: actualizado en gh (secret list + `gh secret set`).
+- Verificación local + CI (key nueva): `node bot.js` → "Sesion cargada desde Supabase" → "Conectado a WhatsApp" → "Sin novedades para notificar". **Sin reescanear QR** (la sesión no se perdió).
+- Verificación CI: `gh workflow run` → log: "Sesion cargada desde Supabase", "Conectado a WhatsApp", "Bot finalizado" — restaurado.
+**Lecciones**:
+- Un "Sesion cerrada / No hay sesion guardada" del bot NO siempre significa sesión de WhatsApp vencida: la primera autopsia es probar una query a `bot_sessions` con la key del `.env`. Si da `Invalid API key`/`Unregistered API key`, es la key, no el QR.
+- La service role key vieja del proyecto fue invalidada por Supabase; las key nuevas que funcionan son las publishable. El bot puede operar con la publishable porque las tablas `bot_sessions`/`bot_notificaciones` tienen policies `FOR ALL USING (true)`.
+- `cargarUsuarios()`/verificaciones usan la misma key: si la lectura falla, todo "no funciona" parecía desconexión.
+**Impacto**: `bot-furi/.env`, GitHub secret `SUPABASE_KEY`, `docs/contexto/bot-whatsapp.md`, `docs/contexto/historial.md`
+**Relacionado con**: D-10 (bot), errores-conocidos (sesión LID — no re-relacionar, este ES distinto: key rota)
+
+## [2026-08-08] - BUGFIX - Clases del wizard nunca se subían a Supabase (color ARGB fuera de rango en columna INTEGER)
+**Resumen**: Las clases/materias configuradas en el wizard se guardaban solo en SQLite local y la tabla cloud `class_schedules` quedaba en `count = 0`. Causa raíz: la columna `color` en la BD cloud se creó como `INTEGER` (máx 2147483647) pero el modelo manda `0xFF7B2D8E` = **4286262670**, fuera de rango → Supabase respondía `22003: value "4286262670" is out of range for type integer` y `_pushToSupabase()` (try/catch) lo tragaba silenciosamente → `cloudId` nunca se asignaba → el wizard volvía a aparecer en cada apertura.
+**Cambios realizados**:
+- `supabase/migration_class_schedules.sql`: `color BIGINT DEFAULT 4286262670` en el CREATE + `ALTER TABLE class_schedules ALTER COLUMN color TYPE BIGINT USING color::bigint;` idempotente para tablas ya creadas.
+- `supabase_schema.sql`: `color BIGINT DEFAULT 4286262670` en el CREATE TABLE master.
+- Verificado en vivo contra la API REST (anon key): SELECT devuelve 200 con `count 0` (tabla existía, vacía); INSERT directo reproduce el error 22003 exacto; `profiles` responde OK (proyecto y anon key válidos).
+**Lecciones**:
+- Un color ARGB de Flutter (`0xFFRRGGBB`) como int siempre excede el rango del `INTEGER` de Postgres (máx 2147483647). Cualquier columna cloud que persista colores ARGB debe ser `BIGINT`.
+- El try/catch de `_pushToSupabase` convierte el fallo de migración de tipo en un "sync roto en silencio": la clase queda local, el cloudId nunca se setea y el wizard aparece de nuevo. Vale la pena revisar los logs `developer.log` ante "se guarda local pero no en la nube".
+- El sync automático de clases existentes ya existe (`_syncUnsyncedToSupabase` dentro de `loadSchedules`): basta abrir la app una vez tras ejecutar la migración para que las clases locales suban solas.
+**Impacto**: `supabase/migration_class_schedules.sql`, `supabase_schema.sql`, `docs/contexto/errores-conocidos.md`, `docs/contexto/historial.md`. **Pendiente de acción manual**: ejecutar `migration_class_schedules.sql` en el SQL Editor de Supabase para que la columna pase a BIGINT.
+**Relacionado con**: D-2 (Supabase), D-3 (SQLite), errores-conocidos (ClassSetupWizard color fuera de rango)
+
+## [2026-08-08] - BUILD+BUGFIX - APK no se instalaba en el Realme C11 de Rocio → Release en GitHub + fix compilación pizarra v2
+**Resumen**: La app dejó de instalarse en el Realme C11 (Rocio, en otra provincia, sin acceso ADB). Los APK viejos sí instalaban, los nuevos daban "aplicación no instalada". Investigación: (1) los APK nuevos cambiaron de firma (debug → keystore CN=Furi el 6/8), por lo que una versión vieja instalada en el celular hace que Android rechace el update con `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; (2) WhatsApp/Drive renombran el archivo a `.apk.1` → "aplicación no instalada". Solución: subir el APK universal actual a GitHub Releases (descarga por Chrome mantiene el nombre `.apk`), indicarle a Rocio desinstalar la versión vieja primero.
+**Cambios realizados**:
+- Fix de compilación: `lib/screens/pizarra_v2/widgets/board_canvas.dart:153` pasaba 2 argumentos a `_liveElement()` (que acepta 1) → `release` no compilaba (`Target kernel_snapshot_program failed`).
+- Rebuild `flutter build apk --release` → `app-release.apk` (64.6 MB, minSdk 24, targetSdk 36, ABIs arm64-v8a+armeabi-v7a+x86_64, firma CN=Furi).
+- Publicado release en GitHub: `v1.0.1-apk-instalable` con el APK adjunto → https://github.com/mrtuco748-cmyk/furiiiiiiiiiii/releases/tag/v1.0.1-apk-instalable
+  (El primer intento creó un Draft; se completó con `gh release upload --clobber` + `gh release edit --draft=false`).
+- `documentacion/GUIA_INSTALACION_APK.md`: método A con link de GitHub + Chrome (no renombra). Tabla de errores ampliada con "bloqueada por seguridad → desactivar escaneo de Play Protect".
+**Lecciones**:
+- Un APK release que compila en dev (debug) puede fallar en release por errores de lint que solo aparecen en la compilación de AOT/`kernel_snapshot` (board_canvas.dart:153 `_liveElement(el, d)`). Correr al menos una vez `flutter build apk --release` tras cada milestone.
+- Los APK con firma nueva NO se pueden instalar sobre una versión vieja con otra firma: hay que desinstalar primero ("aplicación no instalada"). Se documentó el paso 0 en la guía.
+- WhatsApp/Drive renombran/cortan APKs grandes: el método confiable es descarga con Chrome desde GitHub Releases (link `releases/latest`).
+- Si el update sin ADB: GitHub Actions ya está configurado; el Release se puede re-subir con un solo comando `gh release create` (o `gh release upload --clobber` + `--draft=false`).
+**Impacto**: `app-release.apk` (nuevo), `github.com/mrtuco748-cmyk/furiiiiiiiiiii` releases, `documentacion/GUIA_INSTALACION_APK.md`, `lib/screens/pizarra_v2/widgets/board_canvas.dart`, `docs/contexto/historial.md`.
+**Relacionado con**: errores-conocidos (firma release/APK), flujo-de-trabajo (build APK), D-4, pizarra v2
+
+## [2026-08-08] - BUGFIX - Limpieza de 228 notas espurias de la pizarra v2 (DB local del exe)
+**Resumen**: Las notas espurias creadas por el bug del doble tap (ver entrada anterior) quedaron persistidas en la BD SQLite local del exe: 228 elementos `note` con título "Nueva nota", contenido vacío y `created_at` idéntico (2026-08-08T06:44:17.281814). Se borraron de la BD local. Además se descubrió que la tabla `board_elements_v2` NO existe en Supabase (error "No se pudo encontrar la tabla en schema cache" con supabase-js), así que el sync de la pizarra v2 falla en silencio y los datos viven solo en SQLite local.
+**Cambios realizados**:
+- Backup de la BD: `build\windows\x64\runner\Release\.dart_tool\sqflite_common_ffi\databases\furi_calendar.db.backup_20260808` (106 KB).
+- Script temporal `tool/board_cleanup.dart` (usando `package:sqlite3` del proyecto; SQLITE3 CLI no disponible, `better-sqlite3` no compila con gyp) que lista y borra las notas vacías con `DELETE ... WHERE type='note' AND (content IS NULL OR content='') AND title='Nueva nota'`. Eliminado tras usarlo (no se deja código muerto).
+- Resultado: 230 → 2 elementos. Quedan el dibujo (id 26, "Nuevo dibujo") y el video (id 149, "YouTube Video") que el usuario creó a propósito.
+**Lecciones**:
+- En Windows no hay CLI de sqlite3 disponible y `better-sqlite3` falla a compilar (node-gyp). Lo más simple para operar la BD local es un script Dart con `package:sqlite3` (ya transitivo del proyecto) y `dart run`.
+- La API de Supabase (service key) bloqueada para REST directo: "Forbidden use of secret API key in browser outside". Solo usar supabase-js con `ws` como transport en Node 20.
+- La pizarra v2 NO está sincronizada con la nube (tabla ausente en Supabase) → borrar datos locales de la pizarra es suficiente; no hay soporte cloud para la v2 todavía.
+**Impacto**: `build\windows\x64\runner\Release\.dart_tool\sqflite_common_ffi\databases\furi_calendar.db` (+ backup), `docs/contexto/historial.md`
+**Relacionado con**: entrada doble tap espurias (2026-08-08), D-3 (SQLite)
+
+## [2026-08-08] - BUGFIX - Pizarra v2: dibujos/videos no se movían + notas espurias por doble tap
+**Resumen**: Tras testear con el exe, ningún tipo de tarjeta respondía (arrastrar/mover/interactuar) y se creaban notas no deseadas. Tres causas combinadas: (1) el `GestureDetector` de cada elemento usaba `HitTestBehavior.deferToChild`, que delega el hit test al child — un `CustomPaint` (dibujos) no es hit-testable, así que los gestos no llegaban al elemento; (2) `BoardVideoRenderer` tenía su propio `GestureDetector` con `onTap` que robaba el tap del elemento y abría el navegador en vez de seleccionar (nunca se seleccionaba → `panEnabled` seguía `true` → el InteractiveViewer robaba el drag); (3) el `onDoubleTap` del elemento solo existía para notas, así que el doble tap sobre dibujos/videos caía al fondo y ejecutaba `onDoubleTapEmpty` → creadas notas espurias en cada doble click.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/widgets/board_canvas.dart`: `behavior: HitTestBehavior.opaque` en el GestureDetector de elemento (captura gestos en toda el área, aunque el child no pinte en ese pixel); `onTap` ahora si el elemento es video y ya está seleccionado abre el video (segundo tap), sino selecciona; `onDoubleTap` para todo tipo absorbe el gesto (notas alternan edición; resto solo selecciona — evita que caiga al fondo y cree notas); nuevo helper `_liveElement(el)` que busca por id con fallback `createdAt % 1000000` (mismo id que el usado en el build) para mover/actualizar la copia viva; nuevo `_openVideo(el)` con `url_launcher` (imports `board_element_data.dart` y `url_launcher`).
+- `lib/screens/pizarra_v2/renderers/board_video_renderer.dart`: eliminado el `GestureDetector` interno con `onTap` y `_openVideo`; ahora es puramente visual (thumbnail + play button + título). La apertura la maneja el canvas al tocar el video seleccionado.
+**Lecciones**:
+- `HitTestBehavior.deferToChild` en el GestureDetector de un elemento NO funciona si el child no participa del hit test en ese punto: un `CustomPaint` sin `hitTest` propio (o `Image.network` en errorBuilder) no captura eventos → el elemento queda "muerto" para gestos. `opaque` garantiza que el área completa del widget responda; los hijos internos (TextField) siguen recibiendo sus propios gestos porque están más profundo que en el árbol.
+- Doble GestureDetector anidado (renderer + elemento) roba la selección: el renderer interno con `onTap` siempre gana y el elemento nunca se selecciona. La interacción de tipo "abrir video" debe hacerla el canvas (con elemento seleccionado) o el panel, no el renderer.
+- Si el `onDoubleTap` del fondo (crear nota) es configurable y los elementos no lo absorben, el doble click sobre cualquier tipo de card sin `onDoubleTap` propio genera notas espurias: hay que absorber el gesto arriba en todos los tipos.
+**Impacto**: `lib/screens/pizarra_v2/widgets/board_canvas.dart`, `lib/screens/pizarra_v2/renderers/board_video_renderer.dart`. 67 tests verdes, `flutter analyze` 0 errores.
+**Relacionado con**: entrada regresión panEnabled (2026-08-08), skill_visual (sin cambios), D-2 (Supabase), D-3 (SQLite)
+
+## [2026-08-08] - BUGFIX - Pizarra v2: notas no se movían ni editaban (regresión panEnabled) + build Windows completo
+**Resumen**: Tras la ronda 2 de bugs, al testear el usuario descubrió que las notas no se podían mover ni escribir. Causa: el fix de la ronda 2 cambió `panEnabled` a `!_isEditingText` (pan siempre habilitado salvo edición), y el InteractiveViewer robaba los gestos del GestureDetector interno de cada nota → el drag no llegaba y el doble tap para editar tampoco. Se revirtió el comportamiento y se agregó soporte de move para elementos recién creados (sin id cloud). Además se completó la compilación del exe de Windows, que quedaba sin DLLs por un fallo intermedio de NuGet.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/widgets/board_canvas.dart`: `panEnabled` vuelve a `widget.selectedId == null && !widget.connectorMode`; eliminado el getter `_isEditingText` (innecesario). El `onPanUpdate` ahora usa `widget.provider.moveLocal(liveEl, ...)` (mueve aunque el elemento no tenga id cloud) y el renderer recibe `onRequestEdit` para entrar a edición con doble tap sobre el texto.
+- `lib/providers/board_provider_v2.dart`: nuevo `moveLocal(BoardElementV2 el, double x, double y)` — actualiza la copia local (busca por `identical` → `id` → `createdAt`), `notifyListeners()`, guarda en SQLite y sincroniza a cloud con debounce de 300ms solo si hay id cloud (si no, queda solo local hasta que el id llegue del realtime).
+- `lib/screens/pizarra_v2/renderers/board_note_renderer.dart`: nuevo callback `onRequestEdit` (VoidCallback?) — el doble tap sobre el texto ahora llama a `onRequestEdit` para que el canvas active el modo edición (antes re-emitía el contenido sin entrar en edición).
+- `lib/screens/pizarra_v2/renderers/board_element_renderer.dart`: nuevo param `onRequestEdit` que se propaga al renderer interno.
+- Build Windows: el build `flutter build windows --release` previo fallaba con "ZIP decompression failed (-5)" al descargar un paquete NuGet de `audioplayers_windows` (red schannel intermitente) y dejaba el `runner\Release\` SOLO con `furi_app.exe` (sin DLLs ni `data/`). Se copió el contenido de `build\windows\x64\install\` (todas las DLLs, `flutter_windows.dll`, `app.so`, `icudtl.dat`, `data/flutter_assets`) a `build\windows\x64\runner\Release\`.
+**Lecciones**:
+- El conflicto pan vs. gestos de notas es a dos bandas: con `panEnabled` siempre true el InteractiveViewer roba el drag de las notas; con pan siempre false no se puede panear con un elemento seleccionado. La solución usada: pan deshabilitado solo cuando hay selección activa (`selectedId != null`), porque el elemento seleccionado se mueve con su propio GestureDetector (no necesita el pan del fondo) y el doble tap para editar también llega.
+- Un build de Flutter Windows "√ Built" puede quedar incompleto si el paso de NuGet/CIFalló silenciosamente: no basta con que exista `furi_app.exe`; hay que verificar que el folder de release tenga `flutter_windows.dll` y `data/`.
+- Al borrar `build\windows` hay que activar el entorno MSVC (`D:\BuildTools\VC\Auxiliary\Build\vcvarsall.bat amd64`) o CMake no encuentra `cl.exe` (TRK0005).
+**Impacto**: `lib/screens/pizarra_v2/widgets/board_canvas.dart`, `lib/providers/board_provider_v2.dart`, `lib/screens/pizarra_v2/renderers/board_note_renderer.dart`, `lib/screens/pizarra_v2/renderers/board_element_renderer.dart`, `build\windows\x64\runner\Release\` (exe completo), `docs/contexto/historial.md`. Exe recompilado 2026-08-08 06:35, 1.4 MB.
+**Relacionado con**: entrada ronda 2 (2026-08-08), skill_visual (sin cambios), D-2 (Supabase), D-3 (SQLite)
+
+## [2026-08-08] - BUGFIX - Pizarra v2: 18 bugs de UX/funcionalidad (ronda 2)
+**Resumen**: Tras la primera ronda de 24 bugs, se corrigieron 18 bugs adicionales de la pizarra v2: notas que no guardaban texto, columna is_archived faltante en instalaciones nuevas, Tag Manager que cerraba la pantalla, conectores sin UI de origen/destino, checklist sin edición de texto, comentarios que no aparecían al agregar, editor de dibujo sin carga de strokes existentes, audio sin reproducción, reacciones sin mostrar inline, código muerto eliminado, zoom slider estático, renderers faltantes para subBoard/separator, markAsSeen sin await en cloud, pan deshabilitado al seleccionar, vistas alternativas sin estados, drawing imagePath con icono genérico, video con dialog muerto, y _pushUnsyncedToCloud sin asignar id cloud.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/renderers/board_element_renderer.dart`: el `onContentChanged` de la nota ahora emite `{'_content': content}` (antes `quillDelta` inexistente) y `board_canvas` lo traduce a `copyWith(content:)`; se agregan renderers para `subBoard` (card con icono dashboard + título) y `separator` (línea horizontal/vertical según data).
+- `lib/database/database_helper.dart`: `is_archived INTEGER NOT NULL DEFAULT 0` agregado al CREATE TABLE de `board_elements_v2` en instalaciones nuevas (el upgrade v7 ya lo tenía).
+- `lib/screens/pizarra_v2/widgets/board_tag_manager.dart`: nuevo param `onClose`; el botón X llama `widget.onClose` en vez de `Navigator.pop(context)` que cerraba toda la pantalla.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: modo conector completo — `_connectorMode`/`_connectorFromId`, `_createAndEdit('connector')` entra a modo selección, `_handleConnectorSelect` crea el elemento con `ConnectorData(fromId, toId)`, banner inferior con instrucciones y botón "Cancelar", panel de opciones oculto en modo conector; pasa `transformController` al zoom slider.
+- `lib/screens/pizarra_v2/widgets/board_canvas.dart`: params `connectorMode`/`connectorFromId`, `panEnabled` queda en `widget.selectedId == null && !widget.connectorMode` (se desactiva con selección — revertido en la sesión siguiente porque `_isEditingText` rompía mover/editar notas); highlight cian del origen del conector; reacciones inline (chips con emojis de `data['reactions']`).
+- `lib/screens/pizarra_v2/renderers/board_checklist_renderer.dart`: diálogo de edición ahora hace `Navigator.pop` con el texto en las acciones Cancelar/Guardar (antes `setState` local nunca devolvía); llave `}` faltante agregada.
+- `lib/screens/pizarra_v2/widgets/board_element_panel.dart`: `_showComments` usa `_liveComments()` (relee del provider por id) para que el comentario nuevo aparezca de inmediato.
+- `lib/screens/pizarra_v2/editors/board_drawing_editor.dart`: `initState` carga strokes del último dibujo existente y guarda en ese elemento (`_targetId`), no en uno nuevo.
+- `lib/screens/pizarra_v2/renderers/board_audio_renderer.dart`: reescrito como StatefulWidget con `Audioplayers` — reproduce `DeviceFileSource(localPath)` o `UrlSource(storagePath)`, waveform con progreso, formato de duración mm:ss.
+- `lib/screens/pizarra_v2/widgets/board_element_card.dart`: eliminado (código muerto).
+- `lib/screens/pizarra_v2/widgets/board_zoom_slider.dart`: reescrito con `TransformationController` de verdad — botón -/+, Slider vinculado al scale (0.1-5.0), escala preservando el centro.
+- `lib/providers/board_provider_v2.dart`: `markAsSeen` ahora hace `await` del update cloud con try/catch; `_pushUnsyncedToCloud` inserta con `clearId: true` (no envía el id local de SQLite al cloud), guarda el id cloud en memoria y reconcilia la fila local (delete del id local + re-save con el id cloud + synced=1). Prevenía colisiones y updates que apuntaban a filas inexistentes.
+- `lib/screens/pizarra_v2/widgets/board_list_view.dart` / `board_timeline_view.dart` / `board_archived_view.dart`: estados LOADING (spinner) y ERROR (mensaje + retry) además del vacío.
+- `lib/screens/pizarra_v2/renderers/board_drawing_renderer.dart`: `Image.file` si `imagePath != null` (antes icono genérico).
+- `lib/screens/pizarra_v2/renderers/board_video_renderer.dart`: al tocar abre el video en navegador externo con `url_launcher` (agregada a pubspec) en vez de un dialog con solo la URL.
+- `pubspec.yaml`: agregada `url_launcher: ^6.3.1`.
+**Lecciones**:
+- `panEnabled` con `!editingText` (siempre true salvo edición) hacía que el InteractiveViewer robara los gestos de las notas: con GestureDetector interno del elemento, el pan del fondo y el drag/elemento pelean. Se revierte a desactivar el pan con selección activa (`selectedId == null`) — el elemento seleccionado se mueve con su propio GestureDetector, sin conflicto.
+- Los widgets con botones que cierran (Tag Manager) no deben usar `Navigator.pop` si están embebidos en un Stack con otro Scaffold debajo: cierran toda la app.
+- El id local de SQLite (`INTEGER PRIMARY KEY` autoincrement) NO es el id cloud (BIGSERIAL): al subir hay que `clearId: true`, tomar `res['id']` y reconciliar la fila local (borrar la fila con el id viejo y reinsertar con el cloud id).
+- Un audio embebido en un renderer debe ser StatefulWidget con dispose del player, o el stream queda escuchando y el audio sigue reproduciendo tras cerrar la pizarra.
+- url_launcher ya estaba en pubspec.lock (transitiva) — declararla en pubspec directo no cambia la versión resuelta.
+**Impacto**: 13 archivos modificados + 1 eliminado, 67 tests verdes, `flutter analyze` 0 errores.
+**Relacionado con**: skill-pantallas.md (pizarrón), D-2 (Supabase), D-3 (SQLite), D-4 (skill_visual)
+
+## [2026-08-07] - BUGFIX - Pizarra v2: 24 bugs críticos de UX/funcionalidad
+**Resumen**: Tras testear la pizarra como usuario se corrigieron 24 bugs que rompían flujos reales: grid no visible, notas no editables, mover solo funciona una vez, panel de opciones con botones rotos, menú radial no funciona, dibujo/video/audio sacan del pizarrón, conectores no crean, zoom/pan se buguea, notas del otro no interactúan, vista archivados no cambia, tags no crean, colores no cambian, tipos se ven iguales, reacciones no funcionan, comentarios no agregan, sub-tableros no crean, colapsar no funciona, bloquear no funciona, fuente/tamaño/alineación no cambian, emoji header no agrega, performance lenta, no guarda offline, reiniciar no arregla.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/widgets/board_canvas.dart`: reescrito con GestureDetector separado del InteractiveViewer, grid siempre visible, panEnabled=false cuando hay selección, hitTestBehavior.deferToChild para permitir TextField, live element lookup para moves, clipBehavior.none en Stack.
+- `lib/screens/pizarra_v2/widgets/board_element_panel.dart`: reescrito como StatefulWidget con dialogs funcionales para editar, color picker, font picker, reacciones, comentarios. Cada botón ahora tiene implementación real.
+- `lib/screens/pizarra_v2/renderers/board_note_renderer.dart`: reescrito como StatefulWidget con TextEditingController + FocusNode, autoFocus en edición, save on every change, double tap para entrar en modo edición.
+- `lib/screens/pizarra_v2/widgets/board_tools_menu.dart`: reescrito con callbacks individuales por tipo (onCreateNote, onCreateChecklist, etc.), crea elemento y abre editor correspondiente sin salir del pizarrón.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: reescrito con estados separados para cada editor (_showDrawingEditor, _showAudioEditor), createAndEdit() que crea elemento y abre editor, callbacks individuales al menu.
+- `lib/screens/pizarra_v2/editors/board_drawing_editor.dart`: reescrito sin referencia a elemento específico, guarda al elemento de dibujo más reciente, onClose callback.
+- `lib/screens/pizarra_v2/editors/board_audio_editor.dart`: reescrito sin referencia a elemento específico, guarda al elemento de audio más reciente, onClose callback.
+- `lib/screens/pizarra_v2/editors/board_video_search.dart`: reescrito con onClose callback, no sale del pizarrón.
+- `lib/screens/pizarra_v2/renderers/board_checklist_renderer.dart`: reescrito con edición de texto por item, asignación toggle, progress bar, delete items.
+- `lib/providers/board_provider_v2.dart`: reescrito con saveToLocal inmediato en add/update, bool→int conversion para SQLite, JSON encode/decode para tags/data, markAsSeen con sync local+cloud, toggleArchive, offline-first load.
+**Lecciones**:
+- InteractiveViewer + GestureDetector anidados causan conflicto de gestos. Separar el GestureDetector del InteractiveViewer y usar panEnabled=false cuando hay selección resuelve el problema de "mover solo funciona una vez".
+- hitTestBehavior.deferToChild permite que los hijos (TextField) reciban taps mientras el padre sigue recibiendo pan.
+- TextField necesita FocusNode + autoFocus + addPostFrameCallback para funcionar dentro de un GestureDetector.
+- Los editores (dibujo, audio, video) no deben recibir un elemento específico; deben crear uno nuevo y guardarlo al elemento más reciente de ese tipo.
+- SQLite necesita bools como ints (0/1) y maps como JSON strings.
+- El provider debe guardar en SQLite inmediatamente en add/update, no solo en debounce.
+**Impacto**: 10 archivos reescritos, 67 tests verdes, `flutter analyze` sin errores.
+**Relacionado con**: Etapa 1/2/3 del pizarrón, skill-pantallas.md, D-2 (Supabase), D-3 (SQLite)
+
+## [2026-08-07] - FEATURE - Pizarrón v2: Etapa 3 (Polish - Vistas múltiples + Archivados + Tags + Búsqueda)
+**Resumen**: Se agregaron vistas alternativas (lista, timeline, archivados), gestión de tags personalizados, campo isArchived, y navegación entre vistas desde el header.
+**Cambios realizados**:
+- `lib/models/board_element_v2.dart`: agregado campo `isArchived` con copyWith, toMap, fromMap.
+- `lib/providers/board_provider_v2.dart`: `elements` filtra archivados, nuevos getters `allElements`, `archivedElements`, método `toggleArchive()`.
+- `lib/database/database_helper.dart`: agregada columna `is_archived` a `board_elements_v2`.
+- `lib/screens/pizarra_v2/widgets/board_list_view.dart` (nuevo): vista de lista con cards por elemento, tipo, autor, tags.
+- `lib/screens/pizarra_v2/widgets/board_timeline_view.dart` (nuevo): vista timeline cronológico con línea vertical, dots por autor, tiempo relativo.
+- `lib/screens/pizarra_v2/widgets/board_archived_view.dart` (nuevo): vista de archivados con botón restaurar.
+- `lib/screens/pizarra_v2/widgets/board_tag_manager.dart` (nuevo): panel para crear/gestionar tags con colores, guardados en SQLite.
+- `lib/screens/pizarra_v2/widgets/board_header.dart`: actualizado con selector de vista (tap en nombre cambia: Pizarra → Lista → Timeline → Archivados), botón de tags.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: enum `BoardViewMode`, integración de vistas, estado para tag manager.
+**Lecciones**:
+- Las vistas alternativas reusan los mismos datos del provider, solo cambian el renderer. Patrón escalable: nueva vista = nuevo widget + caso en el switch del build.
+- `isArchived` filtra por defecto en `elements`, pero `allElements` incluye todo. Así las vistas de canvas/lista/timeline no muestran archivados, pero la vista de archivados sí.
+- Los tags se guardan en SQLite (`board_tags`) y se cargan al iniciar el provider. Escalable: se pueden sync con cloud en el futuro.
+- El header cambia de vista con un tap simple (ciclo: canvas → lista → timeline → archivados → canvas). Simple pero efectivo.
+**Impacto**: 4 archivos nuevos, 5 modificados. 67 tests verdes, `flutter analyze` sin errores.
+**Relacionado con**: Etapa 2 del pizarra, skill-pantallas.md, D-2 (Supabase), D-3 (SQLite)
+
+## [2026-08-07] - FEATURE - Pizarrón v2: Etapa 2b (Editores interactivos + Video Search + Audio Recording + Drawing Editor)
+**Resumen**: Se agregaron editores interactivos para dibujo, audio y video. Drawing editor con herramientas (brush, eraser, line, rectangle, circle), colores y tamaño de pincel. Audio editor con grabación de voz y waveform en tiempo real. Video search dialog para pegar URLs de YouTube/TikTok.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/editors/board_drawing_editor.dart` (nuevo): editor de dibujo con canvas, herramientas (brush, eraser, line, rectangle, circle), paleta de 8 colores, slider de tamaño, undo, clear.
+- `lib/screens/pizarra_v2/editors/board_audio_editor.dart` (nuevo): grabador de audio con waveform en tiempo real, botón record/stop, duración, guardado local.
+- `lib/screens/pizarra_v2/editors/board_video_search.dart` (nuevo): dialog para pegar URLs de YouTube/TikTok, parseo automático de thumbnail YouTube, validación de URL.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: integrado con editores, estado para mostrar/ocultar editores.
+- `lib/screens/pizarra_v2/widgets/board_tools_menu.dart`: callbacks para abrir editores específicos por tipo.
+- `lib/models/board_element_data.dart`: agregado `copyWith` a `DrawingStroke`.
+**Lecciones**:
+- Drawing strokes se guardan como JSON de puntos. Si crecen mucho, futuro: renderizar a imagen y guardar en Storage.
+- Audio recording usa `record` package que ya estaba en pubspec. Waveform se genera en tiempo real simulando amplitud.
+- YouTube thumbnails se obtienen gratis via `img.youtube.com/vi/{id}/hqdefault.jpg`.
+- Los editores se abren como bottom sheets para mantener contexto del pizarrón.
+**Impacto**: 3 archivos nuevos, 3 modificados. 67 tests verdes, `flutter analyze` sin errores.
+**Relacionado con**: Etapa 2 del pizarrón, D-2 (Supabase), skill-pantallas.md
+
+## [2026-08-07] - FEATURE - Pizarrón v2: Etapa 2 (Renderers por tipo + Checklist + Conectores + Drawing + Video + Audio)
+**Resumen**: Se agregaron renderers específicos por tipo de elemento, modelos de datos type-safe, y soporte para checklist, drawing, video, audio y conectores con curvas bezier.
+**Cambios realizados**:
+- `lib/models/board_element_data.dart` (nuevo): modelos type-safe por tipo (ChecklistData, ConnectorData, VideoData, AudioData, DrawingData, SeparatorData, SubBoardData). Cada modelo serializa/deserializa al campo `data` de BoardElementV2.
+- `lib/screens/pizarra_v2/renderers/` (nueva carpeta):
+  - `board_note_renderer.dart`: renderer de notas con texto simple (formato rico completo en etapa futura).
+  - `board_checklist_renderer.dart`: checklist con items, estados (pending/in_progress/done), asignación a Facu/Rocio, progress bar, reordenar.
+  - `board_drawing_renderer.dart`: dibujo libre con strokes (brush, eraser, line, rectangle, circle). Renderiza con CustomPainter.
+  - `board_video_renderer.dart`: video embed con thumbnail + play button. Soporta YouTube, TikTok, otros.
+  - `board_audio_renderer.dart`: audio con waveform visual, botón play/pause, duración.
+  - `board_connector_renderer.dart`: conectores con curvas bezier, líneas rectas, punteadas, etiquetas, flechas. Calcula posiciones en tiempo de renderizado desde elementos referenciados.
+  - `board_element_renderer.dart`: widget unificado que delega al renderer específico según el tipo.
+- `lib/screens/pizarra_v2/widgets/board_canvas.dart`: reescrito para usar renderers unificados, capa de conectores detrás de elementos, soporte para edición inline.
+- `lib/screens/pizarra_v2/widgets/board_tools_menu.dart`: actualizado con botones para checklist, dibujo, video, audio, conector.
+- `pubspec.yaml`: eliminada dependencia flutter_quill (API incompatible), se usa TextField simple por ahora.
+**Lecciones**:
+- flutter_quill tiene API inestable entre versiones. Mejor usar TextField simple + formato básico por ahora, agregar formato rico completo después.
+- Los conectores no deben guardar posiciones, solo fromId/toId. Las posiciones se calculan al renderizar desde los elementos referenciados. Así se actualizan automáticamente cuando los elementos se mueven.
+- Los renderers por tipo permiten escalabilidad: nuevo tipo = nuevo renderer + caso en el switch del renderer unificado.
+- Drawing strokes como JSON pueden ser grandes. Futuro: renderizar a imagen y guardar en Storage, mantener solo path en `data`.
+**Impacto**: 8 archivos nuevos, 3 modificados. 67 tests verdes, `flutter analyze` sin errores.
+**Relacionado con**: Etapa 1 del pizarrón, skill-pantallas.md (especificación del pizarrón), D-2 (Supabase)
+
+## [2026-08-07] - FEATURE - Pizarrón v2: Etapa 1 (Sync + Offline + Estructura nueva)
+**Resumen**: Se comenzó el rediseño completo del pizarrón basado en 100 preguntas respondidas. Etapa 1: nueva estructura de código, modelo de datos completo, provider con sync realtime + offline, canvas básico con notas, panel de edición, badge NUEVO, historial de actividad.
+**Cambios realizados**:
+- `lib/models/board_element_v2.dart` (nuevo): modelo completo con título, contenido, formato de texto (B/I/U, tamaño, color, fuente, alineación), color de fondo custom, emoji header, tags, prioridad, asignado, estado, colapsable, bloqueable, auto-size, badge NUEVO, autoría.
+- `lib/providers/board_provider_v2.dart` (nuevo): provider con offline-first (SQLite cache), sync con Supabase, realtime, debounce para moves/resizes, actividad, tags guardados, markAsSeen.
+- `lib/database/database_helper.dart`: versión 7 con tablas `board_elements_v2`, `board_activity`, `board_tags`.
+- `lib/screens/pizarra_v2/` (nueva carpeta): pantalla reescrita desde cero en widgets separados:
+  - `pizarra_screen_v2.dart`: pantalla principal con Stack de widgets.
+  - `widgets/board_canvas.dart`: InteractiveViewer + grid de puntos grises + skeleton loading.
+  - `widgets/board_header.dart`: header minimalista con nombre del tablero + search + actividad + indicador online.
+  - `widgets/board_tools_menu.dart`: menú radial con botón + que expande herramientas.
+  - `widgets/board_element_card.dart`: card de elemento con badge de autor (iniciales color), badge NUEVO, tags, prioridad, colapsado, bloqueado, animación scale bounce.
+  - `widgets/board_element_panel.dart`: bottom sheet con opciones (editar, color, fuente, reacciones, comentarios, duplicar, bloquear, eliminar).
+  - `widgets/board_search_panel.dart`: búsqueda con preview + filtros.
+  - `widgets/board_activity_panel.dart`: panel lateral con historial de actividad.
+  - `widgets/board_zoom_slider.dart`: indicador de zoom.
+- `lib/main.dart`: registrado `BoardProviderV2`.
+- `lib/screens/home_screen.dart`: navegación actualizada a `PizarraScreenV2`.
+- `skill-pantallas.md`: agregada especificación completa del pizarrón (100 respuestas).
+**Lecciones**:
+- Los imports en subcarpetas necesitan `../../../` para llegar a `lib/`.
+- `ConflictAlgorithm` viene de `sqflite`, no de `supabase_flutter`.
+- Text no tiene `fontSize` como parámetro directo — va dentro de `TextStyle`.
+- El modelo v2 es inmutable (`copyWith`) — cada actualización crea una nueva instancia.
+- Offline-first: cargar SQLite primero, luego sync con cloud. Los elementos no sincronizados tienen `synced = 0`.
+**Impacto**: 12 archivos nuevos, 3 modificados. 67 tests verdes, `flutter analyze` sin errores.
+**Relacionado con**: skill-pantallas.md (especificación del pizarrón), D-2 (Supabase), D-3 (SQLite offline)
+
+## [2026-08-07] - FEATURE - Skill de Pantallas y Sincronización (skill-pantallas.md) v2
+**Resumen**: Se creó `skill-pantallas.md` en la raíz como regla obligatoria que documenta las reglas de sincronización entre Facu y Rocio, estructura de cada pantalla, estados visuales, navegación, colores por usuario y reglas de negocio por pantalla. **Versión 2**: se agregaron reglas de "todo comentable + todo reaccionable + todo interactuable".
+**Cambios realizados**:
+- `skill-pantallas.md` (nuevo, v2): Reglas generales de sync (todo en tiempo real, notificaciones solo por bot WhatsApp, colores por usuario, 4 estados por pantalla, mapa de navegación), **regla 6 "todo comentable"** (excepto chat que ya tiene reply), **regla 7 "todo reaccionable"** (long-press → emojis como WhatsApp, max 5 keys), **regla 8 "todo interactuable"** (no hay nada de solo lectura), fichas detalladas de 13 pantallas con filas de comentarios y reacciones, checklist de implementación actualizado, pantallas excluidas.
+- Cada ficha incluye: tabla, sync, permisos, colores, reacciones, comentarios, estados visuales.
+- Se excluyeron LoginScreen, SettingsScreen, MapaScreen, NotificationsScreen (simples o sin sync compleja).
+**Lecciones**:
+- El skill se creó iterativamente con 14 preguntas al usuario vía tool `question`.
+- Formato elegido: reglas generales + fichas por pantalla (no tablas comparativas ni sección por pantalla pura).
+- Las reglas de permisos son "por pantalla" — se documentaron las que ya existen en el código; las que no están confirmadas se pueden ajustar después.
+- "Todo comentable" excluye chat porque ya tiene reply/swipe-to-reply.
+- "Todo reaccionable" usa mismo formato que chat: long-press → 🥰😘😍:v xD :0 + custom, max 5 keys, 1 por usuario por key.
+**Impacto**: `skill-pantallas.md` (nuevo, v2), `docs/contexto/historial.md`
+**Relacionado con**: AGENTS.md (regla de leer docs antes), skill_visual.md, FURI-Nosotros-Skill.md
+
+## [2026-08-07] - BUGFIX - Pizarrón: 12 bugs de UX/persistencia (dialogs, IDs, flechas, links, estados)
+**Resumen**: Tras testear la pizarra como usuario se corrigieron bugs que rompían flujos reales: botones Crear de dialogs siempre deshabilitados, elementos sin id cloud (duplicados + no se podían conectar/borrar bien), flecha del conector al revés, editar link borraba comentarios, sub-tablero en (20,20), comentarios con snapshot stale, sin UI de error y skill_visual en carpeta/search.
+**Cambios realizados**:
+- `lib/models/board_element.dart`: `copyWith` ahora acepta `id`/`clearId`/`color`/`userId`. `toMap` usa `userId ?? AppState.myId` (no pisa autoría). `fromMap` acepta `data` como `Map` dinámico (no solo `Map<String,dynamic>`).
+- `lib/providers/board_data_provider.dart`:
+  - `add()` hace `.insert().select().single()` y fusiona el id cloud en la copia optimista (conserva x/y/data locales). Si falla, rollback del optimista.
+  - Realtime: mergea optimista sin id (evita duplicados) y no pisa moves/resizes pendientes.
+  - `delete()` limpia conectores huérfanos. Nuevo `deleteLocal` para elementos sin id. Getter `isEmpty`.
+- `lib/screens/pizarra/pizarra_screen.dart`:
+  - Dialogs con `StatefulBuilder` + `onChanged` (Crear se habilita al tipear). Helper `_promptText`.
+  - Links: guarda URL normalizada en `content` + `data` sin borrar comments.
+  - Sub-tablero spawnea en centro del viewport. Doble-tap board parsea `boardId` int/string. Back limpia selección.
+  - Conectores: flecha en el destino (`_drawArrowhead(b, a)`), evita dupes del mismo par.
+  - Move/resize/comentarios usan `_liveElement` (copia actual del provider, no el snapshot del build).
+  - Borrar resuelve por id o por temp-id local. Banner + pantalla de error con retry.
+  - skill_visual: carpeta board y panel búsqueda con fondo=borde.
+- Tests: 12 board_element + 8 board_data_provider = 20 verdes. `flutter analyze` sin issues.
+**Lecciones**:
+- `onPressed: ctrl.text.isNotEmpty ? fn : null` se evalúa UNA vez al build del dialog → botón Crear queda null para siempre. Hay que `StatefulBuilder` + `onChanged`/`setState`.
+- Insert sin `.select()` deja el elemento local sin id → no se puede conectar/borrar por id, y el realtime agrega un segundo. Siempre `insert().select().single()` y mergear.
+- `_drawArrowhead(canvas, a, b)` con tip=a dibuja la punta en el origen; la punta va en el destino.
+- `updateDataLocal(el, {url, title})` pisa el map entero y borra `comments`. Hay que `{...el.data, ...}`.
+- En pan/resize el `el` del build queda stale tras el primer frame; hay que releer del provider (`_liveElement`).
+**Impacto**: `lib/models/board_element.dart`, `lib/providers/board_data_provider.dart`, `lib/screens/pizarra/pizarra_screen.dart`, tests.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), historial pizarrón etapa 1/2.
+
+## [2026-08-07] - FEATURE - Pizarrón: lienzo infinito + centrado + alta en el centro del visible + tipos limpiados
+**Resumen**: El pizarrón tenía un límite de 20000px (`boundaryMargin` del InteractiveViewer) que cortaba el arrastre/zoom y se mostraba desde la esquina. Ahora el lienzo es infinito, arranca centrado en el origen, los elementos nuevos se colocan en el centro del viewport actual y se eliminaron los tipos `postit` y `arrow`.
+**Cambios realizados**:
+- `lib/screens/pizarra/pizarra_screen.dart`:
+  - **Lienzo infinito**: grid movido a un `CustomPaint` en el Stack externo (espacio de pantalla) que repinta según la transformento actual, en vez de pintarlo dentro del InteractiveViewer limitado por el SizedBox. `boundaryMargin` de `EdgeInsets.all(_boardSize)` → `EdgeInsets.all(double.infinity)` y los `Stack` internos con `clipBehavior: Clip.none`, así los elementos pueden ubicarse y verse en cualquier parte sin recortarse.
+  - **Centrado al iniciar**: `_goToCenter()` ahora centra el mundo en la pantalla usando `MediaQuery.size` (antes ponía `(-500, -400)`).
+  - **Agregar al centro del viewport**: nuevo `_screenCenterToWorld()` (invierte `_transformController.value` y transforma el punto central de la pantalla a coordenadas mundo) usado en `_spawnAdd()` para ubicar el elemento centrado en el punto actual de la vista. Reemplazado `_randPos()` aleatorio.
+  - **Tipos eliminados**: se quitó `postit` y `arrow` de las herramientas flotantes, del renderizado (`_buildElementBody`), del `_typeIcon`, del `onDoubleTap` para editar y de la referencia en el contenido por defecto.
+**Lecciones**:
+- Un lienzo "infinito" con InteractiveViewer se logra pintando el fondo en espacio de pantalla (superpuesto externo transformado por la matriz) en vez de dentro del hijo escalado; así dejas `boundaryMargin` infinito y no necesitás un SizedBox enorme ni límite.
+- Para que los elementos aparezcan donde el usuario está viendo hay que traducir el centro de la pantalla al espacio mundo con la inversa de la transformación actual (`MatrixUtils.transformPoint(inverse, center)`), no usar coordenadas aleatorias.
+- `_randPos()` dependía de la traslación actual + ruido; era la causa de que las notas aparecieran "en otro lado". El centrado por transform es más predecible.
+**Impacto**: `lib/screens/pizarra/pizarra_screen.dart`
+**Relacionado con**: D-4 (skill_visual — la grid/selección siguen usando fondo=borde), historial pizarrón etapa 1/2
+
 ## [2026-08-07] - BUGFIX - Crash de Firebase Messaging en Windows (MissingPluginException)
 **Resumen**: Al abrir la app en desktop (Windows) tras el login, explotaba `MissingPluginException: No implementation found for method Messaging#getToken`. `NotificationService.initialize()` seteaba `_firebaseAvailable = true` (el singleton `FirebaseMessaging.instance` se crea sin tocar la plataforma) pero `firebase_messaging` no tiene plugin nativo en Windows → `registerTokenAfterLogin()` llamaba `getToken()` y lanzaba.
 **Cambios realizados**:

@@ -61,6 +61,7 @@ dependencies:
   video_player: ^2.9.3
   open_filex: ^4.6.0
   permission_handler: ^11.3.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

@@ -39,5 +39,47 @@ void main() {
       expect(p.elements.first.height, 180);
       p.dispose();
     });
+
+    test('deleteLocal sin ID quita el elemento de la lista', () {
+      final p = BoardDataProvider();
+      final el = BoardElement(type: 'note', content: 'x');
+      p.setElementsForTest([el, BoardElement(type: 'note', id: 2)]);
+      p.deleteLocal(el);
+      expect(p.elements.length, 1);
+      expect(p.elements.first.id, 2);
+      p.dispose();
+    });
+
+    test('updateDataLocal sin ID mergea data local', () {
+      final p = BoardDataProvider();
+      final el = BoardElement(type: 'task', data: {'done': false});
+      p.setElementsForTest([el]);
+      p.updateDataLocal(el, {'done': true, 'comments': []});
+      expect(p.elements.first.isDone, isTrue);
+      expect(p.elements.first.data['comments'], isEmpty);
+      p.dispose();
+    });
+
+    test('updateContentLocal sin ID actualiza contenido', () {
+      final p = BoardDataProvider();
+      final el = BoardElement(type: 'note', content: 'a');
+      p.setElementsForTest([el]);
+      p.updateContentLocal(el, 'hola');
+      expect(p.elements.first.content, 'hola');
+      p.dispose();
+    });
+
+    test('isEmpty es true sin elementos y sin error/loading', () {
+      final p = BoardDataProvider();
+      p.setElementsForTest([]);
+      expect(p.isEmpty, isTrue);
+      p.dispose();
+    });
+
+    test('boardName cae a Pizarra si no hay boards cargados', () {
+      final p = BoardDataProvider();
+      expect(p.boardName, 'Pizarra');
+      p.dispose();
+    });
   });
 }

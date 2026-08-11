@@ -28,20 +28,43 @@ void main() {
       expect(back.data['title'], 'x');
     });
 
-    test('toMap incluye user_id actual', () {
+    test('toMap usa userId del constructor y no lo pisa', () {
+      final el = BoardElement(type: 'note', userId: 'rocio-uuid');
+      expect(el.toMap()['user_id'], 'rocio-uuid');
+    });
+
+    test('toMap cae a AppState.myId si no hay userId', () {
       final el = BoardElement(type: 'note');
       expect(el.toMap()['user_id'], 'facu-uuid');
     });
 
-    test('copyWith actualiza posicion, tamano y data sin pisar lo demas', () {
+    test('copyWith actualiza posicion, tamano, data e id', () {
       final el = BoardElement(type: 'note', x: 1, y: 2, width: 100, height: 50, z: 1);
-      final updated = el.copyWith(x: 50, width: 220, height: 120, data: {'url': 'a'});
+      final updated = el.copyWith(x: 50, width: 220, height: 120, data: {'url': 'a'}, id: 99);
       expect(updated.x, 50);
       expect(updated.width, 220);
       expect(updated.height, 120);
       expect(updated.y, 2);
       expect(updated.z, 1);
       expect(updated.data['url'], 'a');
+      expect(updated.id, 99);
+    });
+
+    test('copyWith clearId limpia el id', () {
+      final el = BoardElement(type: 'note', id: 5);
+      expect(el.copyWith(clearId: true).id, isNull);
+    });
+
+    test('fromMap acepta data como Map dinamico', () {
+      final back = BoardElement.fromMap({
+        'id': 1,
+        'type': 'link',
+        'content': 'https://a.com',
+        'data': <dynamic, dynamic>{'title': 'a.com', 'url': 'https://a.com'},
+        'board_id': 2,
+      });
+      expect(back.data['title'], 'a.com');
+      expect(back.boardId, 2);
     });
 
     test('center calcula el punto medio', () {

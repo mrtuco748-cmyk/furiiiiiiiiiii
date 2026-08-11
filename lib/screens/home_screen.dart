@@ -24,6 +24,7 @@ import 'finanzas/finanzas_screen.dart';
 import 'galeria/galeria_screen.dart';
 import 'favoritos/favoritos_screen.dart';
 import 'pizarra/pizarra_screen.dart';
+import 'pizarra_v2/pizarra_screen_v2.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -179,7 +180,7 @@ class _BrutalGridState extends State<_BrutalGrid> {
   void _openPizarra(double x, double y) {
     _confettiAt(x, y);
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const PizarraScreen(),
+      builder: (_) => const PizarraScreenV2(),
     ));
   }
 

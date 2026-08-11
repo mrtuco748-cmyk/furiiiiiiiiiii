@@ -1,11 +1,12 @@
 import '../app_state.dart';
 
 /// Tipos de elementos soportados por el pizarron estilo Milanote.
-/// - `note` / `postit`: notas de texto con color de fondo.
-/// - `arrow`: flecha simple (legacy).
-/// - `image`: imagen subida a Supabase Storage (`content` = URL).
-/// - `link`: card de enlace con preview (`content` = URL, `data` = metadatos).
-/// - `connector`: linea/flecha que une dos elementos (`data.fromId` / `data.toId`).
+/// - `note`: notas de texto con color de fondo.
+/// - `task`: checklist con `data.done`.
+/// - `image`: imagen subida a Supabase Storage (`content` = path).
+/// - `link`: card de enlace (`content` = URL, `data` = metadatos).
+/// - `connector`: linea/flecha que une dos elementos (`data.fromId`/`toId`).
+/// - `board`: carpeta a un sub-tablero (`data.boardId`).
 class BoardElement {
   final int? id;
   final String type;
@@ -48,7 +49,7 @@ class BoardElement {
         'z': z,
         'data': data,
         'board_id': boardId,
-        'user_id': AppState.myId ?? '',
+        'user_id': userId ?? AppState.myId ?? '',
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -63,7 +64,7 @@ class BoardElement {
         rotation: (m['rotation'] as num?)?.toDouble() ?? 0,
         color: m['color'] as String?,
         z: (m['z'] as num?)?.toInt() ?? 0,
-        data: m['data'] is Map<String, dynamic>
+        data: m['data'] is Map
             ? Map<String, dynamic>.from(m['data'] as Map)
             : {},
         boardId: (m['board_id'] as num?)?.toInt() ?? 1,
@@ -74,18 +75,22 @@ class BoardElement {
       );
 
   BoardElement copyWith({
+    int? id,
+    bool clearId = false,
     double? x,
     double? y,
     double? width,
     double? height,
     double? rotation,
     String? content,
+    String? color,
+    String? userId,
     Map<String, dynamic>? data,
     int? z,
     int? boardId,
   }) =>
       BoardElement(
-        id: id,
+        id: clearId ? null : (id ?? this.id),
         type: type,
         content: content ?? this.content,
         x: x ?? this.x,
@@ -93,8 +98,8 @@ class BoardElement {
         width: width ?? this.width,
         height: height ?? this.height,
         rotation: rotation ?? this.rotation,
-        color: color,
-        userId: userId,
+        color: color ?? this.color,
+        userId: userId ?? this.userId,
         z: z ?? this.z,
         boardId: boardId ?? this.boardId,
         data: data ?? this.data,

@@ -22,6 +22,7 @@ import 'providers/finances_provider.dart';
 import 'providers/gallery_provider.dart';
 import 'providers/favorites_provider.dart';
 import 'providers/board_data_provider.dart';
+import 'providers/board_provider_v2.dart';
 import 'providers/theme_provider.dart';
 import 'providers/menu_provider.dart';
 import 'database/database_helper.dart';
@@ -146,6 +147,7 @@ class FuriApp extends StatelessWidget {
             ChangeNotifierProvider(create: (_) => GalleryProvider()),
             ChangeNotifierProvider(create: (_) => FavoritesProvider()),
             ChangeNotifierProvider(create: (_) => BoardDataProvider()),
+            ChangeNotifierProvider(create: (_) => BoardProviderV2()),
             ChangeNotifierProvider(create: (_) => ThemeProvider()),
             ChangeNotifierProvider(create: (_) => MenuProvider()),
           ],

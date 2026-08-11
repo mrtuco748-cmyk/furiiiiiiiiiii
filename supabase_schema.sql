@@ -403,7 +403,7 @@ CREATE TABLE IF NOT EXISTS class_schedules (
   end_time TEXT DEFAULT '',
   professor TEXT DEFAULT '',
   user_id TEXT DEFAULT '',
-  color INTEGER DEFAULT 4286262670,
+  color BIGINT DEFAULT 4286262670,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -60,6 +60,7 @@ class BoardDataProvider extends ChangeNotifier {
     } catch (e) {
       _error = 'No se pudo crear el tablero';
       debugPrint('BoardDataProvider.createBoard error: $e');
+      notifyListeners();
       return null;
     }
   }
@@ -68,6 +69,7 @@ class BoardDataProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   bool get hasError => _error != null;
+  bool get isEmpty => !_loading && _elements.isEmpty && _error == null;
 
   void clearError() {
     _error = null;
@@ -107,12 +109,38 @@ class BoardDataProvider extends ChangeNotifier {
             if (el.boardId != _boardId) return;
             final idx = _elements.indexWhere((e) => e.id == el.id);
             if (idx >= 0) {
+              // No pisar moves/resizes locales pendientes con la versión cloud.
+              if (_pendingMoves.containsKey(el.id) ||
+                  _pendingResizes.containsKey(el.id)) {
+                return;
+              }
               _elements[idx] = el;
               notifyListeners();
+              return;
+            }
+            // Evita duplicar el elemento optimista recién insertado
+            // (misma posición/tipo/contenido y todavía sin id).
+            final optIdx = _elements.indexWhere((e) =>
+                e.id == null &&
+                e.type == el.type &&
+                e.content == el.content &&
+                (e.x - el.x).abs() < 1 &&
+                (e.y - el.y).abs() < 1);
+            if (optIdx >= 0) {
+              final local = _elements[optIdx];
+              _elements[optIdx] = el.copyWith(
+                x: local.x,
+                y: local.y,
+                width: local.width,
+                height: local.height,
+                content: local.content.isNotEmpty ? local.content : null,
+                data: local.data.isNotEmpty ? local.data : null,
+                z: local.z,
+              );
             } else {
               _elements.add(el);
-              notifyListeners();
             }
+            notifyListeners();
           },
         )
         .subscribe();
@@ -143,17 +171,46 @@ class BoardDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Inserta optimista y fusiona el id cloud devuelto (evita duplicados y
+  /// permite seleccionar/conectar/borrar el elemento recién creado).
   Future<void> add(BoardElement el) async {
     _error = null;
     el = el.copyWith(boardId: _boardId);
     _elements.add(el);
     notifyListeners();
     try {
-      await SupabaseConfig.client
+      final res = await SupabaseConfig.client
           .from('board_elements')
           .insert(el.toMap())
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      final cloud = BoardElement.fromMap(res);
+      final idx = _elements.indexWhere((e) => identical(e, el));
+      if (idx >= 0) {
+        // Conserva x/y/data locales por si el usuario ya movió o editó.
+        final local = _elements[idx];
+        _elements[idx] = cloud.copyWith(
+          x: local.x,
+          y: local.y,
+          width: local.width,
+          height: local.height,
+          content: local.content,
+          data: local.data,
+          z: local.z,
+        );
+      } else {
+        // Ya fue reemplazado por realtime u otro path: actualiza por id.
+        final byId = _elements.indexWhere((e) => e.id == cloud.id);
+        if (byId >= 0) {
+          _elements[byId] = cloud;
+        } else {
+          _elements.add(cloud);
+        }
+      }
+      notifyListeners();
     } catch (e) {
+      _elements.removeWhere((e) => identical(e, el));
       _error = 'No se pudo agregar el elemento';
       debugPrint('BoardDataProvider.add error: $e');
       notifyListeners();
@@ -293,6 +350,17 @@ class BoardDataProvider extends ChangeNotifier {
 
   Future<void> delete(int id) async {
     _elements.removeWhere((e) => e.id == id);
+    // También limpia conectores huérfanos que apuntaban a este id.
+    final orphanIds = _elements
+        .where((e) =>
+            e.type == 'connector' &&
+            (e.data['fromId'] == id || e.data['toId'] == id))
+        .map((e) => e.id)
+        .whereType<int>()
+        .toList();
+    _elements.removeWhere((e) =>
+        e.type == 'connector' &&
+        (e.data['fromId'] == id || e.data['toId'] == id));
     notifyListeners();
     try {
       await SupabaseConfig.client
@@ -300,11 +368,28 @@ class BoardDataProvider extends ChangeNotifier {
           .delete()
           .eq('id', id)
           .timeout(const Duration(seconds: 10));
+      for (final oid in orphanIds) {
+        await SupabaseConfig.client
+            .from('board_elements')
+            .delete()
+            .eq('id', oid)
+            .timeout(const Duration(seconds: 5));
+      }
     } catch (e) {
       _error = 'No se pudo eliminar el elemento';
       debugPrint('BoardDataProvider.delete error: $e');
       await load();
     }
+  }
+
+  /// Borra un elemento sin id (recién creado, insert fallido o pendiente).
+  void deleteLocal(BoardElement el) {
+    if (el.id != null) {
+      delete(el.id!);
+      return;
+    }
+    _elements.removeWhere((e) => identical(e, el));
+    notifyListeners();
   }
 
   void _scheduleFlush() {

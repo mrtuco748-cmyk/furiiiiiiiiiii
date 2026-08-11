@@ -94,11 +94,24 @@ Los scripts verifican que Flutter este en PATH, que JAVA_HOME sea valido (APK) y
 
 ### Firma de release (APK instalable en celulares)
 
-Desde 2026-08-06 el APK release se firma con un **keystore propio** (`android/app/upload-keystore.jks`), no con la firma debug. Esto permite reinstalar sobre versiones anteriores sin conflicto de firma.
+Desde 2026-08-10 el APK release se firma con la **firma debug de Flutter**
+(`~/.android/debug.keystore`, `CN=Android Debug`), la misma que usan todos los
+builds debug del proyecto. No hay keystore propio: `android/key.properties` y
+`android/app/upload-keystore.jks` fueron eliminados.
 
-- Credenciales en `android/key.properties` (storePassword/keyPassword/keyAlias/storeFile) — **NO se commitea** (en `.gitignore`).
-- Si borrás `key.properties` o el keystore, el release compila con firma vacía y Android no lo instala. Guardalos en lugar seguro.
-- ⚠️ **IMPORTANTE**: nunca borres `android/app/upload-keystore.jks`. Si se pierde, no se puede actualizar la app sobre una instalación existente (habría que desinstalar y perder datos).
+- En `android/app/build.gradle.kts` el buildType release declara
+  `signingConfig = signingConfigs.getByName("debug")` — **NO quitarlo**: sin
+  signingConfig explícito AGP puede compilar el APK **sin firmar** ("√ Built"
+  pero `apksigner verify` falla con `Missing META-INF/MANIFEST.MF` y Android
+  lo rechaza al instalar).
+- La firma debug es la más compatible: cualquier dispositivo que alguna vez
+  aceptó un APK debug de Flutter acepta el nuevo sin desinstalar.
+- ⚠️ **Excepción**: si el celular tiene instalada la v1.0.1 (firmada con el
+  keystore CN=Furi del 6/8/2026), hay que **desinstalar primero** — la firma
+  debug no puede reemplazarla. Ver `documentacion/GUIA_INSTALACION_APK.md`.
+- Verificación de firma (obligatoria antes de entregar un APK):
+  `apksigner.bat verify --verbose build\app\outputs\flutter-apk\app-release.apk`
+  (debe decir `Verifies` con `v2 scheme: true`).
 
 ### Build manual (sin script)
 ```bash
