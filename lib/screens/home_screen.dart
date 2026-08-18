@@ -1,5 +1,3 @@
-import 'dart:developer' as developer;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,19 +10,19 @@ import '../widgets/mode_btn.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/responsive_wrapper.dart';
 import '../services/notification_service.dart';
-import '../providers/class_schedule_provider.dart';
-import '../database/database_helper.dart';
+import '../providers/deck_provider.dart';
+
 import 'nosotros_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'calendar/calendar_home_screen.dart';
-import 'calendar/class_setup_wizard.dart';
-
 import 'finanzas/finanzas_screen.dart';
 import 'galeria/galeria_screen.dart';
 import 'favoritos/favoritos_screen.dart';
-import 'pizarra/pizarra_screen.dart';
 import 'pizarra_v2/pizarra_screen_v2.dart';
+import 'ejercicios/ejercicios_screen.dart';
+import 'mazo/deck_overlay.dart';
+import 'mazo/deck_match_overlay.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -49,6 +47,7 @@ class _BrutalGridState extends State<_BrutalGrid> {
   AppMode _mode = AppState.identity == 'Rocio'
       ? AppMode.dark : AppState.identity == 'Facu' ? AppMode.blue : AppMode.flower;
   int _unreadNotifications = 0;
+  bool _showDeck = false;
 
   Future<void> _loadMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -69,28 +68,22 @@ class _BrutalGridState extends State<_BrutalGrid> {
     _saveMode(mode);
   }
 
-  Future<void> _checkClassSetup() async {
-    try {
-      final res = await DatabaseHelper().getAll('class_schedules');
-      if (res.isEmpty && mounted) {
-        final result = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const ClassSetupWizard()));
-        if (result == true) {
-          final pv = context.read<ClassScheduleProvider>();
-          if (mounted) pv.loadSchedules();
-        }
-      }
-    } catch (e) {
-      developer.log('checkClassSetup fallo: $e');
-    }
-  }
-
   @override
   void initState() {
     super.initState();
     NotificationService.startListening();
     _loadUnread();
     _loadMode();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkClassSetup());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initDeck());
+  }
+
+  Future<void> _initDeck() async {
+    final pv = context.read<DeckProvider>();
+    await pv.load();
+    if (!mounted) return;
+    if (pv.pendingFor(AppState.myId).isNotEmpty) {
+      setState(() => _showDeck = true);
+    }
   }
 
   Future<void> _loadUnread() async {
@@ -184,6 +177,18 @@ class _BrutalGridState extends State<_BrutalGrid> {
     ));
   }
 
+  void _openEjercicios(double x, double y) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => EjerciciosScreen(mode: _mode),
+    ));
+  }
+
+  void _openMazo(double x, double y) {
+    _confettiAt(x, y);
+    context.read<DeckProvider>().load();
+    setState(() => _showDeck = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ResponsiveWrapper(
@@ -249,10 +254,10 @@ class _BrutalGridState extends State<_BrutalGrid> {
                 Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.image, t.a, t: t))),
                 gapW(6),
                 Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.play_arrow, t.b, t: t))),
-              ]), _confettiAt, borderWidth: 5),
+              ]), _openMazo, borderWidth: 5),
             Positioned(left: x2, top: y5, width: x4 - x2, height: rh[5],
               child: Row(children: [
-                Expanded(flex: 6, child: bottomBtn(t.d, Icons.spa, t.dark, 5, _confettiAt)),
+                Expanded(flex: 6, child: bottomBtn(const Color(0xFF39FF14), Icons.fitness_center, const Color(0xFF062B06), 5, _openEjercicios)),
                 gapW(6),
                 Expanded(flex: 10, child: bottomBtn(t.a, Icons.bar_chart, t.light, 6, _openFinanzas)),
                 gapW(6),
@@ -269,6 +274,24 @@ class _BrutalGridState extends State<_BrutalGrid> {
               ModeBtn(AppMode.heart, Icons.favorite, _mode == AppMode.heart, _onModeTap),
             ]),
             xFloating(w, h),
+            if (_showDeck)
+              Positioned.fill(
+                child: DeckOverlay(
+                  onClose: () => setState(() => _showDeck = false),
+                ),
+              ),
+            Consumer<DeckProvider>(
+              builder: (context, deckPv, _) {
+                final match = deckPv.pendingMatch;
+                if (match == null) return const SizedBox.shrink();
+                return Positioned.fill(
+                  child: DeckMatchOverlay(
+                    card: match,
+                    onDone: () => deckPv.consumeMatch(),
+                  ),
+                );
+              },
+            ),
           ],
         ));
       },

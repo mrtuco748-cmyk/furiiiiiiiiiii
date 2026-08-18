@@ -388,7 +388,8 @@ CREATE TABLE IF NOT EXISTS schedules (
   location TEXT DEFAULT '',
   instructor TEXT DEFAULT '',
   type TEXT DEFAULT 'Clase',
-  color INT DEFAULT 0xFF7B2D8E,
+  color BIGINT DEFAULT 4286262670,
+  user_id TEXT DEFAULT '',
   createdAt TIMESTAMPTZ DEFAULT NOW(),
   updatedAt TIMESTAMPTZ DEFAULT NOW()
 );
@@ -408,7 +409,73 @@ CREATE TABLE IF NOT EXISTS class_schedules (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 24. DECK CARDS (mazo swipe tipo Tinder)
+CREATE TABLE IF NOT EXISTS deck_cards (
+  id BIGSERIAL PRIMARY KEY,
+  category TEXT NOT NULL DEFAULT 'random',
+  content TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT '',
+  reactions JSONB DEFAULT '{}'::jsonb,  -- {"<user_id>": "encanta"|"me_gusta"|"meh"|"no_me_gusta"}
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 25. WORKOUT LOGS (ejercicios registrados, sueltos o de rutina)
+CREATE TABLE IF NOT EXISTS workout_logs (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) NOT NULL,
+  exercise_name TEXT NOT NULL,
+  muscle_group TEXT,
+  series INT,
+  reps INT,
+  weight NUMERIC,
+  rest_seconds INT,
+  notes TEXT,
+  routine_id BIGINT,
+  logged_on DATE DEFAULT CURRENT_DATE,
+  social JSONB DEFAULT '{}'::jsonb,  -- {"reactions": {"🔥": ["uuid"]}, "comments": [...]}
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 26. WORKOUT ROUTINES (rutinas con plan semanal por dia)
+CREATE TABLE IF NOT EXISTS workout_routines (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) NOT NULL,
+  name TEXT NOT NULL,
+  day_of_week INT,  -- 1=lunes ... 7=domingo, NULL = sin dia
+  items JSONB DEFAULT '[]'::jsonb,  -- [{exerciseName, series, reps, weight, restSeconds, notes}]
+  social JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 27. WORKOUT COMPLETIONS (cada persona marca su entrenamiento del dia)
+CREATE TABLE IF NOT EXISTS workout_completions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) NOT NULL,
+  completed_on DATE DEFAULT CURRENT_DATE,
+  routine_id BIGINT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, completed_on, routine_id)
+);
+
+-- 28. WORKOUT CHALLENGES (retos con aprobacion y completado conjuntos)
+CREATE TABLE IF NOT EXISTS workout_challenges (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  created_by UUID REFERENCES profiles(id) NOT NULL,
+  approved_by JSONB DEFAULT '[]'::jsonb,
+  completed_by JSONB DEFAULT '[]'::jsonb,
+  social JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- INDEXES for new tables
+CREATE INDEX IF NOT EXISTS idx_deck_cards_category ON deck_cards(category);
+CREATE INDEX IF NOT EXISTS idx_deck_cards_created_at ON deck_cards(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_column ON tasks("column");
 CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
@@ -422,6 +489,10 @@ CREATE INDEX IF NOT EXISTS idx_timeline_events_user_id ON timeline_events(user_i
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
 CREATE INDEX IF NOT EXISTS idx_class_schedules_day ON class_schedules(day_of_week);
 CREATE INDEX IF NOT EXISTS gallery_comments_gallery_id_idx ON gallery_comments(gallery_id);
+CREATE INDEX IF NOT EXISTS idx_workout_logs_logged_on ON workout_logs(logged_on);
+CREATE INDEX IF NOT EXISTS idx_workout_logs_name ON workout_logs(exercise_name);
+CREATE INDEX IF NOT EXISTS idx_workout_routines_day ON workout_routines(day_of_week);
+CREATE INDEX IF NOT EXISTS idx_workout_completions_on ON workout_completions(completed_on);
 
 -- RLS for new tables
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
@@ -434,6 +505,11 @@ ALTER TABLE gallery_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE timeline_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE class_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE deck_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workout_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workout_routines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workout_completions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workout_challenges ENABLE ROW LEVEL SECURITY;
 
 -- Policies for new tables
 DO $$ BEGIN
@@ -447,6 +523,11 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "full_access_timeline_events" ON timeline_events;
   DROP POLICY IF EXISTS "full_access_schedules" ON schedules;
   DROP POLICY IF EXISTS "full_access_class_schedules" ON class_schedules;
+  DROP POLICY IF EXISTS "full_access_deck_cards" ON deck_cards;
+  DROP POLICY IF EXISTS "full_access_workout_logs" ON workout_logs;
+  DROP POLICY IF EXISTS "full_access_workout_routines" ON workout_routines;
+  DROP POLICY IF EXISTS "full_access_workout_completions" ON workout_completions;
+  DROP POLICY IF EXISTS "full_access_workout_challenges" ON workout_challenges;
 END $$;
 
 CREATE POLICY "full_access_tasks" ON tasks FOR ALL USING (true);
@@ -459,3 +540,8 @@ CREATE POLICY "full_access_gallery_comments" ON gallery_comments FOR ALL USING (
 CREATE POLICY "full_access_timeline_events" ON timeline_events FOR ALL USING (true);
 CREATE POLICY "full_access_schedules" ON schedules FOR ALL USING (true);
 CREATE POLICY "full_access_class_schedules" ON class_schedules FOR ALL USING (true);
+CREATE POLICY "full_access_deck_cards" ON deck_cards FOR ALL USING (true);
+CREATE POLICY "full_access_workout_logs" ON workout_logs FOR ALL USING (true);
+CREATE POLICY "full_access_workout_routines" ON workout_routines FOR ALL USING (true);
+CREATE POLICY "full_access_workout_completions" ON workout_completions FOR ALL USING (true);
+CREATE POLICY "full_access_workout_challenges" ON workout_challenges FOR ALL USING (true);

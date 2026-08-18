@@ -7,6 +7,96 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~MEDIA - Build de Windows fallaba con TRK0005 o LNK1104 tras agregar un plugin nativo~~ ✅ RESUELTO 2026-08-17
+- **Dónde**: `flutter build windows --release` (entorno de build local)
+- **Qué pasaba**: Al agregar `flutter_timezone` (plugin con código nativo), CMake debía regenerar los .vcxproj y rebuildeaa; sin el entorno MSVC activado el build moría con `TRK0005: no se encontró CL.exe`. Además, si la app (`furi_app.exe`) está abierta, el linker no puede sobrescribir el exe: `LNK1104: no se puede abrir el archivo ...\furi_app.exe`.
+- **Fix**: activar `D:\BuildTools\VC\Auxiliary\Build\vcvarsall.bat amd64` antes del build (plugins nuevos → rebuild CMake → TRK0005) y cerrar el proceso `furi_app` antes de compilar (LNK1104).
+- **Lección**: TRK0005 no es permanente: reaparece cada vez que un plugin nuevo fuerza el rebuild de CMake. Y el exe hereda el lock del proceso en ejecución — verificar con `Get-Process furi_app` antes de buildear.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-08-17
+
+### ~~CRÍTICA - Calendario no compartía eventos entre usuarios~~ ✅ RESUELTO 2026-08-14
+- **Dónde**: `lib/providers/schedule_provider.dart`, `lib/providers/class_schedule_provider.dart`
+- **Qué pasaba**: Cada dispositivo solo veía los eventos guardados en su SQLite local. `loadSchedules()` nunca leía Supabase, `updateSchedule`/`deleteSchedule` no sincronizaban, y el INSERT de `addSchedule` fallaba en silencio: `color` ARGB (4286262670) excede el `INTEGER` de Postgres → error 22003 tragado por try/catch → nada llegaba a la nube. La tabla cloud tampoco tenía `user_id`.
+- **Fix**: Sync bidireccional completo con merge por `cloudId` (columna nueva en SQLite v8 + índice único), realtime en ambas tablas, `update/delete` por cloudId como PK cloud, `userId: AppState.identity` al crear eventos, y migración SQL (`user_id` + `color` BIGINT + publicación realtime). Mismo patrón que el fix de `class_schedules` (color BIGINT) del 2026-08-08.
+- **Lección**: El id local de SQLite nunca coincide con el BIGSERIAL de Supabase — persistir un `cloudId` aparte. Y ante "no se comparte", verificar primero si el INSERT cloud está fallando por rango de tipos (22003) antes de tocar la lógica de sync.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-14 (ejecutar `supabase/migration_schedules_sync.sql` en prod)
+
+### ~~ALTA - StatefulBuilder resetea variables en dialogs de color~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/note/note_background_editor.dart` y `lib/screens/pizarra_v2/note/note_color_editor.dart`
+- **Qué pasaba**: Los pickers de color para gradientes usaban `StatefulBuilder` con `Color picked = current;` dentro del builder. Cada rebuild del dialog reseteaba `picked` a `current`, perdiendo el color seleccionado. Al aceptar, el color era el inicial.
+- **Fix**: Usar `StatefulWidget` propio (`GradientColorPicker`) con estado interno `_picked` que no se resetea entre rebuilds.
+- **Lección**: `StatefulBuilder` recrea variables locales en cada invocación del builder; para estado que debe persistir entre frames, usar un `StatefulWidget` dedicado.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - Memory leak: TextEditingController sin dispose~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/note/note_background_editor.dart:284`
+- **Qué pasaba**: `TextField(controller: TextEditingController(text: ...))` creaba un nuevo controller en cada rebuild sin hacer dispose del anterior. Cada `setState` acumulaba controllers.
+- **Fix**: `late final TextEditingController _patCtrl` inicializado en `initState`, actualizado vía `.text` en `didUpdateWidget`, con `dispose()`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - Fonts no cargaban de Google Fonts~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/note/note_card_modal.dart` y `lib/screens/pizarra_v2/note/note_font_editor.dart`
+- **Qué pasaba**: Nombres de fuente sin espacios (`'OpenSans'` en vez de `'Open Sans'`) y `fontFamily:` en `TextStyle` sin usar `GoogleFonts.getFont()`. Las fuentes nunca cargaban.
+- **Fix**: Nombres corregidos + usar `GoogleFonts.getFont(fontName)` en los `TextField` del modal y en los chips del editor.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - LateInitializationError en notificaciones locales en Windows~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/services/notification_service.dart:181`
+- **Qué pasaba**: `_localNotifications.show()` lanzaba `LateInitializationError: Field '_instance' has not been initialized` en Windows porque `flutter_local_notifications` no tiene soporte completo en desktop.
+- **Fix**: `_showLocalNotification` envuelta en `try-catch` + guard `if (!_initialized) return`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~MEDIA - Audio recorder no detenía al cerrar + archivos temporales huérfanos~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/note/note_audio_recorder.dart`
+- **Qué pasaba**: Si se cerraba el modal mientras grababa, el `AudioRecorder` no se detenía y el archivo `.m4a` quedaba en `Directory.systemTemp`.
+- **Fix**: `_recorder.stop()` en `dispose()` si está grabando + `_cleanupTempFile()` que borra el archivo si no se guardó.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - Canvas del pizarrón con boundaryMargin infinito causa bugs de render~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/pizarra_screen_v2.dart`
+- **Qué pasaba**: `boundaryMargin: EdgeInsets.all(double.infinity)` y `SizedBox(width: 50000, height: 50000)` causaban inestabilidad en el `InteractiveViewer` en ciertas plataformas (Android low-end).
+- **Fix**: Cambiado a `boundaryMargin: 5000` y `SizedBox(10000, 10000)`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~CRÍTICA - Modificaciones offline de elementos existentes no se sincronizan~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/providers/board_provider_v2.dart`
+- **Qué pasaba**: Editar un elemento ya sincronizado mientras se estaba offline guardaba el cambio en SQLite pero nunca lo subía a Supabase al volver online. El flag `synced` quedaba en 1 (de la sincronización inicial) y `_pushUnsyncedToCloud` solo busaba `synced=0`.
+- **Fix**: `update()` y `moveLocal()` ahora marcan `synced=0` cuando están offline o cuando el cloud write falla. `_pushUnsyncedToCloud()` diferencia entre INSERT (sin id cloud) y UPDATE (con id cloud, modificado offline).
+- **Lección**: Un elemento ya sincronizado tiene `synced=1`. Tras modificarlo offline hay que marcarlo explícitamente `synced=0` o el cambio nunca se retratará. `_pushUnsyncedToCloud` debe hacer UPDATE (no INSERT) para elementos que ya tienen id cloud.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-12
+
+### ~~CRÍTICA - Reacciones simultáneas se pisan (race condition)~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/providers/board_provider_v2.dart` (realtime callback)
+- **Qué pasaba**: Si Facu y Rocio reaccionaban con el mismo emoji casi al mismo tiempo, el `data` JSONB completo se enviaba en cada update y el último en llegar a Supabase pisaba al anterior. Solo una reacción quedaba.
+- **Fix**: El callback de realtime ahora mergeea las reacciones del cloud con las locales (union de user_ids por key) en vez de reemplazar el data completo.
+- **Lección**: El `data` JSONB se envía entero en cada update — dos updates concurrentes pisan el campo completo. El merge union de user_ids por key preserva ambas reacciones.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-12
+
+### ~~CRÍTICA - Borrado de elemento no limpia conectores que lo referencian~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/providers/board_provider_v2.dart` (`delete()`)
+- **Qué pasaba**: Al eliminar un elemento con conectores apuntando a él, los conectores quedaban huérfanos (invisibles pero en la BD).
+- **Fix**: `delete()` ahora busca y elimina en cascada los conectores cuyo `fromId` o `toId` apuntan al elemento borrado (memoria + SQLite + cloud).
+- **Lección**: Los conectores referencian elementos por `fromId`/`toId` en `data` JSONB — borrar un elemento sin limpiar sus conectores deja conectores fantasma.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - Drag del elemento jitter con pan events rápidos~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/pizarra_screen_v2.dart`
+- **Qué pasaba**: `onPanUpdate` usaba `el.x` (snapshot del build) + delta del frame actual. Si entre pan events no llegaba un rebuild, todos los events acumulaban delta sobre la posición vieja causando jitter.
+- **Fix**: Usar `_liveElement(pv, el).x` y `.y` del elemento vivo en vez del snapshot.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - isLocked se guarda pero nunca se valida~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/providers/board_provider_v2.dart`
+- **Qué pasaba**: El modelo tenía `isLocked` y la BD lo persistía, pero `update()` y `moveLocal()` nunca verificaban este flag.
+- **Fix**: Ambos métodos ahora chequean `isLocked` y retornan early si el elemento está bloqueado.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
+### ~~ALTA - Búsqueda solo busca en el tablero actual~~ ✅ RESUELTO 2026-08-12
+- **Dónde**: `lib/screens/pizarra_v2/widgets/board_search_panel.dart`
+- **Qué pasaba**: `BoardSearchPanel` recibía `pv.elements` filtrado por `board_id`. No encontraba elementos en sub-tableros.
+- **Fix**: `BoardSearchPanel` ahora recibe `provider` (BoardProviderV2), carga el pool cross-board en `initState` con `loadSearchPool()`. `_goToElement` cambia al tablero del elemento si está en otro board.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-08-12
+
 ### ~~ALTA - APK release compilaba "√ Built" pero quedaba SIN FIRMAR al quitar el signingConfig~~ ✅ RESUELTO 2026-08-10
 - **Dónde**: `android/app/build.gradle.kts` (buildType release)
 - **Qué pasaba**: Tras eliminar el keystore propio (firma CN=Furi) y dejar el buildType release **sin** `signingConfig`, el build compilaba "√ Built" pero el APK salía **completamente sin firmar**: `apksigner verify` → `DOES NOT VERIFY: Missing META-INF/MANIFEST.MF`, sin bloque de firma v2 (el EOCD del ZIP no tenía APK Signing Block) y META-INF sin `MANIFEST.MF`/`CERT.RSA`. El `app-debug.apk` del mismo proyecto sí verificaba (v2 scheme: true), así que no era del entorno: AGP simplemente no hizo el fallback automático a la firma debug en este proyecto.

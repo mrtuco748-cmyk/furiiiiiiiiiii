@@ -421,6 +421,24 @@ function formatHora(hora) {
   return hora.slice(0, 5);
 }
 
+// Dias consecutivos hacia atras desde la primera fecha (listado desc,
+// strings YYYY-MM-DD). Usado para detectar racha rota de entrenamiento.
+function diasConsecutivos(fechas) {
+  if (!fechas.length) return 0;
+  let streak = 1;
+  let cursor = new Date(fechas[0] + 'T00:00:00Z');
+  for (let i = 1; i < fechas.length; i++) {
+    const prev = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+    if (fechas[i] === prev.toISOString().slice(0, 10)) {
+      streak++;
+      cursor = prev;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
 // ─── VERIFICAR EVENTOS ────────────────────────────────────────
 async function verificarYNotificar(sock) {
   console.log('Verificando eventos...');
@@ -760,6 +778,170 @@ async function verificarYNotificar(sock) {
             'custom_questions', key, conRespuesta ? 'respondida' : 'nueva', q.question);
           await marcarNotificado('custom_questions', key, conRespuesta ? 'respondida' : 'nueva', phone, q.question);
         }
+      }
+    }
+  }
+
+  // ── 14. DECK CARDS (tarjetas nuevas del mazo) ──
+  const { data: deckCards } = await supabase
+    .from('deck_cards')
+    .select('*')
+    .gte('created_at', haceUnaHora)
+    .order('created_at', { ascending: false });
+
+  const deckCategorias = {
+    ideas: '💡 Ideas', chistes: '😂 Chistes', poemas: '📜 Poemas',
+    recetas: '🍳 Recetas', retos: '🚩 Retos', random: '🎲 Random',
+    sueno: '🌙 Sueno', me_paso: '🤯 Me paso',
+  };
+
+  if (deckCards) {
+    for (const c of deckCards) {
+      const key = `deck-${c.id}`;
+      const destinos = destinosPara(usuarios, c.created_by);
+      for (const phone of destinos) {
+        if (!(await yaNotificado('deck_cards', key, phone))) {
+          const cat = deckCategorias[c.category] || `🃏 ${c.category}`;
+          const preview = (c.content || '').slice(0, 90);
+          encolar(phone,
+            `🃏 *Nueva tarjeta en el mazo* (${cat})\n` +
+            `"${preview}${c.content && c.content.length > 90 ? '...' : ''}"`,
+            'deck_cards', key, 'nueva', c.content);
+          await marcarNotificado('deck_cards', key, 'nueva', phone, c.content);
+        }
+      }
+    }
+  }
+
+  // ── 15. DECK MATCH (ambos dieron me encanta a la misma tarjeta) ──
+  const { data: deckMatches } = await supabase
+    .from('deck_cards')
+    .select('*')
+    .gte('updated_at', haceUnaHora);
+
+  if (deckMatches) {
+    const destinos = [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean);
+    for (const c of deckMatches) {
+      const reacciones = (c.reactions && typeof c.reactions === 'object')
+        ? Object.values(c.reactions) : [];
+      const esMatch = reacciones.length >= 2 &&
+        reacciones.every(r => r === 'encanta');
+      if (!esMatch) continue;
+      const key = `deckmatch-${c.id}`;
+      for (const phone of destinos) {
+        if (!(await yaNotificado('deck_cards', key, phone))) {
+          const preview = (c.content || '').slice(0, 90);
+          encolar(phone,
+            `🃏 *FURI!!* Ambos dieron me encanta a la misma tarjeta:\n` +
+            `"${preview}${c.content && c.content.length > 90 ? '...' : ''}"`,
+            'deck_cards', key, 'match', c.content);
+          await marcarNotificado('deck_cards', key, 'match', phone, c.content);
+        }
+      }
+    }
+  }
+
+  // ── 16. WORKOUT LOGS (ejercicios nuevos) ──
+  const { data: workoutLogs } = await supabase
+    .from('workout_logs')
+    .select('*')
+    .gte('created_at', haceUnaHora)
+    .order('created_at', { ascending: false });
+
+  if (workoutLogs) {
+    for (const l of workoutLogs) {
+      const key = `exercise-${l.id}`;
+      const destinos = destinosPara(usuarios, l.user_id);
+      for (const phone of destinos) {
+        if (!(await yaNotificado('workout_logs', key, phone))) {
+          const detalle = [
+            l.series && l.reps ? `${l.series}x${l.reps}` : null,
+            l.weight ? `${l.weight}kg` : null,
+          ].filter(Boolean).join(' ');
+          encolar(phone,
+            `💪 *Nuevo ejercicio:* ${l.exercise_name}${detalle ? ' (' + detalle + ')' : ''}`,
+            'workout_logs', key, 'nuevo', l.exercise_name);
+          await marcarNotificado('workout_logs', key, 'nuevo', phone, l.exercise_name);
+        }
+      }
+    }
+  }
+
+  // ── 17. WORKOUT COMPLETIONS (sesion del dia completada) ──
+  const { data: workoutCompletions } = await supabase
+    .from('workout_completions')
+    .select('*')
+    .gte('created_at', haceUnaHora)
+    .order('created_at', { ascending: false });
+
+  if (workoutCompletions) {
+    for (const c of workoutCompletions) {
+      const key = `wcompletion-${c.id}`;
+      const destinos = destinosPara(usuarios, c.user_id);
+      for (const phone of destinos) {
+        if (!(await yaNotificado('workout_completions', key, phone))) {
+          const dia = String(c.completed_on || '').slice(0, 10);
+          encolar(phone,
+            `🏋️ *Sesion de entrenamiento completada*${dia ? ' (' + dia + ')' : ''}`,
+            'workout_completions', key, 'completada', dia || hoy);
+          await marcarNotificado('workout_completions', key, 'completada', phone, dia || hoy);
+        }
+      }
+    }
+  }
+
+  // ── 18. WORKOUT CHALLENGES (retos de ejercicio) ──
+  const { data: workoutChallenges } = await supabase
+    .from('workout_challenges')
+    .select('*')
+    .gte('updated_at', haceUnaHora)
+    .order('updated_at', { ascending: false });
+
+  if (workoutChallenges) {
+    for (const c of workoutChallenges) {
+      const aprobados = Array.isArray(c.approved_by) ? c.approved_by.length : 0;
+      const completados = Array.isArray(c.completed_by) ? c.completed_by.length : 0;
+      const tipo = completados >= 2 ? 'completado' : aprobados >= 2 ? 'aprobado' : 'creado';
+      const key = `wchallenge-${c.id}-${tipo}`;
+      const destinos = destinosPara(usuarios, c.created_by);
+      for (const phone of destinos) {
+        if (!(await yaNotificado('workout_challenges', key, phone))) {
+          encolar(phone,
+            `🏆 Reto de ejercicio *${tipo}*: "${c.title}"`,
+            'workout_challenges', key, tipo, c.title);
+          await marcarNotificado('workout_challenges', key, tipo, phone, c.title);
+        }
+      }
+    }
+  }
+
+  // ── 19. RACHA ROTA (streak >= 3 dias y no entreno hoy ni ayer) ──
+  const ayerStr = new Date(ahora.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  for (const [nombre, uuid] of Object.entries(usuarios)) {
+    if (!uuid) continue;
+    const { data: userCompletions } = await supabase
+      .from('workout_completions')
+      .select('completed_on')
+      .eq('user_id', uuid)
+      .order('completed_on', { ascending: false });
+
+    const fechas = [...new Set((userCompletions || [])
+      .map(c => String(c.completed_on).slice(0, 10)))];
+    if (fechas.length === 0) continue;
+    if (fechas.includes(hoy) || fechas.includes(ayerStr)) continue;
+
+    const streak = diasConsecutivos(fechas);
+    if (streak < 3) continue;
+
+    const key = `streak-${uuid}-${hoy}`;
+    const destinos = destinosPara(usuarios, uuid);
+    for (const phone of destinos) {
+      if (!(await yaNotificado('workout_completions', key, phone))) {
+        const nombreLindo = nombre === 'facu' ? 'Facu' : 'Rocio';
+        encolar(phone,
+          `🔥 *La racha de entrenamiento de ${nombreLindo} se corto* (${streak} dias seguidos)`,
+          'workout_completions', key, 'racha_rota', nombre);
+        await marcarNotificado('workout_completions', key, 'racha_rota', phone, nombre);
       }
     }
   }

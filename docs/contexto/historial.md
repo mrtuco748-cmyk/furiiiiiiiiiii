@@ -1,5 +1,276 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-17] - FEATURE - Calendario completo: eventos por día, gestión de tipos y recordatorios programados (port desde Gastronomia-App)
+**Resumen**: Se portaron a F.U.R.I las funciones de calendario/clases/eventos de Gastronomia-App que faltaban: pantalla de eventos por día con navegación por fecha, gestión de tipos de clase y de evento (crear/editar/borrar con color e icono), campo Profesor en el formulario de evento, y recordatorios locales programados (eventos: 1h antes + al empezar; clases: semanal recurrente 1h antes). Se conectaron los accesos desde el calendario (botones Clases + Día) y se rescató `ClassBoardScreen`, que era código muerto (nadie navegaba a él).
+**Cambios realizados**:
+- `pubspec.yaml`: + `flutter_timezone: ^4.1.0` (nombre IANA de la zona del dispositivo para `zonedSchedule`).
+- `lib/services/notification_service.dart`: nuevos `scheduleNotification()` (`zonedSchedule` con `AndroidScheduleMode.inexactAllowWhileIdle` + `_ensureTz()` con flutter_timezone y fallback por offset) y `cancel(id)`. Todo en try/catch: en desktop `zonedSchedule` no está implementado → no-op seguro.
+- `lib/services/event_notification_service.dart` (nuevo): `specsForEvent()` lógica pura (1h antes + al empezar; ids `100000+id` y `100000+id+1`), `rescheduleAll()` (cancela los vigentes y reprograma), `cancelForEvent()`.
+- `lib/services/class_notification_service.dart` (nuevo): `nextOccurrence()` (próxima ocurrencia semanal, convención Dart `weekday` 1=Lun..7=Dom), `specsForClass()` (1h antes con `matchDateTimeComponents: dayOfWeekAndTime`, id `200000+id`), `rescheduleAll()`.
+- `lib/providers/schedule_provider.dart` y `class_schedule_provider.dart`: `_rescheduleNotifs()` después de load/add/update/delete y de los eventos realtime. Decisión del usuario: recordatorios para TODOS los eventos y clases (calendario compartido — ambos dispositivos avisan todo).
+- `lib/screens/calendar/daily_events_screen.dart` (nuevo): lista de eventos fechados + clases recurrentes del día; navegación con chevrons + date picker; card de evento con icono/color del tipo, tap=editar, long-press=borrar con confirmación; card de clase → abre `ClassBoardScreen`; estados LOADING/EMPTY/ERROR/DATA; estilo brutalista (ConcretePainter, TapTile, cian #00D4FF).
+- `lib/screens/calendar/calendar_home_screen.dart`: botones "Día" y "Clases" en la barra de mes (abren `DailyEventsScreen` y `ClassBoardScreen`); limpieza de warnings preexistentes del archivo.
+- `lib/screens/calendar/class_board_screen.dart`: botón gestión de tipos de clase (crear con color picker de 16 colores, editar nombre/color, borrar); diálogo de clase ampliado con hora fin y profesor; al editar se preservan `cloudId`/`userId`/`color` (antes se perdían al reconstruir el objeto); botón settings dentro del diálogo.
+- `lib/screens/calendar/schedule_form_screen.dart`: campo Profesor/Instructor; gestión de tipos de evento (crear con color + picker de 30 iconos, borrar); fecha y horas ahora muestran su valor (antes solo iconos); `_backBtn` conectado al Stack (el form no tenía forma de cancelar en desktop).
+- `lib/providers/class_type_provider.dart` + `lib/database/database_helper.dart`: defaults "Gastronomía 1"/"Pastelería 1" → "Clase" (cian) + "Práctico" (verde lima). Solo aplica a instalaciones nuevas; las existentes se editan con la nueva UI de gestión.
+- `lib/main.dart`: `initializeDateFormatting('es')` para `DateFormat` con locale es.
+- Tests TDD: `test/services/event_notification_service_test.dart` (5) + `test/services/class_notification_service_test.dart` (8). Total 13 nuevos; suite completa 152 verdes. Build Windows release verificado (exe completo con `flutter_timezone_plugin.dll`).
+**Lecciones**:
+- flutter_local_notifications **18.0.1** usa API posicional: `zonedSchedule(id, title, body, scheduledDate, details, {...})` y `cancel(id)`; la API con named parameters es de v19+. "Too few positional arguments" al compilar delata la versión vieja.
+- timezone 0.10.1: `Location(name, transitionAt, transitionZone, zones)` pide `List<int>` de transiciones e índices, y `TimeZone(offset, {isDst, abbreviation})`. Fallback por offset: `Location('device-local', [minTime], [0], [TimeZone(offset.inSeconds, isDst: false, abbreviation: 'loc')])` (mismo patrón que `_UTC` del paquete).
+- `tz.local` por defecto es UTC: sin setear la zona del dispositivo (flutter_timezone) los recordatorios quedan desfasados por el offset. El fallback por offset cubre Argentina (sin DST desde 2010).
+- Los ids de notificación de eventos y clases deben vivir en namespaces separados (SQLite autoincrement por tabla → ids repetidos): eventos 100000+, clases 200000+.
+- El exe en uso bloquea el linker (LNK1104) — cerrar la app antes de `flutter build windows --release`.
+- TRK0005 (cl.exe no encontrado) vuelve a aparecer cuando un plugin nuevo fuerza rebuild CMake: activar `vcvarsall.bat amd64` antes del build.
+- Un helper de test con `id ?? 3` no puede testear el caso "id null": el default enmascara el null. Recibir `int?` y dejar que el caso de prueba construya el objeto explícito.
+**Impacto**: `pubspec.yaml`, `notification_service.dart`, 2 servicios nuevos, 2 providers, 4 screens de calendario, `class_type_provider.dart`, `database_helper.dart`, `main.dart`, 2 archivos de test, docs.
+**Relacionado con**: D-3 (SQLite), D-2 (Supabase), D-4 (skill_visual), errores-conocidos (TRK0005/LNK1104), glosario (tipos de evento/clase).
+
+## [2026-08-17] - FEATURE - Sección Ejercicios: botón pesa, plan semanal, retos y stats
+**Resumen**: El botón del Home con icono de planta (Icons.spa, que solo lanzaba confeti) ahora es una pesa (Icons.fitness_center) en verde lima #39FF14 que abre la nueva pantalla "Ejercicios". Sección compartida con 4 pestañas: Hoy (plan semanal por día con rutinas y marcas F/R), Ejercicios (registros con historial de pesos, reacciones y comentarios), Retos (aprobación y completado conjuntos) y Stats (rachas individuales, sesiones por semana, grupos musculares). Sincronizada con Supabase + realtime; el bot de WhatsApp avisa ejercicios nuevos, sesiones completadas, retos y racha rota.
+**Cambios realizados**:
+- `lib/models/workout_social.dart` (nuevo): `WorkoutSocial` + `WorkoutComment` — reacciones (max 5 keys, 1 por usuario, se mueve entre keys como el chat) y comentarios (delete en cascada de replies) embebidos en `social` JSONB. `mergeReactions` (unión de user_ids por key) y `mergeComments` (unión por id) para el realtime — evita el race de reacciones concurrentes (lección del pizarrón BUG 2).
+- `lib/models/workout_log.dart` (nuevo): registro de ejercicio (nombre obligatorio; series/reps/peso/descanso/grupo/notas opcionales), `loggedOn`, `summary` ("4x10 @ 60kg"), social embebido, copyWith con clears.
+- `lib/models/workout_routine.dart` (nuevo): rutina con `dayOfWeek` (1-7) y `items` JSONB (`RoutineItem`).
+- `lib/models/workout_completion.dart` (nuevo): marca "entrené este día" por persona.
+- `lib/models/workout_challenge.dart` (nuevo): reto con `approvedBy`/`completedBy` (ambos deben aprobar/completar — 2 personas), toggle sin duplicados.
+- `lib/models/workout_stats.dart` (nuevo): lógica pura — `streakFor` (días consecutivos hasta hoy/ayer), `weightHistoryFor`, `lastWeightFor`, `sessionsThisWeek/LastWeek`, `distinctExerciseNames`, `muscleGroupCounts`.
+- `lib/providers/workout_provider.dart` (nuevo): CRUD de las 4 tablas + realtime con merge social, `toggleCompletion` (marca/desmarca por user), `toggleChallengeApproval/Completion`, getters de dominio (streaks, stats). Registrado en `lib/main.dart` (15º provider).
+- `lib/screens/ejercicios/ejercicios_screen.dart` (nuevo, ~1900 líneas): 4 pestañas con chips verde lima (#39FF14 sobre #0E3A0E), header + tabs + FAB contextual (rutina/ejercicio/reto). Hoy: semana completa (LUN-DOM) con rutina del día, items tap=registrar pre-rellenado, badges F/R de completado, racha en cabecera. Ejercicios: cards con autor, summary, reacciones; tap=detalle (evolución de peso + comentarios), long-press=reacciones. Retos: estado de aprobación/completado por persona, sheet de acciones. Stats: rachas, sesiones, grupos. Estados loading/empty/error/data; skill_visual (fondo=borde, redondo, sin negro puro, botones con iconos).
+- `lib/screens/home_screen.dart`: `bottomBtn(const Color(0xFF39FF14), Icons.fitness_center, const Color(0xFF062B06), 5, _openEjercicios)` — reemplaza el botón spa/confeti; `_openEjercicios` sin confeti.
+- `supabase/migration_workouts.sql` (nuevo): tablas `workout_logs`, `workout_routines`, `workout_completions` (UNIQUE user+date+routine), `workout_challenges` + índices + RLS full access + GRANTs + publicación realtime. **PENDIENTE ejecutar en SQL Editor**.
+- `supabase_schema.sql`: tablas #25-28 + índices + RLS + policies.
+- `bot-furi/bot.js`: categorías #16 workout_logs (nuevo ejercicio), #17 workout_completions (sesión completada), #18 workout_challenges (creado/aprobado/completado), #19 racha rota (streak >= 3 y no entrenó hoy ni ayer; tracking `streak-{uuid}-{fecha}`). Helper `diasConsecutivos`.
+- Tests TDD: `workout_log_test` (10), `workout_routine_test` (5), `workout_challenge_test` (7), `workout_social_test` (7), `workout_stats_test` (9). Total 38 nuevos; suite completa 152 verdes.
+**Lecciones**:
+- El comportamiento de reacciones del proyecto (chat) es 1 reacción ACTIVA por usuario: al reaccionar con otra key, la reacción se MUEVE. Los tests que asumían "5 keys del mismo usuario" fallaron y se ajustaron al comportamiento real.
+- `WorkoutSocial` era una clase sin constructor `const` pero los tests la usaban como `const WorkoutSocial(...)` → error "Couldn't find constructor" que en realidad era import faltante en el test (la clase vive en workout_social.dart, no se re-exporta desde workout_challenge.dart).
+- Lambdas pasadas a `Future<void> Function(String)` fallan si no reciben el parámetro; y `StateSetter` (de StatefulBuilder) no es asignable a `void Function()` — envolver con `() => setSheetState(() {})`.
+- `'$series\x$reps'` en Dart es trampa: `\x` inicia un escape hex. Usar `'$series' 'x' '$reps'` (literales adyacentes) o `${series}x${reps}`.
+- En la app los infos `use_build_context_synchronously` se silencian con `if (!mounted) return;` después del await del dialog, patrón ya usado en favoritos.
+**Impacto**: 6 modelos nuevos, 1 provider nuevo, 1 pantalla nueva, `main.dart`, `home_screen.dart`, `supabase/migration_workouts.sql` (nuevo), `supabase_schema.sql`, `bot-furi/bot.js`, 5 archivos de test, docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), D-10 (bot), errores-conocidos (race reacciones JSONB), skill-pantallas, glosario, bot-whatsapp.
+
+## [2026-08-17] - FEATURE - Mazo: tarjetas swipe tipo Tinder (ideas, chistes, poemas, recetas, retos, random, sueño, me pasó)
+**Resumen**: Nueva sección "Mazo" con tarjetas creadas por Facu y Rocio que se deslizan en 4 direcciones: ➡️ me encanta, ⬅️ no me gusta, ⬇️ me gusta, ⬆️ meh. Al entrar a la app, si hay tarjetas sin deslizar, aparece el overlay encima del Home (con X para cerrar). Hay MATCH cuando ambos dieron me encanta a la misma tarjeta → pantalla especial "FURI!!" con confetti. Las tarjetas ya deslizadas se pueden re-deslizar desde el historial. El bot de WhatsApp avisa tarjeta nueva (a la pareja) y match (a ambos).
+**Cambios realizados**:
+- `supabase/migration_deck_cards.sql` (nuevo): tabla `deck_cards` (id, category, content, created_by, reactions JSONB `{"user_id": "encanta"|"me_gusta"|"meh"|"no_me_gusta"}`, created_at, updated_at) + índices + RLS full access + publicación realtime. **PENDIENTE ejecutar en SQL Editor**.
+- `supabase_schema.sql`: agregada tabla `deck_cards` (#24) con índice, RLS y policy.
+- `lib/models/deck_card.dart` (nuevo): `DeckReaction` (4 valores), `DeckCategory` (8 categorías), `DeckCard` con `toMap`/`fromMap` (reacciones JSONB tolerantes), `withReaction` (inmutable), `mergedReactions`/`mergedFromCloud` (merge anti-race: las reacciones locales pisan a las cloud del mismo user), `isMatch` (>=2 reacciones y todas encanta).
+- `lib/providers/deck_provider.dart` (nuevo): `load()` (Supabase + realtime `deck_cards_changes`), `pendingFor`/`historyFor` (filtran por reacción del usuario activo), `matches`/`matchCount`, `add()`, `react()` (update optimista + JSONB), `delete()`, `applyCloudCards()` (lógica pura: merge cloud+local y detección de transición a match → `pendingMatch`), `consumeMatch()`. Registrado en `lib/main.dart` (14º provider).
+- `lib/screens/mazo/deck_style.dart` (nuevo): estilo por categoría (emoji, label, color brutalista) y por reacción (label, color, icono, dirección).
+- `lib/screens/mazo/deck_overlay.dart` (nuevo): overlay encima del Home con stack de 3 tarjetas (escala descendente), drag en 4 direcciones con sello de reacción, rotación progresiva, snap-back y salida animada (160ms) → `pv.react()`. Header con contador de pendientes, botón historial, botón + crear y X cerrar. 4 botones de acción (X roja, pulgar amarillo, meh gris, corazón verde) para desktop/sin drag. Estados LOADING/EMPTY/ERROR/DATA. Modo re-swipe con banner "deslizá de nuevo".
+- `lib/screens/mazo/create_deck_card_modal.dart` (nuevo): dialog con chips de las 8 categorías (fondo=borde, check en la seleccionada), TextField multilinea (max 1000), botón guardar con icono check que se habilita al escribir (listener del controller).
+- `lib/screens/mazo/deck_history_sheet.dart` (nuevo): bottom sheet con las tarjetas ya deslizadas: mi reacción + reacciones de la pareja + botón re-deslizar (vuelve al overlay en modo re-swipe de esa tarjeta).
+- `lib/screens/mazo/deck_match_overlay.dart` (nuevo): pantalla "FURI!!" gigante en color de la categoría + tarjeta + confetti (flutter_confetti) + botón seguir. No dice "match" (pedido del usuario).
+- `lib/screens/home_screen.dart`: `_initDeck()` en initState (post frame: load + abrir overlay si hay pendientes); `_openMazo()` en el bloque con iconos ▶/🖼️/▶ del Home (antes decorativo); Stack del Home ahora monta `DeckOverlay` (si `_showDeck`) y `DeckMatchOverlay` vía `Consumer<DeckProvider>` cuando hay `pendingMatch` (encima de todo, incluso sin deck abierto).
+- `bot-furi/bot.js`: categoría #14 `deck_cards` (tarjeta nueva en última hora → avisa a la pareja del creador, con categoría y preview de 90 chars) y categoría #15 `deck match` (reactions con >=2 valores todos 'encanta' y updated_at en última hora → avisa a AMBOS con "🃏 *FURI!!*"). Tracking keys `deck-{id}` y `deckmatch-{id}`.
+- Tests TDD: `test/models/deck_card_test.dart` (12 tests) + `test/providers/deck_provider_test.dart` (13 tests). Total 25 nuevos, todos verdes.
+**Lecciones**:
+- El JSONB de reacciones se envía entero en cada update: dos reacciones simultáneas (Facu y Rocio) se pisan. El fix usado (como en el pizarrón): merge en el callback realtime con las reacciones locales ganando para el mismo user (`mergedFromCloud`), porque mi UPDATE en vuelo aún no está en el server y un `load()` completo lo borraría de la vista.
+- La detección de match debe ser por TRANSICIÓN (local no-match → merged match), no por estado: si no, cada reload/realtime de una carta ya matcheada volvería a disparar la pantalla "FURI!!".
+- `pendingFor(null)` devuelve todas las cartas (sin identidad cargada no se puede filtrar) — útil para tests.
+- Un `showDialog`/bottom sheet que se habilita según el texto necesita `_ctrl.addListener(() => setState(() {}))`; evaluar `_ctrl.text` una sola vez en el build deja el botón congelado.
+**Impacto**: `supabase/migration_deck_cards.sql` (nuevo), `supabase_schema.sql`, `lib/models/deck_card.dart` (nuevo), `lib/providers/deck_provider.dart` (nuevo), `lib/screens/mazo/` (5 archivos nuevos), `lib/main.dart`, `lib/screens/home_screen.dart`, `bot-furi/bot.js`, tests (2 archivos nuevos), docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), D-10 (bot), errores-conocidos (race de reacciones JSONB), skill-pantallas, glosario, bot-whatsapp.
+
+## [2026-08-14] - FEATURE+BUGFIX - Calendario compartido: ambos usuarios ven las fechas del otro
+**Resumen**: El calendario no compartía eventos entre Facu y Rocio. Cada dispositivo solo veía lo guardado en su SQLite local. Fix: sync bidireccional completo de `schedules` (eventos fechados) y `class_schedules` (clases recurrentes) con Supabase, merge por cloudId, realtime, y migración SQL que arregla la causa raíz del fallo silencioso de los INSERT.
+**Cambios realizados**:
+- `lib/models/schedule.dart`: nuevo campo `cloudId` (PK cloud vs id local), `toSupabaseMap()` (`user_id` snake_case, sin id local, fecha YYYY-MM-DD), `fromCloudRow()` (id del servidor → cloudId), `fromMap` tolera `user_id`/`userId` y filas legacy.
+- `lib/models/class_schedule.dart`: nuevo `fromCloudRow()`.
+- `lib/providers/schedule_provider.dart`: reescrito — `loadSchedules()` hace push de filas locales sin cloudId, pull de TODAS las filas cloud, merge por cloudId (updatedAt decide conflictos; filas cloud ausentes en local se borran = delete de la pareja). `addSchedule`/`updateSchedule`/`deleteSchedule` sincronizan con Supabase (update/delete usan cloudId como PK cloud, no el id local). Realtime `schedules_sync` (INSERT/UPDATE/DELETE) con `ConflictAlgorithm.ignore` + índice único por cloudId para no duplicar filas en la carrera realtime vs. insert propio.
+- `lib/providers/class_schedule_provider.dart`: `loadSchedules()` ahora también hace pull+merge del cloud (las clases de la pareja aparecen). `updateSchedule` resuelve el cloudId desde la BD local (antes hacía INSERT duplicado cuando el objeto no traía cloudId). Realtime `class_schedules_sync`.
+- `lib/providers/schedule_sync.dart` (nuevo): `buildScheduleSyncPlan()` — lógica pura del merge (testeable).
+- `lib/database/database_helper.dart`: SQLite v8 — columna `cloudId` en `schedules` + índices únicos `idx_schedules_cloudId`/`idx_class_schedules_cloudId` (WHERE cloudId IS NOT NULL). `insert()` acepta `conflictAlgorithm`.
+- `lib/screens/calendar/schedule_form_screen.dart`: al guardar setea `userId: AppState.identity` (colores F/R por celda).
+- `supabase/migration_schedules_sync.sql` (nuevo): `user_id` en `schedules`, `color` → BIGINT, y agrega `schedules` + `class_schedules` a la publicación realtime. **PENDIENTE ejecutar en SQL Editor**.
+- `supabase_schema.sql`: `schedules` actualizado (`user_id`, `color BIGINT DEFAULT 4286262670`).
+- Bugfix colateral: `lib/screens/pizarra_v2/pizarra_screen_v2.dart` tenía un error de sintaxis preexistente (declaración `final world` dentro de un collection-if) que rompía la compilación de TODA la app; se hoisteó el cálculo al builder del Consumer.
+- Tests: `test/models/schedule_test.dart` (5) + `test/providers/schedule_sync_test.dart` (5). Total 77 verdes.
+**Lecciones**:
+- El INSERT a Supabase fallaba en silencio desde siempre: `color` mandaba un ARGB de Flutter (4286262670) que excede el `INTEGER` de Postgres → error 22003 tragado por el try/catch → los eventos nunca llegaban a la nube. Mismo bug ya resuelto en `class_schedules`.
+- El id local de SQLite (autoincrement) nunca coincide con el BIGSERIAL de Supabase: hay que persistir un `cloudId` aparte y usarlo como PK cloud en update/delete.
+- Merge por cloudId con `updatedAt` como árbitro cubre el caso "la pareja borró algo": fila local con cloudId ausente en cloud = delete remoto.
+- En la carrera "realtime INSERT propio vs insert local", un índice único sobre cloudId + `ConflictAlgorithm.ignore` evita duplicados.
+**Impacto**: `schedule.dart`, `class_schedule.dart`, `schedule_provider.dart`, `class_schedule_provider.dart`, `schedule_sync.dart` (nuevo), `database_helper.dart`, `schedule_form_screen.dart`, `migration_schedules_sync.sql` (nuevo), `supabase_schema.sql`, `pizarra_screen_v2.dart`, tests.
+**Relacionado con**: D-2 (Supabase), D-3 (SQLite), errores-conocidos (calendar sync), glosario (Schedule).
+
+## [2026-08-12] - BUGFIX - Fixes de auditoría del pizarrón v2 (10 bugs: 3 críticos + 4 altos + 3 medios)
+**Resumen**: Tras la auditoría completa del pizarrón v2 (19 bugs encontrados en `documentacion/auditoria-pizarron-v2.md`), se aplicaron los fixes por prioridad: BUG 1 (offline sync), BUG 2 (reacciones race), BUG 3 (conectores huérfanos), BUG 4 (drag jitter), BUG 5 (isLocked), BUG 6 (reacción sin feedback), BUG 7 (comentario huérfano), BUG 8 (búsqueda cross-board), BUG 9 (retry cloud writes), BUG 12 (comment length). 67 tests verdes, `flutter analyze` sin errores nuevos.
+**Cambios realizados**:
+- `lib/providers/board_provider_v2.dart`:
+  - **BUG 1+9 (CRÍTICO+ALTO)**: `_saveToLocal` ahora acepta `syncedFlag` para marcar elementos como no sincronizados. Nuevo `_markUnsynced(id)` que setea `synced=0` en SQLite. `moveLocal()` y `update()` marcan `synced=0` cuando están offline o cuando el cloud write del debounce timer falla. Tras un cloud write exitoso, marcan `synced=1`. `_pushUnsyncedToCloud()` ahora diferencia entre elementos sin id cloud (INSERT) y elementos con id cloud pero modificados offline (UPDATE). Import de `board_element_data.dart` para `ConnectorData`.
+  - **BUG 5 (ALTO)**: `update()` y `moveLocal()` ahora chequean `isLocked` y retornan early si el elemento está bloqueado.
+  - **BUG 2 (CRÍTICO)**: El callback de realtime ahora mergeea las reacciones del cloud con las locales (union de user_ids por key) en vez de reemplazar el data completo. Nuevo helper `_reactionsOf(data)`.
+  - **BUG 3 (CRÍTICO)**: `delete()` ahora busca y elimina en cascada los conectores cuyo `fromId` o `toId` apuntan al elemento borrado (memoria + SQLite + cloud).
+  - **BUG 8**: Nuevo `loadSearchPool()` que carga TODOS los elementos no archivados de SQLite sin filtro de `board_id`, para búsqueda cross-board.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`:
+  - **BUG 4 (ALTO)**: `onPanUpdate` ahora usa `live.x`/`live.y` del elemento vivo en vez del snapshot del build. Previene jitter en drags rápidos.
+  - **BUG 8**: `BoardSearchPanel` ahora recibe `provider` (BoardProviderV2) en vez de `elements` (List). `_goToElement` ahora cambia al tablero del elemento si está en otro board (`pv.setBoard(el.boardId)`).
+- `lib/screens/pizarra_v2/widgets/board_search_panel.dart`:
+  - **BUG 8**: Convertido de StatelessWidget a StatefulWidget. Carga el pool cross-board en `initState` con `provider.loadSearchPool()` (async). Hint cambiado a "Buscar en todos los tableros...". Estado de loading con spinner verde.
+- `lib/screens/pizarra_v2/widgets/board_element_options.dart`:
+  - **BUG 6 (ALTO)**: `react()` ahora detecta si `withToggledReaction` devuelve la misma referencia (`identical()`) — indica límite de 5 reacciones alcanzado. Muestra SnackBar "Máximo 5 reacciones por elemento" + haptic feedback. También relee el elemento vivo (`pv.findById`) para usar data fresca.
+  - **BUG 7 (ALTO)**: `withCommentRemoved()` ahora hace cascade-delete: borra el comentario Y todas sus respuestas (donde `replyToId == commentId`). Previere respuestas huérfanas sin contexto.
+  - **BUG 12 (MEDIO)**: TextField de comentarios ahora tiene `maxLength: 1000`.
+**Lecciones**:
+- `withToggledReaction` devuelve la misma referencia `data` cuando alcanza el límite de 5 reacciones — `identical(newData, live.data)` detecta este caso sin cambiar el return type.
+- Un elemento modificado offline ya tiene un id cloud pero `synced=1` del sync inicial. Hay que marcarlo `synced=0` explícitamente al guardar local offline, y que `_pushUnsyncedToCloud` haga UPDATE (no INSERT) para los que ya tienen id.
+- El merge de reacciones en realtime es necesario porque el `data` JSONB se envía entero en cada update — dos updates concurrentes pisan el campo completo. El merge union los user_ids por key preserva ambas reacciones.
+- Los conectores referencian elementos por `fromId`/`toId` en `data` JSONB — borrar un elemento sin limpiar sus conectores deja conectores fantasma en la BD.
+- El drag jitter ocurría porque `onPanUpdate` usaba `el.x` (snapshot del build) + delta del frame actual. Si entre pan events no llegaba un rebuild, todos los events acumulaban delta sobre la posición vieja. Usar `_liveElement(pv, el).x` resuelve el problema.
+- `isLocked` se persistía pero nunca se validaba — agregar el check en `update()` y `moveLocal()` es suficiente (el delete se mantiene con confirmación UI).
+**Impacto**: `board_provider_v2.dart`, `pizarra_screen_v2.dart`, `board_search_panel.dart`, `board_element_options.dart`. 67 tests verdes, `flutter analyze` 0 errores nuevos.
+**Relacionado con**: `documentacion/auditoria-pizarron-v2.md`, D-2 (Supabase), D-3 (SQLite), errores-conocidos
+
+## [2026-08-12] - DECISION - Etapa 5 del pizarrón cancelada (undo/redo global, doble tap, atajos, exportar)
+**Resumen**: El usuario canceló la Etapa 5 (undo/redo global Ctrl+Z/Y, doble tap en espacio vacío para crear nota, atajos desktop, exportar PNG/PDF). No había código implementado de esa etapa — solo referencias en la spec.
+**Cambios realizados**:
+- `skill-pantallas.md`: eliminados de la spec del pizarrón "Doble tap vacío: Crear nota nueva", "Undo/Redo: Ctrl+Z/Ctrl+Y + botón en mobile", "Atajos desktop", "Exportar: PNG + PDF". Agregados a la sección "NO incluido".
+**Nota**: El botón undo del editor de dibujo (`board_drawing_editor.dart`) se mantiene — es deshacer el último stroke del dibujo (feature del editor desde la Etapa 2b), no el undo/redo global del tablero que era parte de la Etapa 5.
+**Impacto**: `skill-pantallas.md`
+**Relacionado con**: plan de etapas del pizarrón
+
+## [2026-08-12] - FEATURE - Pizarrón v2: Etapa 4 (sub-tableros + separadores + migración board_v2)
+**Resumen**: Se agregaron sub-tableros (tableros anidados que se abren con tap y tienen botón Volver), separadores manuales horizontales/verticales, y la migración SQL que crea `board_elements_v2` + `boards` en Supabase (el sync cloud de la pizarra v2 nunca funcionó porque la tabla no existía en prod).
+**Cambios realizados**:
+- `supabase/migration_board_v2.sql` (nuevo): crea `board_elements_v2` (espejo del schema SQLite local: type, title, content, x/y, width/height, rotation, color, text_color, font_family, font_size, text_align, is_bold/italic/underline, emoji_header, tags JSONB, priority, assigned_to, user_id, status, is_collapsed/locked/archived/new, board_id, z, data JSONB, timestamps), `boards` (id BIGSERIAL, name, parent_id, created_at) con raíz id=1 "Pizarra", RLS full access, GRANTs, e `ALTER PUBLICATION supabase_realtime ADD TABLE board_elements_v2` para el realtime. Idempotente. **PENDIENTE ejecutar en SQL Editor de Supabase** — sin esto el sync cloud sigue fallando en silencio.
+- `lib/providers/board_provider_v2.dart`: `_boards` + getters `boards`/`boardName`/`parentBoardId`; `loadBoards()` (cargado en `load()`); `createBoard(name, parentId)` (insert + reload); `goBackBoard()` (setBoard al padre).
+- `lib/screens/pizarra_v2/widgets/board_tools_menu.dart`: 2 herramientas nuevas — Sub-tablero (folder, morado) y Separador (remove, violeta).
+- `lib/screens/pizarra_v2/widgets/board_header.dart`: en modo canvas el título muestra `provider.boardName` (breadcrumb del tablero actual) en vez de "Pizarra".
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: `_createSubBoard()` (dialog de nombre → `createBoard` → agrega elemento `subBoard` con `SubBoardData{boardId}`), `_openSubBoard()` (tap → `setBoard` + centra el canvas), `_createSeparator()`, `_toggleSeparator()` (tap cambia orientación horizontal/vertical), botón "Volver" arriba-izquierda cuando `parentBoardId != null`, renders `_subBoardBody` (folder + nombre + chevron) y `_separatorBody` (línea de color). Quitado el `BoardZoomSlider` (pedido del usuario).
+**Lecciones**:
+- El sync cloud de la pizarra v2 nunca había funcionado: `board_elements_v2` solo existía en SQLite local. Cualquier feature "realtime" del pizarrón depende de ejecutar la migración en prod.
+- Los sub-tableros reutilizan el `board_id` que ya estaba en el modelo y en el provider (`setBoard` + `load()` filtran por tablero); solo faltaba la tabla `boards` y el flujo de creación.
+- El separador guarda su orientación en `data['orientation']` y el tap lo rota intercambiando width/height.
+**Impacto**: `migration_board_v2.sql` (nuevo), `board_provider_v2.dart`, `board_tools_menu.dart`, `board_header.dart`, `pizarra_screen_v2.dart`
+**Relacionado con**: skill-pantallas.md (spec pizarrón — sub-tableros, breadcrumb, separadores), D-2 (Supabase), Etapa 4 del plan
+
+## [2026-08-12] - FEATURE - Pizarrón v2: Etapa 3 (reacciones + comentarios + badges F/R + badge NUEVO)
+**Resumen**: Cada elemento del pizarrón ahora tiene reacciones por long-press (mismo formato que el chat), comentarios con respuestas, badge de autor (F=azul, R=morado) y badge NUEVO que desaparece al ver el elemento.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/widgets/board_element_options.dart` (nuevo): `BoardSocialData` con lógica pura de reacciones (`{key: [userIds]}`, max 5 keys, 1 por usuario por key — espejo de `Message.toggleReaction`) y comentarios (`{id, userId, text, createdAt, replyToId}`) embebidos en `el.data` (se sincronizan vía `update()` + realtime). `showElementOptionsSheet()`: bottom sheet con barra de reacciones (6 emojis default + custom vía dialog + chips de keys custom existentes), y 4 acciones: Comentarios (con contador), Duplicar (copia con offset +30 y id nuevo), Archivar, Eliminar (con confirmación). `showCommentsSheet()`: lista de comentarios con badge de autor, tiempo relativo, responder (hilo con preview "→"), borrar solo si es mío, input con keyboard insets.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: `_buildElementCard` ahora envuelve el elemento en `Stack(clipBehavior: Clip.none)` con: reacciones inline debajo del card (chips con key + contador), badge NUEVO verde arriba-izquierda, badge de autor (inicial F/R con color azul/morado) arriba-derecha. Long-press abre `showElementOptionsSheet` (reemplaza el viejo diálogo de borrado). Tap marca el elemento como visto (`markAsSeen`) si `isNew`.
+- `lib/providers/board_provider_v2.dart`: nuevo `findById(int?)` para resolver el elemento vivo desde sheets/dialogs.
+- `lib/models/board_element_v2.dart`: `copyWith` ahora acepta `createdAt` (necesario para duplicar con timestamp nuevo y no colisionar los lookups por `createdAt`).
+- Eliminado código muerto: `board_element_panel.dart`, `board_canvas.dart`, `board_note_renderer.dart`, `board_element_renderer.dart` (no se importaban desde el reset del 11/8; los renderers vivos ya se llaman directo desde la pantalla).
+**Lecciones**:
+- Las reacciones/comentarios embebidos en `el.data` no necesitan tablas nuevas: `update()` + Realtime hacen el sync entre dispositivos. El formato de reacciones espeja el del chat para consistencia.
+- Los sheets que mutan datos del provider deben leer el elemento VIVO (`pv.findById`) en cada acción, no el snapshot con el que se abrieron, y hacer `setSheetState`/`ListenableBuilder` para refrescar el contador.
+- `copyWith(clearId: true)` mantiene el `createdAt` original; al duplicar hay que pasar `createdAt: DateTime.now()` explícito o el nuevo elemento colisiona en los lookups por timestamp.
+**Impacto**: `board_element_options.dart` (nuevo), `pizarra_screen_v2.dart`, `board_provider_v2.dart`, `board_element_v2.dart`, 4 archivos muertos eliminados
+**Relacionado con**: skill-pantallas.md (reglas 6/7/8 — comentable/reaccionable/interactuable, badge NUEVO), D-2 (Supabase realtime), Etapa 3 del plan
+
+## [2026-08-12] - FEATURE - Pizarrón v2: Etapa 2 (header + vistas + búsqueda + zoom + actividad + tags)
+**Resumen**: Se integraron al canvas los widgets de organización que quedaron muertos tras el reset del 11/8: header con cambio de vista, vistas Lista/Timeline/Archivados, buscador, panel de actividad, gestor de tags y slider de zoom.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: nuevo estado `_viewMode` (canvas/list/timeline/archived) + `_searchOpen`/`_searchText`/`_activityOpen`/`_tagManagerOpen`. El `InteractiveViewer` ahora solo se monta en modo canvas; las vistas lista/timeline/archivados reemplazan el canvas con `Positioned.fill`. `BoardHeader` siempre visible arriba (nombre de vista clickeable cicla canvas→lista→timeline→archivados→canvas, botones tags/actividad/búsqueda, indicador online). `BoardZoomSlider` abajo a la derecha (solo canvas). `BoardSearchPanel` busca por título/contenido/tags y navega al elemento. `BoardActivityPanel` carga con `pv.loadActivity()`. `BoardTagManager` crea tags. Nuevos `_goToElement(el)` (cambia a canvas y centra la transformación en el elemento), `_toggleActivity()`, `_restoreElement(el)` (toggleArchive).
+- Limpieza de imports muertos en widgets activados: `board_list_view.dart`, `board_timeline_view.dart`, `board_archived_view.dart` (app_state sin uso), `board_drawing_editor.dart`, `board_audio_editor.dart` (app_state/services/dart:io sin uso), `board_checklist_renderer.dart` (services innecesario).
+**Lecciones**:
+- Los widgets viejos (`BoardHeader`, `BoardListView`, etc.) son todos `Positioned` — deben ser hijos directos del `Stack` de la pantalla; las vistas completas (lista/timeline) se envuelven en `Positioned.fill` con padding top para no quedar debajo del header.
+- `_goToElement` centra por traducción pura (sin escala): `translation = screenCenter - elementCenter`. Simple y suficiente para navegar a un resultado de búsqueda.
+- Al cambiar de vista hay que cancelar el modo conector y cerrar el buscador, si no quedan banners colgados sobre la vista nueva.
+**Impacto**: `pizarra_screen_v2.dart`, `board_list_view.dart`, `board_timeline_view.dart`, `board_archived_view.dart`, `board_drawing_editor.dart`, `board_audio_editor.dart`, `board_checklist_renderer.dart`
+**Relacionado con**: skill-pantallas.md (spec pizarrón — Organización: búsqueda, vistas, breadcrumb), Etapa 2 del plan
+
+## [2026-08-12] - FEATURE - Pizarrón v2: menú radial + tipos nuevos (checklist, dibujo, video, audio, conectores)
+**Resumen**: Se completó la Etapa 1 del pizarrón: menú radial con 6 herramientas, creación y renderizado de todos los tipos de elemento en el canvas, y modo conector para unir elementos con flechas. Los elementos nuevos se crean en el centro del viewport actual.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: reescrito. Reemplazado el FAB verde por `BoardToolsMenu` (menú radial con Nota, Checklist, Dibujo, Video, Audio, Conector). El canvas ahora renderiza todos los tipos: notas (estilo completo), checklists (`BoardChecklistRenderer` con edición inline), dibujos (`BoardDrawingRenderer`), videos (`BoardVideoRenderer`, tap abre URL en navegador con `url_launcher`), audios (`BoardAudioRenderer` con waveform + play). Conectores pintados en capa `CustomPaint` de 10000x10000 con `MultiConnectorPainter` (bezier + flecha). Wrapper común de gestos (`HitTestBehavior.opaque`): tap → acción por tipo, long-press → confirmación de borrado, pan → mover. Modo conector: banner cian arriba ("ORIGEN"/"DESTINO") + highlight del elemento; cancelar con botón. Banner de error rojo con reintentar. `_screenCenterToWorld()` para spawnear en el centro del viewport (inversa de la matriz del InteractiveViewer).
+- `lib/providers/board_provider_v2.dart`: `update()` ahora soporta elementos sin id cloud (busca por `identical` → `id` → `createdAt`, actualiza local, debounce cloud solo si hay id). `_saveToLocal()` para elementos sin id actualiza la fila local por `created_at` en vez de insertar (evita duplicados en SQLite durante ediciones offline).
+- `lib/screens/pizarra_v2/widgets/board_tools_menu.dart`: corregidas violaciones de skill_visual (fondo semitransparente `withValues(alpha: 0.2)` → sólido, fondo=borde mismo color, icono oscuro).
+- `lib/screens/pizarra_v2/editors/board_drawing_editor.dart`: nuevo param `targetId` para editar un dibujo específico (tap en el canvas), no solo el último creado.
+- `lib/screens/pizarra_v2/editors/board_audio_editor.dart`: nuevo param `targetId`; busca el audio por id con fallback al último.
+- `lib/screens/pizarra_v2/editors/board_video_search.dart`: nuevos params `spawnX`/`spawnY` (el video se crea en el centro del viewport).
+- `lib/screens/pizarra_v2/note/note_card_modal.dart`: nuevos params `initialX`/`initialY` (notas nuevas spawnean en el centro del viewport, antes x:200 y:200 fijo).
+- `lib/screens/pizarra_v2/renderers/board_checklist_renderer.dart`: `didUpdateWidget` que refresca los datos internos cuando el elemento cambia desde afuera (realtime de la pareja).
+**Lecciones**:
+- Los editores de dibujo/audio guardan al "último elemento del tipo": para editar uno específico desde el canvas hay que pasar `targetId` (con fallback al último, que cubre el flujo de creación).
+- Un elemento creado optimista (sin id cloud) no puede usarse en `update()` con `eq('id')`; hay que resolverlo por `identical`/`createdAt` y persistir local por `created_at` para no duplicar filas en SQLite.
+- Los conectores no deben ser hijos `Positioned`: se pintan en una capa `CustomPaint` del tamaño del mundo, que calcula los centros desde los elementos referenciados (se actualizan solos al moverlos).
+- El renderer de checklist es un StatefulWidget con copia interna de `data`: sin `didUpdateWidget` los cambios de la pareja por realtime no se reflejaban.
+**Impacto**: `pizarra_screen_v2.dart`, `board_provider_v2.dart`, `board_tools_menu.dart`, `board_drawing_editor.dart`, `board_audio_editor.dart`, `board_video_search.dart`, `note_card_modal.dart`, `board_checklist_renderer.dart`
+**Relacionado con**: skill-pantallas.md (spec pizarrón), D-2 (Supabase), D-3 (SQLite), D-4 (skill_visual), Etapa 1 del plan
+
+## [2026-08-12] - BUGFIX - ClassSetupWizard ahora solo aparece al entrar al calendario
+**Resumen**: El wizard de "Cuantas clases tienes a la semana?" se mostraba al abrir la app (HomeScreen). Ahora solo aparece al entrar a la pantalla del calendario (CalendarHomeScreen).
+**Cambios realizados**:
+- `lib/screens/home_screen.dart`: eliminado `_checkClassSetup()` y su llamado en `initState`. Limpiados imports huérfanos (`provider`, `DatabaseHelper`, `ClassScheduleProvider`, `class_setup_wizard`, `pizarra_screen`).
+- `lib/screens/calendar/calendar_home_screen.dart`: agregado `_checkClassSetup()` que revisa si hay clases configuradas en SQLite local; si no hay, abre el `ClassSetupWizard`. Se llama en `initState` antes de `_loadData()`. Agregados imports necesarios (`DatabaseHelper`, `class_setup_wizard`).
+**Lecciones**:
+- La verificación de setup inicial no debe bloquear la experiencia de toda la app; es mejor ubicarla en el contexto donde se necesita (calendario).
+**Impacto**: `home_screen.dart`, `calendar_home_screen.dart`
+
+## [2026-08-12] - FEATURE+BUGFIX - Notas funcionales en canvas + polish completo del editor
+**Resumen**: Las notas ahora se renderizan en el canvas del pizarrón con su estilo real (forma, color, gradiente, borde). Se pueden arrastrar, editar (tap) y eliminar (long press). Además se pulieron bugs críticos de los editores y se agregaron opciones faltantes.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: integrado `BoardProviderV2` + `Consumer` para cargar y renderizar notas en el canvas. Cada nota se muestra con su color, shape (ClipPath), gradiente y borde real. Soporte drag-to-move (desactiva canvas pan durante el drag), tap para editar, long-press para eliminar con confirmación. `_MiniShapeClipper` para formas igual que en el modal. Canvas reducido a 10000x10000 con `boundaryMargin: 5000` (antes `double.infinity` causaba bugs).
+- `lib/screens/pizarra_v2/note/note_card_modal.dart`: soporte para `noteId` — carga datos existentes al editar, guarda con `provider.update()` si es edición o `provider.add()` si es nueva. Color default cambiado a violeta (`#5C2D91`) para visibilidad. Gradiente por defecto con colores violeta/azul/cian. Patrones solo se muestran si `patternEnabled: true` (toggle en Capa 2). `_PatternPainter` con 12 patrones (agregados Diagonales, Círculos, Triángulos, Panal). `_CardBorderPainter` con renderizado real: punteado dibuja círculos, dashed pinta segmentos, doble usa 2 líneas, ondulado usa sinusoide, relieve doble stroke.
+- `lib/screens/pizarra_v2/note/note_background_editor.dart`: `TextEditingController` con `dispose()` (fix memory leak). `didUpdateWidget` completo para todos los campos. Slider de saturación agregado. Labels de sliders ampliados a 72px. Capa 1 (Color) eliminada — solo Capa 1 Degradado + Capa 2 Patrón con toggle on/off. Color picker de gradiente usa `GradientColorPicker` (StatefulWidget propio, evita bug de `StatefulBuilder`).
+- `lib/screens/pizarra_v2/note/note_border_editor.dart`: agregado slider de espaciado (1-20px). `didUpdateWidget` completo incluyendo spacing.
+- `lib/screens/pizarra_v2/note/note_font_editor.dart`: Google Fonts cargadas con `GoogleFonts.getFont()`. Nombres de fuente corregidos (Open Sans, Dancing Script, etc.). Color dot negro reemplazado por `#444444`.
+- `lib/screens/pizarra_v2/note/note_audio_recorder.dart`: cleanup de archivos temporales en `dispose()`. `_recorder.stop()` automático al cerrar. Manejo de `null` en `stop()`.
+- `lib/screens/pizarra_v2/note/note_toolbar.dart`: haptic feedback en los 5 botones. Barreras semitransparentes (`barrierColor: Colors.black26`) en todos los bottom sheets. Editor de fondo limitado a 55% de altura.
+- `lib/screens/pizarra_v2/note/note_shape_editor.dart`: borde=fondo en estado no seleccionado (regla brutalista).
+- `lib/screens/pizarra_v2/note/note_color_editor.dart`: glow en color seleccionado.
+- `lib/screens/pizarra_v2/note/note_gradient_color_picker.dart` (nuevo): dialog de picker de color para gradientes, StatefulWidget propio.
+- `lib/screens/pizarra_v2/note/note_common_color_wheel.dart` (nuevo): `SimpleColorWheel` compartido entre font editor y border editor (elimina 2 copias duplicadas del color wheel).
+- `lib/services/notification_service.dart`: `LateInitializationError` fix — `_showLocalNotification` envuelta en try-catch + guard `_initialized`.
+**Lecciones**:
+- `StatefulBuilder` resetea variables locales en cada rebuild del builder — para diálogos de color, usar un `StatefulWidget` propio que mantenga el estado.
+- Los `CustomPainter` necesitan `HitTestBehavior.opaque` si el child no es hittable.
+- `BoxDecoration.border` es final — no se puede mutar; crear una nueva decoración para cada estado de borde.
+- El `InteractiveViewer` gana la guerra de gestos contra `GestureDetector` anidados — desactivar `panEnabled` durante drags de notas.
+- Los archivos de audio temporal deben limpiarse en `dispose()` o quedan huérfanos en el filesystem.
+**Impacto**: `pizarra_screen_v2.dart`, `note_card_modal.dart`, `note_background_editor.dart`, `note_border_editor.dart`, `note_font_editor.dart`, `note_toolbar.dart`, `note_shape_editor.dart`, `note_color_editor.dart`, `note_audio_recorder.dart`, `note_gradient_color_picker.dart` (nuevo), `note_common_color_wheel.dart` (nuevo), `notification_service.dart`
+**Relacionado con**: D-2 (Supabase), D-3 (SQLite), D-4 (skill_visual), errores-conocidos
+
+## [2026-08-11] - FEATURE - Pizarrón v2: editores de fondo por capas, fuente y borde (Etapa 2)
+**Resumen**: Se completó la toolbar derecha del modal de nota con los 3 botones restantes: Fondo (violeta), Fuente (fucsia) y Borde (naranja). Cada uno abre un bottom sheet con editor completo.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/note/note_background_editor.dart` (nuevo): sistema de 3 capas con tabs — Capa 1 Color (muestra el color base), Capa 2 Tipo (Liso/Lineal/Radial + selector de 3 colores del gradiente), Capa 3 Patrón (8 patrones: puntos, líneas H/V, cuadrícula, zigzag, diamantes, ondas, rayas + patrón personalizado con texto/emoji). Sliders para grosor, ángulo, tamaño, opacidad y espaciado del patrón.
+- `lib/screens/pizarra_v2/note/note_font_editor.dart` (nuevo): 12 Google Fonts (Roboto, Open Sans, Lato, Montserrat, Oswald, Raleway, Poppins, Dancing Script, Pacifico, Permanent Marker, Caveat, Indie Flower), 5 colores base + "+" para custom, slider de tamaño 8-48px con botones +/-.
+- `lib/screens/pizarra_v2/note/note_border_editor.dart` (nuevo): toggle on/off, color, 6 tipos de borde (Sólido, Punteado, Dashed, Doble, Ondulado, Relieve), slider de grosor 1-10px.
+- `lib/screens/pizarra_v2/note/note_toolbar.dart`: reescrito con todos los botones funcionales, fondos violeta/fucsia/naranja, cada uno abre su bottom sheet con los editores completos.
+- `lib/screens/pizarra_v2/note/note_card_modal.dart`: agregado estado `_bgState`, `_fontState`, `_borderState` con handles, y helper `_toSerializable` para persistir Colors en el Map de datos.
+**Lecciones**:
+- Los Maps con valores mixtos (Color + primitives) necesitan serialización explícita antes de pasarlos a `data` del BoardElementV2 (que espera `Map<String,dynamic>` sin Colors).
+- `.clamp()` en `num` devuelve `num` no `double`; usar `.toDouble()` al pasarlo a un parámetro `double`.
+- Los bottom sheets con sliders necesitan `isScrollControlled: true` + `viewInsets` para que el teclado no tape el contenido.
+**Impacto**: 3 archivos nuevos en `lib/screens/pizarra_v2/note/`, 2 modificados. `flutter analyze` 0 issues. Exe compilado OK.
+**Relacionado con**: skill_visual.md, D-4, Etapa 1 del modal de nota
+
+## [2026-08-11] - FEATURE - Pizarrón v2: modal de nota con toolbar de edición (Etapa 1)
+**Resumen**: Se creó el modal de nota desde cero. Al apretar el botón verde flotante aparece un modal centrado con: título, cuerpo de texto, grabadora de audio funcional, selector de imagen de galería con picker de posición (arriba/medio/abajo), y toolbar derecha con 5 botones (Forma, Color, Fondo - placeholder, Fuente - placeholder, Borde - placeholder). Forma tiene 6 opciones (rectángulo, cuadrado, círculo, óvalo, diamante, hexágono). Color tiene 5 colores brutalistas base + rueda de color custom con slider de tono y cuadrado saturación/brillo + últimos 5 colores custom. Nota se persiste en Supabase + SQLite vía BoardProviderV2.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/note/note_card_modal.dart` (nuevo): modal principal con TextField para título y cuerpo, picker de imagen (`image_picker`) con selector de posición (top/middle/bottom) vía bottom sheet, integración con NoteAudioRecorder y NoteToolbar, botón de guardar que llama a `BoardProviderV2.add()`.
+- `lib/screens/pizarra_v2/note/note_toolbar.dart` (nuevo): barra vertical con 5 botones (Forma cian, Color naranja, Fondo/A/B gris placeholder). Modo shape y color abren bottom sheets.
+- `lib/screens/pizarra_v2/note/note_shape_editor.dart` (nuevo): grid de 6 formas con iconos (rectángulo, cuadrado, círculo, óvalo, diamante, hexágono), selección con highlight verde.
+- `lib/screens/pizarra_v2/note/note_color_editor.dart` (nuevo): 5 colores brutalistas (#FF6B00, #FF00FF, #00D4FF, #39FF14, #9D00FF) + botón "+" que abre color wheel. Sección de colores recientes (últimos 5 custom).
+- `lib/screens/pizarra_v2/note/note_color_wheel.dart` (nuevo): barra de tono (hue) horizontal + cuadrado saturación/brillo con gradientes, ambos con GestureDetector para pan. Preview con hex code en tiempo real.
+- `lib/screens/pizarra_v2/note/note_audio_recorder.dart` (nuevo): grabador de audio funcional con `record` package (mic/stop), contador de tiempo, confirmacion visual (check verde) y botón de borrar.
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: agregado estado `_showNote`, el botón verde ahora abre el modal en vez de hacer nada, y el NoteCardModal se superpone en el Stack cuando está activo.
+**Lecciones**:
+- `Color.value` está deprecated en Flutter 3.27+; usar `toARGB32()` para el int argb y `.r`/`.g`/`.b` (0-1 doubles) para canales individuales.
+- `image_picker: ^1.2.3` devuelve `XFile` (no `File`); se usa `.path` directamente con `Image.file()`.
+- El NoteCardModal usa `context.read<BoardProviderV2>()` vía Provider (registrado en main.dart), sin necesidad de declarar imports en el screen padre.
+- La toolbar derecha se posiciona como parte del mismo `Row` que la card en el modal, no como `Positioned` separado.
+**Impacto**: 6 archivos nuevos en `lib/screens/pizarra_v2/note/`, 1 modificado (`pizarra_screen_v2.dart`). `flutter analyze` 0 issues.
+**Relacionado con**: skill_visual.md (fondo=borde, sin sombras, redondo, sin negro puro), D-2 (Supabase), D-3 (SQLite)
+
+## [2026-08-11] - REFACTOR - Pizarrón v2: rediseño desde cero, solo lienzo con grid
+**Resumen**: Se borró toda la funcionalidad del pizarrón v2 (elementos, herramientas, header, paneles, editores, vistas alternativas) y se dejó únicamente el lienzo infinito con grid de puntitos y pan/zoom. Es el punto de partida para un rediseño completo desde cero.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart`: reescrito de 387 a 100 líneas. Solo contiene `Scaffold` con fondo `#0A0A0A`, grid de puntitos `#333333` cada 30px (`_GridPainter` inline), e `InteractiveViewer` con pan/zoom (0.1x-5x). Se conserva el enum `BoardViewMode` para que los widgets viejos no rompan el análisis.
+- Eliminadas todas las dependencias del provider, modelos, editores, renderers y widgets del pizarrón.
+- La navegación desde `home_screen.dart` sigue funcionando (`const PizarraScreenV2()`).
+**Lecciones**:
+- El grid de puntitos se pinta en espacio de pantalla (Stack externo al InteractiveViewer) transformado por la matriz del `TransformationController`, así no necesita `boundaryMargin` limitado.
+- Los widgets viejos (header, timeline, etc.) quedan como código muerto en disco pero no se importan; el `flutter analyze` los sigue chequeando, por eso se conservó `BoardViewMode`.
+**Impacto**: `lib/screens/pizarra_v2/pizarra_screen_v2.dart`
+**Relacionado con**: skill-pantallas.md (especificación del pizarrón obsoleta para esta iteración), D-4 (skill_visual)
+
 ## [2026-08-11] - BUGFIX - Bot WhatsApp: migración a LID de WhatsApp (resolución + cache + conexión descartable)
 **Resumen**: El bot dejó de entregar mensajes el ~2026-08-10. WhatsApp migró el enrutamiento de contactos a IDs de dispositivo vinculado (`@lid`): enviar al JID con número normal resuelve sin error pero el servidor NO entrega (pérdida silenciosa). Fix: resolver LIDs con `onWhatsApp()` en conexión descartable, cachear en `lids.json`, y enviar al JID LID. Verificado end-to-end con ACK `status=4` (leído).
 **Cambios realizados**:

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'supabase_config.dart';
 import 'app_state.dart';
 import 'screens/login_screen.dart';
@@ -23,6 +24,8 @@ import 'providers/gallery_provider.dart';
 import 'providers/favorites_provider.dart';
 import 'providers/board_data_provider.dart';
 import 'providers/board_provider_v2.dart';
+import 'providers/workout_provider.dart';
+import 'providers/deck_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/menu_provider.dart';
 import 'database/database_helper.dart';
@@ -57,6 +60,9 @@ void main() {
 
     try { await dotenv.load(fileName: '.env'); }
     catch (e) { initError = initError ?? 'dotenv: $e'; }
+
+    try { await initializeDateFormatting('es'); }
+    catch (e) { initError = initError ?? 'intl: $e'; }
 
     try { await SupabaseConfig.initialize(); }
     catch (e) { initError = initError ?? 'Supabase: $e'; }
@@ -148,6 +154,8 @@ class FuriApp extends StatelessWidget {
             ChangeNotifierProvider(create: (_) => FavoritesProvider()),
             ChangeNotifierProvider(create: (_) => BoardDataProvider()),
             ChangeNotifierProvider(create: (_) => BoardProviderV2()),
+            ChangeNotifierProvider(create: (_) => WorkoutProvider()),
+            ChangeNotifierProvider(create: (_) => DeckProvider()),
             ChangeNotifierProvider(create: (_) => ThemeProvider()),
             ChangeNotifierProvider(create: (_) => MenuProvider()),
           ],

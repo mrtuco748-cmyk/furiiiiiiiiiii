@@ -52,7 +52,7 @@ CREATE TABLE bot_notificaciones (
 ```
 Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro_id)` ya existe.
 
-## Categorias notificadas (14)
+## Categorias notificadas (20)
 
 | # | Tabla | Icono | Regla | Tracking key |
 |---|-------|-------|-------|-------------|
@@ -70,6 +70,12 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 | 12 | timeline_events | 🕐 | Ultima 1h | `timeline-{id}` |
 | 13 | custom_questions | ❓ | Ultima 1h (nueva/respondida) | `question-{id}` |
 | 14 | class_schedules | 📚 | Clases de hoy en proximas 2h (titulo + horario) | `class-{id}-{date}-{startTime}` |
+| 15 | deck_cards | 🃏 | Tarjeta nueva en ultima 1h → a la pareja del creador (categoria + preview) | `deck-{id}` |
+| 16 | deck match | 🃏 | reactions con >=2 valores todos 'encanta' y updated_at en ultima 1h → a AMBOS ("FURI!!") | `deckmatch-{id}` |
+| 17 | workout_logs | 💪 | Nuevo ejercicio en ultima 1h (nombre + series x reps + peso) | `exercise-{id}` |
+| 18 | workout_completions | 🏋️ | Sesion de entrenamiento completada en ultima 1h | `wcompletion-{id}` |
+| 19 | workout_challenges | 🏆 | Reto de ejercicio creado/aprobado/completado en ultima 1h | `wchallenge-{id}-{tipo}` |
+| 20 | racha de entrenamiento | 🔥 | Racha individual >=3 dias y no entreno hoy ni ayer → aviso una vez por dia a la pareja | `streak-{uuid}-{date}` |
 
 **No notifica**: messages (ya tienen push via FCM)
 
@@ -100,7 +106,7 @@ así cada destinatario tiene su propio registro anti-duplicado.
 6. saveSessionToSupabase() (guarda por si acaba de escanear QR)
 7. verificarYNotificar(sock)
    └── cargarUsuarios() (mapea profiles.id → facu/rocio)
-   └── Itera las 14 categorias
+   └── Itera las 16 categorias
    └── Para cada registro: yaNotificado(tabla, key, phone) + destinosPara(usuarios, creatorId)
    └── Acumula mensajesPorNum{} (map phone → textos)
    └── Por la regla "cada quien ve lo que agrega la otra": cada registro se enruta

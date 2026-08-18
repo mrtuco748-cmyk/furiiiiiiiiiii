@@ -12,6 +12,7 @@
 | Base de datos local | SQLite (sqflite) | ^2.4.1 |
 | Push notifications | Firebase Cloud Messaging | firebase_messaging: ^15.2.0 |
 | Notificaciones locales | flutter_local_notifications | ^18.0.1 |
+| Zona horaria (recordatorios) | flutter_timezone | ^4.1.0 |
 | Bot WhatsApp | Node.js + Baileys | v20.18.0 / ^6.7.0 |
 | Automatización | GitHub Actions | schedule cron |
 | IA Generativa | Google Generative AI (Gemini 1.5 Flash) | ^0.4.6 |
@@ -30,13 +31,41 @@ lib/
 ├── supabase_config.dart         # Cliente Supabase singleton
 ├── firebase_options.dart        # Config Firebase
 ├── database/
-│   └── database_helper.dart     # SQLite singleton (calendario, clases)
+│   └── database_helper.dart     # SQLite singleton (calendario, clases, pizarrón)
 ├── theme/
 │   └── app_theme.dart           # 5 modos de color + clay theme
-├── models/                      # 14 modelos Dart (message, mood, letter, etc.)
-├── providers/                   # 19 providers (11 registrados, 8 muertos)
-├── screens/                     # 16 pantallas + subcarpetas
-├── services/                    # 5 servicios (notifications, ai, settings, sound)
+├── models/                      # 21 modelos Dart (message, mood, letter, deck_card, workout_log, etc.)
+├── providers/                   # 15 providers registrados
+├── screens/                     # 19 pantallas + subcarpetas
+│   ├── calendar/               # Calendario (port Gastronomia-App)
+│   │   ├── calendar_home_screen.dart    # Mes + próximos + botones Clases/Día
+│   │   ├── daily_events_screen.dart     # Eventos del día (navegación por fecha)
+│   │   ├── schedule_form_screen.dart    # Formulario de evento + tipos de evento
+│   │   ├── class_board_screen.dart      # Tablero semanal de clases + tipos de clase
+│   │   └── class_setup_wizard.dart      # Wizard inicial de clases
+│   ├── mazo/                    # Mazo de tarjetas swipe tipo Tinder
+│   │   ├── deck_overlay.dart           # Overlay encima del Home (swipe 4 direcciones)
+│   │   ├── deck_style.dart             # Estilos por categoria y reaccion
+│   │   ├── create_deck_card_modal.dart # Modal de creacion (8 categorias)
+│   │   ├── deck_history_sheet.dart     # Historial + re-deslizar
+│   │   └── deck_match_overlay.dart     # Pantalla "FURI!!" (match con confetti)
+│   ├── ejercicios/              # Seccion Ejercicios (boton pesa del Home)
+│   │   └── ejercicios_screen.dart      # 4 pestañas: Hoy, Ejercicios, Retos, Stats
+│   └── pizarra_v2/              # Pizarrón rediseñado
+│       ├── pizarra_screen_v2.dart   # Canvas infinito con grid + notas renderizadas
+│       └── note/                    # Sistema de notas completo
+│           ├── note_card_modal.dart         # Modal de creación/edición de nota
+│           ├── note_toolbar.dart            # Toolbar derecha (5 botones)
+│           ├── note_shape_editor.dart       # Editor de forma (6 formas)
+│           ├── note_color_editor.dart       # Editor de color (5 base + custom)
+│           ├── note_background_editor.dart  # Editor de fondo (2 capas: degradado + patrón)
+│           ├── note_font_editor.dart        # Editor de fuente (12 Google Fonts)
+│           ├── note_border_editor.dart      # Editor de borde (6 tipos + espaciado)
+│           ├── note_audio_recorder.dart     # Grabador de audio funcional
+│           ├── note_color_wheel.dart        # Rueda de color (tono + sat/brillo)
+│           ├── note_common_color_wheel.dart # Color wheel compartido
+│           └── note_gradient_color_picker.dart # Picker de color para degradado
+├── services/                    # 7 servicios (notifications, event/class notification, ai, settings, sound)
 └── widgets/                     # 6 widgets compartidos
 
 Assets/
@@ -86,6 +115,21 @@ HomeScreen.initState():
 CalendarHomeScreen:
   → Carga `ScheduleProvider` (eventos fechados) + `ClassScheduleProvider` (clases recurrentes)
   → Por cada día mostrado, genera eventos sintéticos de tipo `Clase` a partir de `class_schedules.dayOfWeek`
+  → Botones "Día" (DailyEventsScreen) y "Clases" (ClassBoardScreen) en la barra de mes
+```
+
+### Recordatorios programados (eventos y clases)
+```
+Eventos (schedules):
+  → ScheduleProvider._rescheduleNotifs() tras load/add/update/delete y realtime
+  → EventNotificationService.specsForEvent() → zonedSchedule: 1h antes + al empezar
+  → Ids de notificación 100000+id y 100000+id+1 (namespace de eventos)
+Clases (class_schedules):
+  → ClassScheduleProvider._rescheduleNotifs() tras load/add/update/delete y realtime
+  → ClassNotificationService.specsForClass() → zonedSchedule semanal recurrente 1h antes
+    (matchDateTimeComponents: dayOfWeekAndTime, id 200000+id)
+Zona horaria: NotificationService._ensureTz() — flutter_timezone (nombre IANA) con fallback por offset
+Desktop (Windows): zonedSchedule no implementado → try/catch → no-op (sin recordatorios)
 ```
 
 ### Chat (tiempo real + media)
@@ -108,6 +152,58 @@ ChatScreen abre
   → Reply: swipe horizontal cualquier mensaje
   → Reacciones: long-press → 🥰😘😍 :v xD :0 + custom (max 5 keys)
   → Ticks de visto: markIncomingRead() → update messages read/delivered_at/read_at → doble tick
+```
+
+### Pizarra v2 (Notas colaborativas)
+```
+PizarraScreenV2 abre
+  → BoardProviderV2.load()
+    → SQLite local (offline-first)
+    → Supabase sync + RealtimeChannel suscribe a board_elements_v2
+  → Canvas infinito con grid de puntos + InteractiveViewer (pan/zoom)
+  → Notas renderizadas como cards con estilo real (forma, color, gradiente, borde)
+  → Tap en nota → NoteCardModal (edición)
+  → Drag → moveLocal() desactiva canvas pan
+  → Long press → diálogo eliminar → provider.delete()
+  → Botón verde flotante → NoteCardModal (nueva nota)
+
+NoteCardModal:
+  → Título + cuerpo + grabadora audio + imagen de galería (posicionable)
+  → Toolbar derecha: Forma (6), Color (5 + custom), Fondo (2 capas), Fuente (12), Borde (6)
+  → Capa Fondo: Degradado (Liso/Lineal/Radial + 3 colores) + Patrón (12 opciones + custom texto/emoji)
+  → Sliders: grosor, ángulo, tamaño, opacidad, espaciado, saturación
+  → Patrones solo visibles si toggle activado (patternEnabled)
+  → Guardar → provider.add() o provider.update() → persiste SQLite + Supabase
+```
+
+### Mazo (tarjetas swipe tipo Tinder)
+```
+App inicia → HomeScreen.initState()
+  → _initDeck() (post frame): DeckProvider.load() (Supabase deck_cards)
+  → Si hay tarjetas sin reaccion mia → DeckOverlay encima del Home
+  → Swipe: ➡️ me encanta | ⬅️ no me gusta | ⬇️ me gusta | ⬆️ meh
+  → Salida animada (160ms) → DeckProvider.react() → update reactions JSONB
+  → Realtime deck_cards_changes → applyCloudCards() (merge anti-race)
+  → Si ambos "encanta" (transicion local no-match → match) → DeckMatchOverlay "FURI!!"
+  → Historial (sheet) → re-deslizar una tarjeta (cambia la reaccion)
+  → Bloque ▶/🖼️/▶ del Home → abre el mazo (crear con +)
+```
+
+### Ejercicios (boton pesa del Home)
+```
+Home → boton pesa (verde lima #39FF14, sin confeti) → EjerciciosScreen
+  → WorkoutProvider.load() (4 tablas Supabase + RealtimeChannel workouts_realtime)
+  → 4 pestañas:
+     Hoy: semana LUN-DOM → routineForDay(dayOfWeek) → badges F/R de
+          workout_completions (toggleCompletion marca/desmarca por persona)
+          Tap en item de rutina → dialog nuevo log pre-rellenado
+     Ejercicios: workout_logs (nombre obligatorio + opcionales) → tap =
+          detalle (weightHistoryFor = evolución de peso) + comentarios;
+          long-press = reacciones (social JSONB, merge union en realtime)
+     Retos: workout_challenges (approved_by/completed_by, ambos deben
+          aprobar/completar) → sheet de acciones
+     Stats: WorkoutStats (streakFor individual, sessionsThisWeek,
+          distinctExerciseNames, muscleGroupCounts)
 ```
 
 ### Notificaciones Push
@@ -138,6 +234,14 @@ GitHub Actions (cada 30 min)
         10. notes          → nuevas en última 1h
         11. gallery        → nuevas fotos en última 1h
         12. timeline_events → nuevos eventos en última 1h
+        13. custom_questions → nuevas/respondidas en última 1h
+        14. class_schedules → clases de hoy en próximas 2h
+        15. deck_cards      → tarjeta nueva (a la pareja del creador)
+        16. deck match      → ambos "encanta" → FURI!! a ambos
+        17. workout_logs    → nuevo ejercicio en última 1h
+        18. workout_completions → sesión completada en última 1h
+        19. workout_challenges → reto creado/aprobado/completado en última 1h
+        20. racha rota     → streak >= 3 días y no entrenó hoy ni ayer
     → enviarMensaje() a MI_NUMERO
     → saveSessionToSupabase()
     → disconnect

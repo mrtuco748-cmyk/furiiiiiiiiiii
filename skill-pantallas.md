@@ -14,7 +14,7 @@ Cualquier cambio que haga uno, el otro lo ve **al instante** sin refrescar la pa
 
 | Mecanismo | Cuándo se usa |
 |-----------|--------------|
-| Supabase Realtime (RealtimeChannel) | Chat, pizarra, emociones, notas, retos, cartas, metas, preguntas, galería, finanzas, calendario, favoritos |
+| Supabase Realtime (RealtimeChannel) | Chat, pizarra, emociones, notas, retos, cartas, metas, preguntas, galería, finanzas, calendario, favoritos, mazo |
 | SQLite local | Solo datos de configuración local (class_schedules del wizard) |
 | SharedPreferences | Solo sesión de identidad (AppState) |
 
@@ -46,6 +46,9 @@ Toda pantalla debe manejar 4 estados con detalle visual:
 ```
 LoginScreen
   └── HomeScreen
+       ├── MazoOverlay (overlay encima del Home: al entrar si hay pendientes,
+       │               o desde el bloque ▶/🖼️/▶) — swipe 4 direcciones
+       ├── DeckMatchOverlay (encima de todo cuando hay match)
        ├── ChatScreen (desde botón CHAT en Nosotros o Home)
        ├── NosotrosScreen (desde Home)
        │    ├── ChatScreen (botón CHAT)
@@ -423,6 +426,54 @@ Cada pantalla con sync tiene su **Provider** que:
 - **ERROR**: Banner rojo "No se pudieron cargar los favoritos" + botón reintentar
 - **DATA**: Grid de favoritos con rating dual y crítica
 
+### Mazo 🃏
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Tabla** | `deck_cards` |
+| **Sync** | RealtimeChannel en `deck_cards` |
+| **Tipo** | Overlay encima del Home (no es pantalla pusheada) |
+| **Quién ve qué** | Ambos deslizan TODAS las tarjetas (las propias también) |
+| **Quién puede crear** | Cualquiera (modal desde el overlay o el bloque ▶/🖼️/▶ del Home) |
+| **Quién puede borrar** | Solo el creador |
+| **Categorías** | ideas 💡, chistes 😂, poemas 📜, recetas 🍳, retos 🚩, random 🎲, sueño 🌙, me pasó 🤯 |
+| **Swipe** | ➡️ me encanta, ⬅️ no me gusta, ⬇️ me gusta, ⬆️ meh |
+| **Match** | Ambos "me encanta" a la misma tarjeta → pantalla "FURI!!" con confetti (no dice "match") |
+| **Historial** | Re-deslizar las ya deslizadas (cambia la reacción) |
+| **Reacciones** | El swipe ES la reacción (JSONB `{"user_id": "encanta"\|"me_gusta"\|"meh"\|"no_me_gusta"}`) |
+| **Comentarios** | ❌ No aplica (la interacción es el swipe) |
+
+**Estados:**
+- **LOADING**: Spinner centrado con color dorado `#FFDE59`
+- **EMPTY**: Icono 🃏 + "No hay tarjetas para deslizar" + botón crear
+- **ERROR**: Banner rojo "No se pudieron cargar las tarjetas" + botón reintentar
+- **DATA**: Stack de tarjetas (la actual + 2 detrás con escala descendente) + 4 botones de acción
+
+### Ejercicios 🏋️
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Tablas** | `workout_logs`, `workout_routines`, `workout_completions`, `workout_challenges` |
+| **Sync** | RealtimeChannel `workouts_realtime` en las 4 tablas (merge de reacciones por unión) |
+| **Color** | Verde lima `#39FF14` (botón pesa del Home abre la pantalla, sin confeti) |
+| **Quién ve qué** | Ambos ven TODO (compartido) |
+| **Quién puede crear** | Cualquiera (ejercicios, rutinas, retos, marcar su día) |
+| **Quién puede borrar** | Cualquiera puede borrar (patrón de pantallas compartidas) |
+| **Pestaña Hoy** | Semana completa (LUN-DOM) con rutina por día; cada uno marca su día (badges F/R); racha en cabecera; tap en item de rutina registra el ejercicio pre-rellenado |
+| **Pestaña Ejercicios** | Registros con autor, summary (4x10 @ 60kg), grupo muscular; tap = detalle con historial de pesos + comentarios; long-press = reaccionar |
+| **Pestaña Retos** | `approved_by`/`completed_by`: AMBOS deben aprobar y AMBOS completar (2 personas); tap = sheet con aprobar/completar/comentar |
+| **Pestaña Stats** | Racha individual por persona, sesiones por semana, ejercicios distintos, grupos musculares |
+| **Ejercicio** | Nombre obligatorio; series, reps, peso, descanso, grupo muscular y notas opcionales |
+| **Reacciones** | ✅ Long-press → 🔥💪🏆👏😤🥳 + custom (max 10 chars), max 5 keys, 1 activa por usuario |
+| **Comentarios** | ✅ En el detalle del log/reto (max 1000 chars, delete en cascada de replies) |
+| **Bot WhatsApp** | Nuevo ejercicio 💪, sesión completada 🏋️, reto creado/aprobado/completado 🏆, racha rota 🔥 (>=3 días sin entrenar) |
+
+**Estados:**
+- **LOADING**: Spinner verde lima `#39FF14`
+- **EMPTY**: Icono por pestaña + "Sin ejercicios registrados" / "Sin retos todavía"
+- **ERROR**: Vista con icono nube-off + mensaje + botón reintentar (rojo `#FF4444`)
+- **DATA**: Listas con cards verde oscuro `#0E3A0E` (fondo=borde), redondeadas, sin sombras
+
 ---
 
 ## Checklist de Implementación
@@ -493,12 +544,9 @@ Las siguientes pantallas NO están detalladas aquí porque son simples o de conf
 - **Rotar**: Gesto de dos dedos
 - **Zoom**: Pinch-to-zoom
 - **Pan**: Un dedo (un dedo = seleccionar y mover)
-- **Doble tap vacío**: Crear nota nueva
 - **Snap**: Sin snap
 - **Agrupar**: Drag sobre otro elemento
 - **Selección múltiple**: Rectángulo en desktop, taps en móvil
-- **Undo/Redo**: Ctrl+Z/Ctrl+Y + botón en mobile
-- **Atajos desktop**: Undo/Redo, Duplicar/Borrar, Copiar/Pegar, Flechas para mover
 
 ### Reacciones y Comentarios
 - **Reacciones**: Tap para seleccionar elemento → aparecen opciones en panel
@@ -522,7 +570,6 @@ Las siguientes pantallas NO están detalladas aquí porque son simples o de conf
 - **Vistas**: Lienzo infinito + lista + timeline
 - **Breadcrumb**: Solo nombre del tablero actual
 - **Archivados**: Sección de archivados accesible
-- **Exportar**: PNG + PDF
 - **Compartir**: Solo Facu y Rocio
 - **Separadores**: Manuales (no automáticos ni predefinidos)
 
@@ -538,6 +585,10 @@ Las siguientes pantallas NO están detalladas aquí porque son simples o de conf
 - Modo presentación
 - Mini mapa
 - Kanban con columnas
+- Undo/Redo global (Ctrl+Z/Ctrl+Y)
+- Atajos de teclado desktop
+- Doble tap en espacio vacío para crear nota
+- Exportar a PNG/PDF
 
 ---
 
@@ -583,7 +634,7 @@ C) Otro
 
 ---
 
-**Versión**: 9.0 (pizarrón v2 - 24 bugs críticos arreglados)
+**Versión**: 9.1 (mazo swipe tipo Tinder)
 **Creado**: 2026-08-07
-**Actualizado**: 2026-08-07
+**Actualizado**: 2026-08-17
 **Prioridad**: ALTA (regla obligatoria)
