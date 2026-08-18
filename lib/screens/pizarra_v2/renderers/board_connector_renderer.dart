@@ -199,18 +199,45 @@ class BoardConnectorRenderer extends CustomPainter {
 }
 
 /// Painter que renderiza múltiples conectores a la vez.
+/// Solo pinta los que tienen al menos un extremo dentro del viewport (culling).
 class MultiConnectorPainter extends CustomPainter {
   final List<BoardElementV2> connectors;
   final List<BoardElementV2> allElements;
+  final Rect visibleRect;
 
   MultiConnectorPainter({
     required this.connectors,
     required this.allElements,
+    this.visibleRect = Rect.zero,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    final view = visibleRect == Rect.zero ? null : visibleRect.inflate(600);
     for (final connector in connectors) {
+      final data = ConnectorData.fromMap(connector.data);
+      BoardElementV2? fromEl;
+      BoardElementV2? toEl;
+      for (final e in allElements) {
+        if (e.id == data.fromId) fromEl = e;
+        if (e.id == data.toId) toEl = e;
+      }
+      if (fromEl == null || toEl == null) continue;
+
+      final fromCenter = Offset(
+        fromEl.x + (fromEl.width ?? 180) / 2,
+        fromEl.y + (fromEl.height ?? 110) / 2,
+      );
+      final toCenter = Offset(
+        toEl.x + (toEl.width ?? 180) / 2,
+        toEl.y + (toEl.height ?? 110) / 2,
+      );
+      if (view != null &&
+          !view.contains(fromCenter) &&
+          !view.contains(toCenter)) {
+        continue;
+      }
+
       final painter = BoardConnectorRenderer(
         connector: connector,
         allElements: allElements,
@@ -222,6 +249,7 @@ class MultiConnectorPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant MultiConnectorPainter oldDelegate) {
     return oldDelegate.connectors != connectors ||
-        oldDelegate.allElements != allElements;
+        oldDelegate.allElements != allElements ||
+        oldDelegate.visibleRect != visibleRect;
   }
 }

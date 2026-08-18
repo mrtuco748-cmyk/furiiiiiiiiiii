@@ -205,6 +205,7 @@ class BoardElementV2 {
     int? boardId,
     int? z,
     Map<String, dynamic>? data,
+    DateTime? createdAt,
     DateTime? updatedAt,
     bool? isNew,
   }) =>
@@ -238,7 +239,7 @@ class BoardElementV2 {
         boardId: boardId ?? this.boardId,
         z: z ?? this.z,
         data: data ?? this.data,
-        createdAt: createdAt,
+        createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
         isNew: isNew ?? this.isNew,
       );

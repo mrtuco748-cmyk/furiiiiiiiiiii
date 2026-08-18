@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../models/board_element_v2.dart';
+import '../../../providers/board_provider_v2.dart';
 
-class BoardSearchPanel extends StatelessWidget {
-  final List<BoardElementV2> elements;
+class BoardSearchPanel extends StatefulWidget {
+  final BoardProviderV2 provider;
   final String searchText;
   final Function(String) onSearchChanged;
   final VoidCallback onClose;
@@ -10,17 +11,41 @@ class BoardSearchPanel extends StatelessWidget {
 
   const BoardSearchPanel({
     super.key,
-    required this.elements,
+    required this.provider,
     required this.searchText,
     required this.onSearchChanged,
     required this.onClose,
     required this.onGoToElement,
   });
 
+  @override
+  State<BoardSearchPanel> createState() => _BoardSearchPanelState();
+}
+
+class _BoardSearchPanelState extends State<BoardSearchPanel> {
+  List<BoardElementV2> _pool = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPool();
+  }
+
+  Future<void> _loadPool() async {
+    final pool = await widget.provider.loadSearchPool();
+    if (mounted) {
+      setState(() {
+        _pool = pool;
+        _loading = false;
+      });
+    }
+  }
+
   List<BoardElementV2> get _results {
-    final q = searchText.trim().toLowerCase();
+    final q = widget.searchText.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    return elements.where((e) {
+    return _pool.where((e) {
       return e.title.toLowerCase().contains(q) ||
           e.content.toLowerCase().contains(q) ||
           e.tags.any((t) => t.toLowerCase().contains(q));
@@ -48,13 +73,13 @@ class BoardSearchPanel extends StatelessWidget {
             children: [
               TextField(
                 autofocus: true,
-                onChanged: onSearchChanged,
+                onChanged: widget.onSearchChanged,
                 style: const TextStyle(
                   color: Colors.white,
                   fontFamily: 'monospace',
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Buscar notas, tags...',
+                  hintText: 'Buscar en todos los tableros...',
                   hintStyle: const TextStyle(
                     color: Colors.white54,
                     fontFamily: 'monospace',
@@ -62,11 +87,23 @@ class BoardSearchPanel extends StatelessWidget {
                   border: InputBorder.none,
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: onClose,
+                    onPressed: widget.onClose,
                   ),
                 ),
               ),
-              if (_results.isNotEmpty)
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF39FF14),
+                      strokeWidth: 2,
+                    ),
+                  ),
+                ),
+              if (!_loading && _results.isNotEmpty)
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 260),
                   child: ListView(
@@ -100,12 +137,14 @@ class BoardSearchPanel extends StatelessWidget {
                                   ),
                                 )
                               : null,
-                          onTap: () => onGoToElement(el),
+                          onTap: () => widget.onGoToElement(el),
                         ),
                     ],
                   ),
                 ),
-              if (searchText.isNotEmpty && _results.isEmpty)
+              if (!_loading &&
+                  widget.searchText.isNotEmpty &&
+                  _results.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Text(

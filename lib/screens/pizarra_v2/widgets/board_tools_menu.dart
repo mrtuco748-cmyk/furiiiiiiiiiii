@@ -12,6 +12,8 @@ class BoardToolsMenu extends StatefulWidget {
   final VoidCallback onCreateVideo;
   final VoidCallback onCreateAudio;
   final VoidCallback onCreateConnector;
+  final VoidCallback onCreateSubBoard;
+  final VoidCallback onCreateSeparator;
 
   const BoardToolsMenu({
     super.key,
@@ -21,6 +23,8 @@ class BoardToolsMenu extends StatefulWidget {
     required this.onCreateVideo,
     required this.onCreateAudio,
     required this.onCreateConnector,
+    required this.onCreateSubBoard,
+    required this.onCreateSeparator,
   });
 
   @override
@@ -135,6 +139,28 @@ class _BoardToolsMenuState extends State<BoardToolsMenu>
               },
             ),
             const SizedBox(height: 8),
+            _ToolItem(
+              icon: Icons.folder,
+              label: 'Sub-tablero',
+              color: const Color(0xFFCE93D8),
+              onTap: () {
+                HapticFeedback.heavyImpact();
+                widget.onCreateSubBoard();
+                _toggle();
+              },
+            ),
+            const SizedBox(height: 8),
+            _ToolItem(
+              icon: Icons.remove,
+              label: 'Separador',
+              color: const Color(0xFF9D00FF),
+              onTap: () {
+                HapticFeedback.heavyImpact();
+                widget.onCreateSeparator();
+                _toggle();
+              },
+            ),
+            const SizedBox(height: 8),
           ],
           GestureDetector(
             onTap: _toggle,
@@ -190,11 +216,11 @@ class _ToolItem extends StatelessWidget {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.2),
+          color: color,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color, width: 2),
         ),
-        child: Icon(icon, color: color, size: 22),
+        child: Icon(icon, color: const Color(0xFF0A0A0A), size: 22),
       ),
     );
   }

@@ -6,12 +6,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
 import '../database/database_helper.dart';
 import '../models/board_element_v2.dart';
+import '../models/board_element_data.dart';
 import '../app_state.dart';
 
 class BoardProviderV2 extends ChangeNotifier {
   List<BoardElementV2> _elements = [];
   List<BoardActivity> _activity = [];
   List<Map<String, dynamic>> _savedTags = [];
+  List<Map<String, dynamic>> _boards = [];
   bool _loading = false;
   String? _error;
   int _boardId = 1;
@@ -25,6 +27,7 @@ class BoardProviderV2 extends ChangeNotifier {
   List<BoardElementV2> get archivedElements => _elements.where((e) => e.isArchived).toList();
   List<BoardActivity> get activity => _activity;
   List<Map<String, dynamic>> get savedTags => _savedTags;
+  List<Map<String, dynamic>> get boards => _boards;
   bool get loading => _loading;
   String? get error => _error;
   bool get hasError => _error != null;
@@ -32,10 +35,73 @@ class BoardProviderV2 extends ChangeNotifier {
   int get boardId => _boardId;
   bool get isOnline => _isOnline;
 
+  /// Nombre del tablero actual (breadcrumb).
+  String get boardName {
+    for (final b in _boards) {
+      if (b['id'] == _boardId) return b['name'] as String? ?? 'Pizarra';
+    }
+    return 'Pizarra';
+  }
+
+  /// Id del tablero padre del actual (null si es el raiz).
+  int? get parentBoardId {
+    for (final b in _boards) {
+      if (b['id'] == _boardId) return b['parent_id'] as int?;
+    }
+    return null;
+  }
+
   void setBoard(int id) {
     if (id == _boardId) return;
     _boardId = id;
     load();
+  }
+
+  void goBackBoard() {
+    final parent = parentBoardId;
+    if (parent != null) setBoard(parent);
+  }
+
+  Future<void> loadBoards() async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('boards')
+          .select()
+          .order('created_at', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      _boards = (res as List).cast<Map<String, dynamic>>();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('BoardProviderV2.loadBoards error: $e');
+    }
+  }
+
+  Future<int?> createBoard(String name, int parentId) async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('boards')
+          .insert({'name': name, 'parent_id': parentId})
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      final id = res['id'] as int;
+      await loadBoards();
+      return id;
+    } catch (e) {
+      debugPrint('BoardProviderV2.createBoard error: $e');
+      _error = 'No se pudo crear el tablero';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Busca el elemento vivo por id cloud (null-safe).
+  BoardElementV2? findById(int? id) {
+    if (id == null) return null;
+    for (final e in _elements) {
+      if (e.id == id) return e;
+    }
+    return null;
   }
 
   /// Carga elementos: primero SQLite (offline), luego Supabase (online).
@@ -61,6 +127,7 @@ class BoardProviderV2 extends ChangeNotifier {
 
     _loading = false;
     await _loadTags();
+    if (_isOnline) await loadBoards();
     notifyListeners();
   }
 
@@ -101,6 +168,19 @@ class BoardProviderV2 extends ChangeNotifier {
 
   Future<void> _syncFromCloud() async {
     try {
+      // BUG 10: Cargar IDs de elementos locales dirty (synced=0) antes de mergear.
+      final db = await DatabaseHelper().database;
+      final dirtyRows = await db.query(
+        'board_elements_v2',
+        columns: ['id'],
+        where: 'synced = 0',
+      );
+      final dirtyIds = dirtyRows
+          .map((r) => r['id'] as int?)
+          .where((id) => id != null)
+          .map((id) => id!)
+          .toSet();
+
       final res = await SupabaseConfig.client
           .from('board_elements_v2')
           .select()
@@ -112,13 +192,20 @@ class BoardProviderV2 extends ChangeNotifier {
           .map((e) => BoardElementV2.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      // Merge: cloud gana sobre local (último cambio)
+      // Merge: cloud gana en campos que no fueron modificados localmente.
+      // BUG 10: Si el local tiene synced=0 (modificado offline), preservar
+      // x/y del local y tomar el resto del cloud (que puede traer cambios
+      // de la pareja en color, título, etc.).
       for (final cloudEl in cloudElements) {
         final localIdx = _elements.indexWhere((e) => e.id == cloudEl.id);
         if (localIdx >= 0) {
-          // Cloud es más reciente → reemplazar
           if (cloudEl.updatedAt.isAfter(_elements[localIdx].updatedAt)) {
-            _elements[localIdx] = cloudEl;
+            final local = _elements[localIdx];
+            // Si el local tiene cambios pendientes (dirty), preservar x/y.
+            final isLocalDirty = local.id != null && dirtyIds.contains(local.id);
+            _elements[localIdx] = isLocalDirty
+                ? cloudEl.copyWith(x: local.x, y: local.y)
+                : cloudEl;
           }
         } else {
           _elements.add(cloudEl);
@@ -154,40 +241,49 @@ class BoardProviderV2 extends ChangeNotifier {
       try {
         final el = BoardElementV2.fromMap(Map<String, dynamic>.from(row));
         final localId = el.id;
-        final res = await SupabaseConfig.client
-            .from('board_elements_v2')
-            .insert(el.copyWith(clearId: true).toMap())
-            .select()
-            .single()
-            .timeout(const Duration(seconds: 10));
-        final cloudId = res['id'] as int;
 
-        // Actualizar con id cloud (memoria + SQLite). El id local de SQLite
-        // NO es el id cloud: hay que reconciliar la fila local con el cloud.
         if (localId != null) {
-          final idx = _elements.indexWhere((e) => e.id == localId);
-          if (idx >= 0) {
-            _elements[idx] = _elements[idx].copyWith(id: cloudId);
-          }
-          await db.delete('board_elements_v2', where: 'id = ?', whereArgs: [localId]);
+          // BUG 9: Elemento ya sincronizado pero modificado offline → UPDATE
+          await SupabaseConfig.client
+              .from('board_elements_v2')
+              .update(el.toMap())
+              .eq('id', localId)
+              .timeout(const Duration(seconds: 10));
+          await db.update(
+            'board_elements_v2',
+            {'synced': 1},
+            where: 'id = ?',
+            whereArgs: [localId],
+          );
         } else {
+          // Elemento nuevo, nunca sincronizado → INSERT
+          final res = await SupabaseConfig.client
+              .from('board_elements_v2')
+              .insert(el.copyWith(clearId: true).toMap())
+              .select()
+              .single()
+              .timeout(const Duration(seconds: 10));
+          final cloudId = res['id'] as int;
+
+          // Actualizar con id cloud (memoria + SQLite). El id local de SQLite
+          // NO es el id cloud: hay que reconciliar la fila local con el cloud.
           final idx = _elements.indexWhere((e) => e.createdAt == el.createdAt);
           if (idx >= 0) {
             _elements[idx] = _elements[idx].copyWith(id: cloudId);
           }
-        }
 
-        // Guardar fila local reconciliada con id cloud
-        await _saveToLocal(_elements.firstWhere(
-          (e) => e.id == cloudId,
-          orElse: () => el.copyWith(id: cloudId),
-        ));
-        await db.update(
-          'board_elements_v2',
-          {'synced': 1},
-          where: 'id = ?',
-          whereArgs: [cloudId],
-        );
+          // Guardar fila local reconciliada con id cloud
+          await _saveToLocal(_elements.firstWhere(
+            (e) => e.id == cloudId,
+            orElse: () => el.copyWith(id: cloudId),
+          ));
+          await db.update(
+            'board_elements_v2',
+            {'synced': 1},
+            where: 'id = ?',
+            whereArgs: [cloudId],
+          );
+        }
       } catch (e) {
         debugPrint('BoardProviderV2._pushUnsyncedToCloud error: $e');
       }
@@ -220,8 +316,32 @@ class BoardProviderV2 extends ChangeNotifier {
             if (idx >= 0) {
               // No pisar cambios locales pendientes
               if (el.updatedAt.isAfter(_elements[idx].updatedAt)) {
-                _elements[idx] = el;
-                _saveToLocal(el);
+                // BUG 2: Merge reactions del cloud con las locales (evita race condition).
+                final localReactions = _reactionsOf(_elements[idx].data);
+                final cloudReactions = _reactionsOf(el.data);
+                if (localReactions.isNotEmpty && cloudReactions.isNotEmpty) {
+                  final merged = <String, List<String>>{};
+                  for (final entry in cloudReactions.entries) {
+                    merged[entry.key] = List<String>.from(entry.value);
+                  }
+                  for (final entry in localReactions.entries) {
+                    if (merged.containsKey(entry.key)) {
+                      for (final uid in entry.value) {
+                        if (!merged[entry.key]!.contains(uid)) {
+                          merged[entry.key]!.add(uid);
+                        }
+                      }
+                    } else {
+                      merged[entry.key] = List<String>.from(entry.value);
+                    }
+                  }
+                  final mergedData = Map<String, dynamic>.from(el.data);
+                  mergedData['reactions'] = merged;
+                  _elements[idx] = el.copyWith(data: mergedData);
+                } else {
+                  _elements[idx] = el;
+                }
+                _saveToLocal(_elements[idx]);
               }
             } else {
               _elements.add(el);
@@ -313,6 +433,9 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
     }
     if (idx == -1) return;
 
+    // BUG 5: No mover elementos bloqueados.
+    if (_elements[idx].isLocked) return;
+
     final previous = _elements[idx];
     final updated = previous.copyWith(
       x: x,
@@ -328,50 +451,73 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
     if (id == null) return;
 
     _debounceTimers[id]?.cancel();
-    _debounceTimers[id] = Timer(const Duration(milliseconds: 300), () {
+    _debounceTimers[id] = Timer(const Duration(milliseconds: 300), () async {
       _debounceTimers.remove(id);
-      if (_isOnline) {
-        try {
-          SupabaseConfig.client
-              .from('board_elements_v2')
-              .update(updated.toMap())
-              .eq('id', id)
-              .timeout(const Duration(seconds: 5));
-        } catch (e) {
-          debugPrint('BoardProviderV2.moveLocal error: $e');
-        }
+      if (!_isOnline) {
+        // BUG 1+9: Marcar como no sincronizado para retry en próxima carga.
+        await _markUnsynced(id);
+        return;
+      }
+      try {
+        await SupabaseConfig.client
+            .from('board_elements_v2')
+            .update(updated.toMap())
+            .eq('id', id)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('BoardProviderV2.moveLocal error: $e');
+        await _markUnsynced(id);
       }
     });
   }
 
   /// Actualiza un elemento con debounce (para moves/resizes frecuentes).
+  /// Soporta elementos recién creados sin id cloud (actualiza solo local).
   Future<void> update(BoardElementV2 el) async {
-    final id = el.id;
-    if (id == null) return;
-
-    final idx = _elements.indexWhere((e) => e.id == id);
+    var idx = _elements.indexWhere((e) => identical(e, el));
+    if (idx == -1) idx = _elements.indexWhere((e) => e.id == el.id);
+    if (idx == -1) {
+      idx = _elements.indexWhere((e) => e.createdAt == el.createdAt);
+    }
     if (idx == -1) return;
+
+    // BUG 5: No actualizar elementos bloqueados.
+    if (_elements[idx].isLocked) return;
 
     _elements[idx] = el.copyWith(updatedAt: DateTime.now());
     notifyListeners();
 
-    // Guardar local inmediatamente
-    await _saveToLocal(el);
+    // Guardar local inmediatamente (BUG 1+9: marcar synced=0 si offline)
+    await _saveToLocal(_elements[idx], syncedFlag: _isOnline ? null : 0);
+
+    final id = _elements[idx].id;
+    if (id == null) return;
 
     // Debounce para cloud (300ms)
     _debounceTimers[id]?.cancel();
     _debounceTimers[id] = Timer(const Duration(milliseconds: 300), () async {
       _debounceTimers.remove(id);
-      if (_isOnline) {
-        try {
-          await SupabaseConfig.client
-              .from('board_elements_v2')
-              .update(el.toMap())
-              .eq('id', id)
-              .timeout(const Duration(seconds: 5));
-        } catch (e) {
-          debugPrint('BoardProviderV2.update error: $e');
-        }
+      if (!_isOnline) {
+        await _markUnsynced(id);
+        return;
+      }
+      try {
+        await SupabaseConfig.client
+            .from('board_elements_v2')
+            .update(el.toMap())
+            .eq('id', id)
+            .timeout(const Duration(seconds: 5));
+        // Cloud write exitoso: marcar synced=1
+        final db = await DatabaseHelper().database;
+        await db.update(
+          'board_elements_v2',
+          {'synced': 1},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      } catch (e) {
+        debugPrint('BoardProviderV2.update error: $e');
+        await _markUnsynced(id);
       }
     });
   }
@@ -379,6 +525,35 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
   /// Borra un elemento.
   Future<void> delete(int id) async {
     final el = _elements.firstWhere((e) => e.id == id, orElse: () => throw Exception('Not found'));
+
+    // BUG 3: Limpiar conectores que referencian este elemento (cascade).
+    final orphanConnectors = _elements
+        .where((e) =>
+            e.type == BoardElementType.connector &&
+            e.id != null &&
+            e.id != id)
+        .where((e) {
+      final cd = ConnectorData.fromMap(e.data);
+      return cd.fromId == id || cd.toId == id;
+    }).toList();
+    for (final c in orphanConnectors) {
+      if (c.id != null) {
+        _elements.removeWhere((e) => e.id == c.id);
+        await _deleteLocal(c.id!);
+        if (_isOnline) {
+          try {
+            await SupabaseConfig.client
+                .from('board_elements_v2')
+                .delete()
+                .eq('id', c.id!)
+                .timeout(const Duration(seconds: 5));
+          } catch (e) {
+            debugPrint('BoardProviderV2.delete connector cascade error: $e');
+          }
+        }
+      }
+    }
+
     _elements.removeWhere((e) => e.id == id);
     notifyListeners();
 
@@ -461,6 +636,38 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
 
   // --- Tags ---
 
+  /// Carga TODOS los elementos (sin filtro de board_id) para búsqueda cross-board.
+  Future<List<BoardElementV2>> loadSearchPool() async {
+    try {
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'board_elements_v2',
+        where: 'is_archived = 0',
+        orderBy: 'created_at DESC',
+      );
+      return rows.map((r) {
+        final map = Map<String, dynamic>.from(r);
+        map['is_bold'] = (map['is_bold'] as int?) == 1;
+        map['is_italic'] = (map['is_italic'] as int?) == 1;
+        map['is_underline'] = (map['is_underline'] as int?) == 1;
+        map['is_collapsed'] = (map['is_collapsed'] as int?) == 1;
+        map['is_locked'] = (map['is_locked'] as int?) == 1;
+        map['is_archived'] = (map['is_archived'] as int?) == 1;
+        map['is_new'] = (map['is_new'] as int?) == 1;
+        if (map['tags'] is String) {
+          try { map['tags'] = jsonDecode(map['tags'] as String); } catch (_) {}
+        }
+        if (map['data'] is String) {
+          try { map['data'] = jsonDecode(map['data'] as String); } catch (_) {}
+        }
+        return BoardElementV2.fromMap(map);
+      }).toList();
+    } catch (e) {
+      debugPrint('BoardProviderV2.loadSearchPool error: $e');
+      return [];
+    }
+  }
+
   Future<void> _loadTags() async {
     try {
       final db = await DatabaseHelper().database;
@@ -534,7 +741,7 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
 
   // --- SQLite helpers ---
 
-  Future<void> _saveToLocal(BoardElementV2 el) async {
+  Future<void> _saveToLocal(BoardElementV2 el, {int? syncedFlag}) async {
     try {
       final db = await DatabaseHelper().database;
       final map = el.toMap();
@@ -548,6 +755,7 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
       map['is_archived'] = el.isArchived ? 1 : 0;
       map['tags'] = jsonEncode(el.tags);
       map['data'] = jsonEncode(el.data);
+      if (syncedFlag != null) map['synced'] = syncedFlag;
 
       if (el.id != null) {
         await db.update(
@@ -557,11 +765,49 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
           whereArgs: [el.id],
         );
       } else {
-        await db.insert('board_elements_v2', map);
+        // Sin id cloud todavía: actualizar la fila local por created_at
+        // para no acumular filas duplicadas en cada save.
+        final updated = await db.update(
+          'board_elements_v2',
+          map,
+          where: 'created_at = ?',
+          whereArgs: [el.createdAt.toIso8601String()],
+        );
+        if (updated == 0) {
+          await db.insert('board_elements_v2', map);
+        }
       }
     } catch (e) {
       debugPrint('BoardProviderV2._saveToLocal error: $e');
     }
+  }
+
+  /// Marca un elemento como no sincronizado en SQLite (synced=0).
+  Future<void> _markUnsynced(int id) async {
+    try {
+      final db = await DatabaseHelper().database;
+      await db.update(
+        'board_elements_v2',
+        {'synced': 0},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } catch (e) {
+      debugPrint('BoardProviderV2._markUnsynced error: $e');
+    }
+  }
+
+  /// Extrae las reacciones del campo `data` de un elemento.
+  Map<String, List<String>> _reactionsOf(Map<String, dynamic> data) {
+    final raw = data['reactions'];
+    if (raw is! Map) return {};
+    final out = <String, List<String>>{};
+    for (final e in raw.entries) {
+      final v = e.value;
+      out[e.key] =
+          v is List ? List<String>.from(v.map((x) => x.toString())) : <String>[];
+    }
+    return out;
   }
 
   Future<void> _deleteLocal(int id) async {

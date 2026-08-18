@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../models/board_element_v2.dart';
 import '../../../models/board_element_data.dart';
 import '../../../providers/board_provider_v2.dart';
-import '../../../app_state.dart';
 
 /// Editor de dibujo libre que se abre como bottom sheet.
 class BoardDrawingEditor extends StatefulWidget {
   final BoardProviderV2 provider;
   final VoidCallback onClose;
+  final int? targetId;
 
   const BoardDrawingEditor({
     super.key,
     required this.provider,
     required this.onClose,
+    this.targetId,
   });
 
   @override
@@ -37,7 +37,7 @@ class _BoardDrawingEditorState extends State<BoardDrawingEditor> {
   @override
   void initState() {
     super.initState();
-    _targetId = _latestDrawingId();
+    _targetId = widget.targetId ?? _latestDrawingId();
     final existing = _findTarget();
     _data = existing != null
         ? DrawingData.fromMap(existing.data)
@@ -49,7 +49,10 @@ class _BoardDrawingEditorState extends State<BoardDrawingEditor> {
         .where((e) => e.type == BoardElementType.drawing)
         .toList();
     if (drawings.isEmpty) return null;
-    return drawings.last.id;
+    // Priorizar el dibujo con mayor z-order (más reciente).
+    return drawings.isNotEmpty && drawings.last.id != null
+        ? drawings.last.id
+        : null;
   }
 
   BoardElementV2? _findTarget() {
@@ -146,10 +149,13 @@ class _BoardDrawingEditorState extends State<BoardDrawingEditor> {
             color: Color(0xFF1A1A1A),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Canvas area
+          child: ListenableBuilder(
+            listenable: widget.provider,
+            builder: (ctx, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!widget.provider.isOnline) _offlineBanner(),
+                // Canvas area
               Container(
                 height: 250,
                 margin: const EdgeInsets.all(8),
@@ -229,7 +235,7 @@ class _BoardDrawingEditorState extends State<BoardDrawingEditor> {
                     ),
                     const Spacer(),
                     Text(
-                      '${_brushSize.toStringAsFixed(1)}',
+                      _brushSize.toStringAsFixed(1),
                       style: const TextStyle(
                         color: Colors.white54,
                         fontFamily: 'monospace',
@@ -253,7 +259,34 @@ class _BoardDrawingEditorState extends State<BoardDrawingEditor> {
               const SizedBox(height: 8),
             ],
           ),
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _offlineBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF5757),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off, color: Color(0xFF0A0A0A), size: 16),
+          SizedBox(width: 8),
+          Text(
+            'Sin conexión - cambios se guardan localmente',
+            style: TextStyle(
+              color: Color(0xFF0A0A0A),
+              fontFamily: 'monospace',
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }

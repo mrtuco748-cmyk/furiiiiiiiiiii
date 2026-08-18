@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../models/board_element_v2.dart';
 import '../../../models/board_element_data.dart';
 
@@ -32,6 +31,15 @@ class _BoardChecklistRendererState extends State<BoardChecklistRenderer> {
       _data = ChecklistData(items: [
         ChecklistItem(id: _newId(), text: 'Item 1'),
       ]);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BoardChecklistRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Refrescar datos cuando el elemento cambia desde afuera (realtime/sync).
+    if (oldWidget.element.data != widget.element.data) {
+      _data = ChecklistData.fromMap(widget.element.data);
     }
   }
 
@@ -178,7 +186,7 @@ class _BoardChecklistRendererState extends State<BoardChecklistRenderer> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${_doneCount}/${_data.items.length}',
+                  '$_doneCount/${_data.items.length}',
                   style: TextStyle(
                     color: textColor.withValues(alpha: 0.5),
                     fontFamily: 'monospace',

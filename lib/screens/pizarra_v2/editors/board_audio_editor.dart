@@ -1,22 +1,21 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../models/board_element_v2.dart';
 import '../../../models/board_element_data.dart';
 import '../../../providers/board_provider_v2.dart';
-import '../../../app_state.dart';
 
 /// Editor de audio que permite grabar una nota de voz.
 class BoardAudioEditor extends StatefulWidget {
   final BoardProviderV2 provider;
   final VoidCallback onClose;
+  final int? targetId;
 
   const BoardAudioEditor({
     super.key,
     required this.provider,
     required this.onClose,
+    this.targetId,
   });
 
   @override
@@ -52,9 +51,15 @@ class _BoardAudioEditorState extends State<BoardAudioEditor> {
         final elements = widget.provider.elements
             .where((e) => e.type == BoardElementType.audio)
             .toList();
-        if (elements.isNotEmpty) {
-          final latest = elements.last;
-          widget.provider.update(latest.copyWith(
+        BoardElementV2? target;
+        if (widget.targetId != null) {
+          for (final e in elements) {
+            if (e.id == widget.targetId) target = e;
+          }
+        }
+        target ??= elements.isNotEmpty ? elements.last : null;
+        if (target != null) {
+          widget.provider.update(target.copyWith(
             data: data.toMap(),
           ));
         }

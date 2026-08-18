@@ -18,6 +18,7 @@ class BoardAudioRenderer extends StatefulWidget {
 class _BoardAudioRendererState extends State<BoardAudioRenderer> {
   final _player = AudioPlayer();
   bool _isPlaying = false;
+  bool _hasError = false;
   double _progress = 0;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration>? _durationSub;
@@ -47,7 +48,10 @@ class _BoardAudioRendererState extends State<BoardAudioRenderer> {
 
   Future<void> _togglePlay() async {
     final data = AudioData.fromMap(widget.element.data);
-    if (data.localPath == null && data.storagePath == null) return;
+    if (data.localPath == null && data.storagePath == null) {
+      setState(() => _hasError = true);
+      return;
+    }
 
     if (_isPlaying) {
       await _player.pause();
@@ -62,8 +66,10 @@ class _BoardAudioRendererState extends State<BoardAudioRenderer> {
         await _player.play(UrlSource(data.storagePath!));
       }
       setState(() => _isPlaying = true);
+      setState(() => _hasError = false);
     } catch (e) {
       debugPrint('BoardAudioRenderer.play error: $e');
+      setState(() => _hasError = true);
     }
   }
 
@@ -100,6 +106,11 @@ class _BoardAudioRendererState extends State<BoardAudioRenderer> {
               ),
             ),
           ),
+          if (_hasError)
+            const Padding(
+              padding: EdgeInsets.only(left: 6),
+              child: Icon(Icons.error, color: Colors.red, size: 20),
+            ),
           const SizedBox(width: 12),
           // Waveform
           Expanded(

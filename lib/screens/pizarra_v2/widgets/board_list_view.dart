@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../providers/board_provider_v2.dart';
 import '../../../models/board_element_v2.dart';
-import '../../../app_state.dart';
 
 const _accentFacu = Color(0xFF4FC3F7);
 const _accentRocio = Color(0xFFCE93D8);
