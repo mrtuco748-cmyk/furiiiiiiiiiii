@@ -5,7 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 import '../supabase_config.dart';
 import '../app_state.dart';
 import '../firebase_options.dart';
@@ -157,34 +160,39 @@ class NotificationService {
     String body,
     Map<String, dynamic> data,
   ) async {
-    const androidDetails = AndroidNotificationDetails(
-      'furi_notifications',
-      'F.U.R.I Notificaciones',
-      channelDescription: 'Notificaciones de la app F.U.R.I',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-      enableVibration: true,
-      playSound: true,
-    );
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-    const details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
+    if (!_initialized) return;
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'furi_notifications',
+        'F.U.R.I Notificaciones',
+        channelDescription: 'Notificaciones de la app F.U.R.I',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+        enableVibration: true,
+        playSound: true,
+      );
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+      const details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
 
-    final id = DateTime.now().millisecondsSinceEpoch.remainder(1 << 31);
-    await _localNotifications.show(
-      id,
-      title,
-      body,
-      details,
-      payload: jsonEncode(data),
-    );
+      final id = DateTime.now().millisecondsSinceEpoch.remainder(1 << 31);
+      await _localNotifications.show(
+        id,
+        title,
+        body,
+        details,
+        payload: jsonEncode(data),
+      );
+    } catch (e) {
+      debugPrint('NotificationService._showLocalNotification error: $e');
+    }
   }
 
   static Future<void> showNotification({
@@ -193,6 +201,96 @@ class NotificationService {
     Map<String, dynamic> data = const {},
   }) async {
     await _showLocalNotification(title, body, data);
+  }
+
+  static bool _tzReady = false;
+
+  /// Inicializa la zona horaria del dispositivo para `zonedSchedule`.
+  /// Sin esto, `tz.local` queda en UTC y los recordatorios programados se
+  /// disparan desfasados. Fallback: ubicación construida con el offset
+  /// actual (suficiente para zonas sin DST, como Argentina).
+  static Future<void> _ensureTz() async {
+    if (_tzReady) return;
+    _tzReady = true;
+    try {
+      tzdata.initializeTimeZones();
+      final name = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(name));
+    } catch (e) {
+      debugPrint('NotificationService._ensureTz error: $e');
+      try {
+        tzdata.initializeTimeZones();
+        final offset = DateTime.now().timeZoneOffset;
+        tz.setLocalLocation(tz.Location(
+          'device-local',
+          [tz.minTime],
+          [0],
+          [tz.TimeZone(offset.inSeconds, isDst: false, abbreviation: 'loc')],
+        ));
+      } catch (e2) {
+        debugPrint('NotificationService._ensureTz fallback error: $e2');
+      }
+    }
+  }
+
+  /// Programa un recordatorio local para una fecha futura.
+  /// No-op seguro en desktop (flutter_local_notifications no soporta
+  /// zonedSchedule en Windows/Linux).
+  static Future<void> scheduleNotification({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledDate,
+    String? payload,
+    DateTimeComponents? matchDateTimeComponents,
+  }) async {
+    if (!_initialized) return;
+    try {
+      await _ensureTz();
+      if (!scheduledDate.isAfter(DateTime.now())) return;
+      const androidDetails = AndroidNotificationDetails(
+        'furi_notifications',
+        'F.U.R.I Notificaciones',
+        channelDescription: 'Notificaciones de la app F.U.R.I',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+        enableVibration: true,
+        playSound: true,
+      );
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+      const details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+      await _localNotifications.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledDate, tz.local),
+        details,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: payload,
+        matchDateTimeComponents: matchDateTimeComponents,
+      );
+    } catch (e) {
+      debugPrint('NotificationService.scheduleNotification error: $e');
+    }
+  }
+
+  static Future<void> cancel(int id) async {
+    if (!_initialized) return;
+    try {
+      await _localNotifications.cancel(id);
+    } catch (e) {
+      debugPrint('NotificationService.cancel error: $e');
+    }
   }
 
   static Future<void> sendPushNotification({

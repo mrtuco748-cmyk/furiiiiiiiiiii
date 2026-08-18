@@ -11,7 +11,11 @@ import '../../models/schedule.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
+import '../../database/database_helper.dart';
 import 'schedule_form_screen.dart';
+import 'class_setup_wizard.dart';
+import 'class_board_screen.dart';
+import 'daily_events_screen.dart';
 
 bool isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -44,7 +48,27 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   void initState() {
     super.initState();
     _selectedDay = _focusedDay;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _checkClassSetup();
+      await _loadData();
+    });
+  }
+
+  Future<void> _checkClassSetup() async {
+    try {
+      final res = await DatabaseHelper().getAll('class_schedules');
+      if (res.isEmpty && mounted) {
+        final result = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(builder: (_) => const ClassSetupWizard()),
+        );
+        if (result == true) {
+          final pv = context.read<ClassScheduleProvider>();
+          if (mounted) pv.loadSchedules();
+        }
+      }
+    } catch (e) {
+      developer.log('checkClassSetup fallo: $e');
+    }
   }
 
   Future<void> _loadData() async {
@@ -57,10 +81,6 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       developer.log('cargar calendario fallo: $e');
       if (mounted) setState(() => _initialized = true);
     }
-  }
-
-  void _onDaySelected(DateTime day, DateTime focused) {
-    setState(() { _selectedDay = day; _focusedDay = focused; });
   }
 
   List<Schedule> _getEventsForDay(DateTime day) {
@@ -87,6 +107,20 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
     HapticFeedback.mediumImpact();
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ScheduleFormScreen(initialDate: _selectedDay)),
+    ).then((_) => _loadData());
+  }
+
+  void _openDayEvents() {
+    HapticFeedback.mediumImpact();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DailyEventsScreen(initialDate: _selectedDay)),
+    ).then((_) => _loadData());
+  }
+
+  void _openClasses() {
+    HapticFeedback.mediumImpact();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ClassBoardScreen()),
     ).then((_) => _loadData());
   }
 
@@ -129,15 +163,40 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)); }, child: Icon(Icons.chevron_left, color: _brightBlue, size: 22)),
         Text('${months[_focusedDay.month - 1]} ${_focusedDay.year}', style: GoogleFonts.bangers(color: _green, fontWeight: FontWeight.bold, fontSize: 15)),
-        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)); }, child: Icon(Icons.chevron_right, color: _brightBlue, size: 22)),
+        Row(children: [
+          _navBtn(w, h, Icons.view_day, _brightBlue, 'Día', _openDayEvents),
+          SizedBox(width: w * 0.015),
+          _navBtn(w, h, Icons.school, _green, 'Clases', _openClasses),
+          SizedBox(width: w * 0.015),
+          TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)); }, child: Icon(Icons.chevron_right, color: _brightBlue, size: 22)),
+        ]),
       ]),
+    );
+  }
+
+  Widget _navBtn(double w, double h, IconData icon, Color color, String label, VoidCallback onTap) {
+    return TapTile(
+      onTap: onTap,
+      child: Container(
+        height: h * 0.032,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _black, width: 2),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: _black, size: 13),
+          const SizedBox(width: 4),
+          Text(label, style: GoogleFonts.bangers(color: _black, fontSize: 10)),
+        ]),
+      ),
     );
   }
 
   Widget _calendarBlock(double w, double h) {
     final calTop = h * 0.05;
     final calH = h * 0.46;
-    final cs = w / 7;
     final firstDay = DateTime(_focusedDay.year, _focusedDay.month, 1);
     final lastDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
     final firstWeekday = firstDay.weekday;
@@ -227,7 +286,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
           Center(child: Text('$day', style: GoogleFonts.bangers(color: textColor, fontSize: 13))),
           if (hasEvents && !hasClasses)
             Positioned(bottom: 2, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min,
-              children: events!.where((e) => e.type != 'Clase').take(3).map((e) => Container(width: 3, height: 3, margin: const EdgeInsets.symmetric(horizontal: 0.5), decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle))).toList(),
+              children: events.where((e) => e.type != 'Clase').take(3).map((e) => Container(width: 3, height: 3, margin: const EdgeInsets.symmetric(horizontal: 0.5), decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle))).toList(),
             )),
         ]),
       ),
@@ -251,7 +310,6 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
                   itemCount: upcoming.length,
                   itemBuilder: (context, i) {
                     final e = upcoming[i];
-                    final isToday = isSameDay(e.date, DateTime.now());
                     final dateStr = '${e.date.day}/${e.date.month}';
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 5),

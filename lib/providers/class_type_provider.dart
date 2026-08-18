@@ -9,8 +9,8 @@ class ClassTypeProvider extends ChangeNotifier {
   List<ClassType> get types => _types;
 
   static final List<ClassType> defaults = [
-    ClassType(name: 'Gastronomía 1', color: 0xFF7B2D8E),
-    ClassType(name: 'Pastelería 1', color: 0xFF4CAF50),
+    ClassType(name: 'Clase', color: 0xFF00D4FF),
+    ClassType(name: 'Práctico', color: 0xFF39FF14),
   ];
 
   Future<void> loadTypes() async {

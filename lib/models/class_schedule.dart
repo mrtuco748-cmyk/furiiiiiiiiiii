@@ -49,6 +49,19 @@ class ClassSchedule {
     color: (map['color'] as int?) ?? 0xFF7B2D8E,
   );
 
+  /// Fila de Supabase: el id del servidor pasa a ser el cloudId.
+  factory ClassSchedule.fromCloudRow(Map<String, dynamic> row) => ClassSchedule(
+    cloudId: row['id'] as int?,
+    dayOfWeek: row['day_of_week'] as int,
+    classTypeId: row['class_type_id'] as int?,
+    startTime: row['start_time'] as String,
+    title: row['title'] as String,
+    endTime: (row['end_time'] as String?) ?? '',
+    professor: (row['professor'] as String?) ?? '',
+    userId: (row['user_id'] as String?) ?? '',
+    color: (row['color'] as int?) ?? 0xFF7B2D8E,
+  );
+
   ClassSchedule copyWith({
     int? id,
     int? cloudId,

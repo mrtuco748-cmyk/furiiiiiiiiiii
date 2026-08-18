@@ -15,11 +15,21 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 7, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 8, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 7) {
+    if (oldVersion < 8) {
+      await db.execute("ALTER TABLE schedules ADD COLUMN cloudId INTEGER");
+      await db.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_cloudId
+        ON schedules(cloudId) WHERE cloudId IS NOT NULL
+      ''');
+      await db.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_class_schedules_cloudId
+        ON class_schedules(cloudId) WHERE cloudId IS NOT NULL
+      ''');
+    }    if (oldVersion < 7) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS board_elements_v2 (
           id INTEGER PRIMARY KEY,
@@ -130,6 +140,7 @@ class DatabaseHelper {
         type TEXT DEFAULT 'Clase',
         color INTEGER DEFAULT 0xFF7B2D8E,
         userId TEXT DEFAULT '',
+        cloudId INTEGER,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -179,8 +190,8 @@ class DatabaseHelper {
         updatedAt TEXT NOT NULL
       )
     ''');
-    await db.insert('class_types', {'name': 'Gastronomía 1', 'color': 0xFF7000FF});
-    await db.insert('class_types', {'name': 'Pastelería 1', 'color': 0xFF39FF14});
+    await db.insert('class_types', {'name': 'Clase', 'color': 0xFF00D4FF});
+    await db.insert('class_types', {'name': 'Práctico', 'color': 0xFF39FF14});
     await db.execute('''
       CREATE TABLE IF NOT EXISTS chat_media_local (
         message_id INTEGER PRIMARY KEY,
@@ -245,6 +256,14 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
         created_at TEXT NOT NULL
       )
     ''');
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_cloudId
+      ON schedules(cloudId) WHERE cloudId IS NOT NULL
+    ''');
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_class_schedules_cloudId
+      ON class_schedules(cloudId) WHERE cloudId IS NOT NULL
+    ''');
   }
 
   Future<void> saveChatMediaLocal({
@@ -293,9 +312,10 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
     return map;
   }
 
-  Future<int> insert(String table, Map<String, dynamic> values) async {
+  Future<int> insert(String table, Map<String, dynamic> values,
+      {ConflictAlgorithm? conflictAlgorithm}) async {
     final db = await database;
-    return db.insert(table, values);
+    return db.insert(table, values, conflictAlgorithm: conflictAlgorithm);
   }
 
   Future<int> update(String table, Map<String, dynamic> values, int id) async {
