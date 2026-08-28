@@ -7,6 +7,30 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ALTA - Tokens FCM muertos (`UNREGISTERED`) acumulados en `device_tokens`
+- **Dónde**: `supabase/functions/send-push/index.ts` + tabla `device_tokens`
+- **Qué pasa**: La Edge Function mandaba push a TODOS los tokens históricos de un usuario, incluidos los vencidos (`UNREGISTERED`) por reinstalar la app o cambiar de perfil. Esos tokens nunca se borraban → se reintentaba a ciegas y el usuario afectado (Rocio) dejaba de recibir push sin error visible. Además `device_tokens` acumulaba duplicados por usuario.
+- **Fix**: `send-push` ahora filtra `created_at >= ahora-90d` y al recibir `UNREGISTERED` borra el row (RLS full-access). `supabase/migration_device_tokens_unique.sql` agrega `idx_device_tokens_user_token` (único por user+token) para dedupe. Ver historial 2026-08-28 (Push FCM).
+- **Lección**: Los tokens FCM se podan SOLO en el servidor al recibir `UNREGISTERED`; el cliente no sabe que venció hasta que la app se reabra. Si un dispositivo no reabre la app, su token queda muerto y ese usuario no recibe push (no es bug de código, es higiene de tokens).
+- **Pendiente**: el deploy de `send-push` es manual (`supabase functions deploy send-push`) — sin él la poda en la nube no está activa.
+- **Prioridad**: ~~ALTA~~ → MITIGADO EN CÓDIGO 2026-08-28 (falta deploy de la función)
+
+### ~~ALTA - Pantallas blancas en APK release (Logros/Metas)~~ 🟡 MITIGADO CON SKIA (validar en celular)
+- **Dónde**: `lib/screens/logros/logros_screen.dart`, `lib/screens/metas_screen.dart` + render Flutter en Android
+- **Qué pasa**: En el APK release (Windows andaba), Logros/Metas se veían en blanco. Diagnóstico (ver `documentacion/PANTALLAS_BLANCAS_Y_BUILD_ANDROID.md`): excepción de build/layout tragada en release, o pantalla sin frame por bugs de **Impeller** del motor (Flutter 3.44). El fondo de ventana de Android era blanco (`?android:colorBackground`).
+- **Fixes aplicados**: (1) **desactivar Impeller** en `AndroidManifest.xml` (`EnableImpeller=false`) → vuelve a Skia; (2) **fondo de ventana oscuro** `#0D0D0D` en `values/styles.xml` + `values-night/styles.xml`; (3) `LocaArranger.arrange` con guarda de dimensión 0 (evita NaN); (4) lectura de `LocalCache` dentro de try/catch en metas/retos/cartas.
+- **Lección**: En release las excepciones de build que no pasan por `runZonedGuarded` son invisibles; una excepción de `paint()` de un `CustomPainter` solo se logea y no dibuja la capa → fondo. El `?:bg` blanco del tema Android es lo que hace que una pantalla sin frame se vea BLANCA: poner `windowBackground` oscuro + desactivar Impeller es el fix estándar para estos bugs.
+- **Pendiente**: revalidar en el celular real con `adb logcat`; re-activar Impeller al subir de Flutter.
+- **Prioridad**: ~~ALTA~~ → MITIGADO 2026-08-28
+
+### ~~CRÍTICA - Reacciones simultáneas al mismo ítem se pisaban (race de "último write gana")~~ ✅ RESUELTO 2026-08-26
+- **Dónde**: `lib/providers/chat_provider.dart`, `gallery_provider.dart`, `workout_provider.dart`, `deck_provider.dart`, `board_provider_v2.dart` + Supabase
+- **Qué pasaba**: Cada provider enviaba el mapa `reactions` (o el `data`/`social` completo) en cada update. Dos reacciones simultáneas de Facu y Rocio al mismo ítem hacían que el último `.update()` en llegar pisara al anterior (BUG 2 CRÍTICO de la auditoría del pizarrón). El merge client-side en realtime era solo un parche: no garantizaba consistencia en el servidor.
+- **Fix**: Se movió el merge al servidor con **2 RPC de Postgres** y row-level lock (`SELECT ... FOR UPDATE`): `toggle_reaction` (forma `{key:[uid]}`, whitelist de tablas/columnas, max 5 keys) y `react_deck_card` (forma `{uid:emoji}` del mazo). Los 5 providers llaman a la RPC como vía de escritura y reconcilian con la respuesta autoritativa. Board usa un método dedicado `react()` para no reintroducir el race vía el push de documento completo.
+- **Lección**: Un UPDATE que envía un JSONB completo es inherentemente last-write-wins. Para garantizar consistencia ante concurrencia hay que serializar en el origen (RPC con `FOR UPDATE`), no mergear en el cliente. La RPC debe replicar EXACTO el toggle de Dart (incluido devolver el estado ORIGINAL intacto cuando se alcanza el límite de 5 keys, chequeado ANTES de mutar).
+- **Pendiente**: ejecutar `supabase/migration_reaction_rpc.sql` en SQL Editor (sin esto, los providers rompen al llamar `rpc('toggle_reaction'...`).
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-26 (en el código; falta ejecutar la migración en prod)
+
 ### ~~MEDIA - Build de Windows fallaba con TRK0005 o LNK1104 tras agregar un plugin nativo~~ ✅ RESUELTO 2026-08-17
 - **Dónde**: `flutter build windows --release` (entorno de build local)
 - **Qué pasaba**: Al agregar `flutter_timezone` (plugin con código nativo), CMake debía regenerar los .vcxproj y rebuildeaa; sin el entorno MSVC activado el build moría con `TRK0005: no se encontró CL.exe`. Además, si la app (`furi_app.exe`) está abierta, el linker no puede sobrescribir el exe: `LNK1104: no se puede abrir el archivo ...\furi_app.exe`.
@@ -233,13 +257,11 @@
 - **Fix permanente**: Refactorizar en widgets más pequeños y separar lógica
 - **Prioridad**: MEDIA
 
-### MEDIA - Sin sistema de rutas
+### ~~MEDIA - Sin sistema de rutas~~ ✅ RESUELTO 2026-08-26
 - **Dónde**: `lib/screens/` (navegación con push/pop directo)
-- **Qué pasa**: Navigator.of(context).push(MaterialPageRoute(...)) en todas partes
-- **Por qué es problema**: Dificulta navegación profunda, testing, y deep links
-- **Solución temporal**: Ninguna
-- **Fix permanente**: Implementar GoRouter o Navigator 2.0
-- **Prioridad**: MEDIA
+- **Qué pasaba**: Navigator.of(context).push(MaterialPageRoute(...)) en todas partes — sin rutas nombradas centralizadas, difícil navegación profunda y testing.
+- **Fix**: Implementado **GoRouter** (`lib/router.dart`) con route table centralizado de 22 rutas + `MaterialApp.router`. Los ~30 push dispersos se rewiringaron a `context.push`/`context.go` (ver historial 2026-08-26).
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-08-26
 
 ### ~~BAJA - Sin git history~~ ✅ RESUELTO
 - **Dónde**: Raíz del proyecto

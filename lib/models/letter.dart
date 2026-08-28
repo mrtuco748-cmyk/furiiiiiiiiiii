@@ -33,4 +33,16 @@ class Letter {
             ? DateTime.tryParse(m['created_at'] as String)
             : null,
       );
+
+  /// Una carta está "sellada" (no se puede leer) cuando el destinatario aún no
+  /// puede abrirla: tiene `scheduledOpen` futuro y es carta recibida. La carta
+  /// propia (enviada) siempre es leíble por su autor.
+  static bool isSealed({
+    required DateTime? scheduledOpen,
+    required bool isIncoming,
+    DateTime? now,
+  }) {
+    if (!isIncoming || scheduledOpen == null) return false;
+    return scheduledOpen.isAfter(now ?? DateTime.now());
+  }
 }

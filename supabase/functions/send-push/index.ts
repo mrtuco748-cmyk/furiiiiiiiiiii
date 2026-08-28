@@ -128,6 +128,7 @@ serve(async (req) => {
     .from('device_tokens')
     .select('token, platform')
     .eq('user_id', user_id)
+    .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
 
   if (error || !tokens || tokens.length === 0) {
     console.log('No tokens for user:', user_id)
@@ -170,6 +171,21 @@ serve(async (req) => {
 
       const result = await res.json()
       results.push({ ok: res.ok, status: res.status, response: result })
+
+      // Poda automatica: FCM devuelve UNREGISTERED (404) para tokens de
+      // instalaciones desinstaladas o regenerados. Si los dejamos, cada push
+      // intenta enviar a tokens muertos para siempre. Los eliminamos.
+      const errorCode = result?.error?.details?.[0]?.errorCode
+        ?? result?.error?.status
+      if (!res.ok && (errorCode === 'UNREGISTERED' || result?.error?.status === 'NOT_FOUND')) {
+        const del = await supabase
+          .from('device_tokens')
+          .delete()
+          .eq('token', t.token)
+          .eq('user_id', user_id)
+        if (del.error) console.error('Error podando token:', del.error.message)
+        else console.log('Token podado (UNREGISTERED):', t.token.slice(0, 12) + '...')
+      }
     } catch (e) {
       results.push({ error: String(e) })
     }

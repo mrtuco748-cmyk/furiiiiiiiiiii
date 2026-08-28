@@ -1,5 +1,542 @@
 # Historial de Cambios y Aprendizajes
 
+## [2026-08-28] - BUGFIX - Push FCM + Bot WhatsApp: mensajes no llegaban (limpieza de tokens y ventana dinámica del bot)
+**Resumen**: Auditoría completa del pipeline de notificaciones. Se encontró que (a) los push FCM no llegaban a Rocio porque su token FCM estaba vencido (no se re-registraba) y la tabla `device_tokens` acumulaba 20 tokens muertos (`UNREGISTERED`); (b) el bot de WhatsApp perdía eventos en silencio porque el cron de GitHub Actions corre con retrasos de 6-12h y consultaba una ventana fija de 1h, dejando fuera lo ocurrido entre corridas. Ambos corregidos.
+**Cambios realizados**:
+- `supabase/functions/send-push/index.ts`: ahora hace `select id, token, platform` filtrando `created_at >= ahora - 90d` y, al enviar, si FCM responde `UNREGISTERED` elimina ese row de `device_tokens` (RLS full-access). Antes mandaba a tokens muertos y no limpiaba. Verificado E2E: `POST /functions/v1/send-push` devolvió 200 al token vigente (id 21, Facu).
+- `lib/services/notification_service.dart`: `registerTokenAfterLogin`/`_storeToken` (insert-if-absent) — ya funcionaba; se beneficiará del índice único para upserts futuros. Rocio no tenía token vigente (último 11/08) → por eso no recibía nada; al reabrir la app se re-registra solo.
+- `supabase/migration_device_tokens_unique.sql` (nuevo): `CREATE UNIQUE INDEX idx_device_tokens_user_token ON device_tokens(user_id, token)` (dedupe de tokens duplicados por usuario). Reflejado en `supabase_schema.sql`.
+- `bot-furi/bot.js`: (1) **ventana dinámica** — persiste `last_run_at` en `bot_sessions.session_data` y consulta eventos `desde = max(last_run_previo, ahora-24h)` en vez de fija 1h, corrigiendo la pérdida silenciosa por retraso de cron (log "Ventana de deteccion: desde 2026-08-28T18:02:05.307Z"). (2) **LIDs persistidos en `bot_sessions.session_data.lids`** (se cargan desde Supabase; ya no depende de `lids.json` en CI efímero). `saveSessionToSupabase()` extra tras `verificarYNotificar` para persistir la marca. Verificado E2E: insert de mood de prueba → bot envió y confirmó ACK a 5493786513637 ("Mensaje enviado y confirmado") → dato de prueba borrado.
+- Limpieza inmediata: se eliminaron 20 rows muertos de `device_tokens` (quedó solo id 21, Facu).
+**Lecciones**:
+- FCM legacy API fue removido (jun 2024) → obligatorio HTTP v1 con service account; la Edge Function ya usa v1 (correcto). Los tokens `UNREGISTERED` NUNCA se podaban: hay que borrarlos en el servidor al recibir el error, o se siguen reintentando a ciegas.
+- Un token FCM vence cuando se reinstala la app o se cambia el perfil; si el dispositivo no reabre la app, el token queda muerto y ese usuario deja de recibir push hasta volver a abrir. No es un bug de código, es higiene de tokens.
+- El cron de GitHub Actions `*/30` NO garantiza cada 30 min en repos gratuitos: puede correr con 6-12h de retraso. Una ventana fija de 1h entonces pierde eventos. La ventana dinámica (desde la última corrida, con tope de 24h) es la cura.
+- `bot_sessions` es el único estado persistente en CI efímero: cualquier marca que deba sobrevivir entre corridas (LIDs, last_run_at) debe ir ahí, no a archivos locales gitignados.
+**Pendiente (acción manual del usuario)**: el deploy de la Edge Function `send-push` NO se pudo hacer desde esta máquina (no hay `supabase` CLI ni `SUPABASE_ACCESS_TOKEN`). Ejecutar en local: `supabase functions deploy send-push`. Sin esto, la poda de tokens en la nube no está activa (el código quedó listo).
+**Impacto**: `supabase/functions/send-push/index.ts`, `supabase/migration_device_tokens_unique.sql` (nuevo), `supabase_schema.sql`, `bot-furi/bot.js`, `lib/services/notification_service.dart`, docs.
+**Relacionado con**: D-7 (FCM), D-10 (bot), errores-conocidos (sin nuevos críticos), bot-whatsapp.md.
+
+---
+
+## [2026-08-28] - BUGFIX - Sync calendario/clases: cambios de la pareja bajan + ediciones offline no se pierden
+**Resumen**: Auditando el sync calendario↔Supabase se encontraron 2 bugs de consistencia que explicaban "la pareja edita una clase y a mi no me llega" y "edito sin internet y mi cambio nunca sube". Ambos corregidos y reflejados en el schema master.
+**Cambios realizados**:
+- `lib/providers/class_schedule_provider.dart`: el callback de realtime (`payload.eventType == 'UPDATE'`) ignoraba el cambio de la pareja (solo insertaba si no existía localmente). Ahora actualiza la fila local por `cloudId` (autoritativo), igual que el merge de `schedules`. Antes: las ediciones de la otra persona en una clase existente no se descargaban.
+- `lib/database/database_helper.dart`: migración a v9. Nueva columna `synced INTEGER NOT NULL DEFAULT 1` en `schedules` y `class_schedules` (mismo patrón dirty-flag que `board_elements_v2`), y `cloud_id` + índice único en `board_elements_v2`. Los CREATE de ambas tablas incluyen `synced`.
+- `lib/providers/schedule_provider.dart`: `_pushUnsyncedToCloud()` ahora también re-sube filas con `synced = 0` (no solo las sin `cloudId`); `updateSchedule()` marca `synced = 0` si el push a la nube falla (offline) y `synced = 1` al confirmar → la próxima carga con internet re-intenta y no pierde la edición.
+- `lib/providers/class_schedule_provider.dart`: `_syncUnsyncedToSupabase()` ahora selecciona `cloudId IS NULL OR synced = 0` y re-sube ambas; `updateSchedule()` marca `synced = 0` si `_pushToSupabase` devuelve null.
+- `supabase_schema.sql`: agregada la sección 18a `board_elements_v2` (espejo del schema SQLite local, sin la columna `cloud_id` que es solo-local) con índice, RLS `full_access_board_elements_v2` y GRANTs. Antes la tabla solo existía en `migration_board_v2.sql`, así que una DB creada solo con el schema master no tenía el pizarrón v2 en la nube. `boards` ya estaba en el master.
+**Lecciones**:
+- Un callback de realtime que solo hace INSERT-ignore silencia las UPDATE de la pareja: hay que aplicar el cambio remoto por la PK cloud (igual que el pull inicial). El merge por `updatedAt` del pull de `schedules` ya lo hacía; el realtime de clases no.
+- El patrón dirty-flag (`synced`) es la forma robusta de no perder ediciones offline: el push fallido marca la fila, y la próxima carga la re-intenta (insert si no tiene cloudId, update si ya lo tiene). Sin esto, un UPDATE offline a una fila ya sincronizada quedaba "limpia" para siempre.
+- El schema master debe contener TODAS las tablas que usa el código; si una solo vive en una migración suelta, una DB fresca (o reconstruida) queda sin ella y el sync falla en silencio.
+**Impacto**: `class_schedule_provider.dart`, `schedule_provider.dart`, `database_helper.dart`, `supabase_schema.sql`, docs.
+**Relacionado con**: D-2 (Supabase), D-3 (SQLite), errores-conocidos (sync calendario), glosario.
+
+## [2026-08-28] - BUGFIX - Tanda 1: flujo de datos Supabase → pantalla (finanzas, cartas, trivia, racha, nosotros, galería)
+**Resumen**: Auditoría completa del flujo de datos (providers + screens) encontró 6 bugs que explicaban "no se muestra / no llega" en varias secciones. Todos corregidos.
+**Cambios realizados**:
+- `lib/providers/finances_provider.dart`: era el ÚNICO provider CRUD sin RealtimeChannel → lo que cargaba la pareja no aparecía hasta reabrir la pantalla. Agregado canal `finances_realtime` sobre `transactions` con recarga silenciosa (`_reload` sin estado loading, para no parpadear). Además se quitó `.limit(100)`: con >100 transacciones las viejas desaparecían para siempre del balance y del gráfico (`period: year/all` sumaba solo las últimas 100).
+- `lib/screens/letters_screen.dart`: los `catchError` convertían CUALQUIER error de Supabase en bandeja vacía, y encima el cache local (`cache_letters_inbox/sent`) se pisaba con `[]` al fallar la red → "mis cartas desaparecieron" incluso offline. Ahora: los errores de fetch propagan al catch, el cache SOLO se escribe con datos reales, y si no hay datos ni cache se muestra el estado de error + tile de reintento (cloud_off).
+- `lib/providers/trivia_provider.dart`: (1) carrera de siembra — si ambos abrían Trivia con el banco vacío, ambos insertaban las 10 preguntas → banco duplicado y marcador desalineado. Fix: doble chequeo antes del insert + `_dedupeQuestions()` idempotente (deja el id más bajo por texto de pregunta, limpia duplicados históricos). (2) La rama "migración de schema viejo" leía `options` de un `select('id')` → siempre null y nunca migraba; ahora `_completeMissingOptions()` pide `id, question, options` y completa opciones faltantes matcheando por texto contra el banco.
+- `lib/providers/couple_provider.dart`: `_reload()` hacía `clear()` + `addAll` sobre la lista compartida — dos eventos realtime casi simultáneos (mood + completion, normal un día activo) se cruzaban: duplicados y racha 🔥 que parpadeaba/mostraba mal. Fix: los fetch llenan listas LOCALES y se asignan atómicamente; recarga serializada con guard `_reloading` + `_reloadQueued` (no se pierde ningún evento).
+- `lib/screens/nosotros_screen.dart`: TODOS los errores (carga y mutaciones) iban a `debugPrint` → sin internet parecía que la pareja no hizo nada y tocar emoción/pregunta "no hacía nada". Fix: contador de fallos en `_loadAll` — si fallan ≥3 queries (o el catch exterior), SnackBar "Sin conexión"; las 3 mutaciones (`_addMood`, `_answerQuestion`, `_sendNewQuestion`) ahora muestran `AppFeedback.error`.
+- `lib/providers/gallery_provider.dart` + `lib/screens/galeria/galeria_screen.dart`: (1) **`loadComments` nunca se llamaba desde la UI** → los comentarios de las fotos NUNCA se mostraban (bug no detectado en la auditoría inicial, apareció al verificar). Se conecta al abrir la foto fullscreen. (2) Realtime sobre `gallery_comments`: si la pareja comenta una foto que ya tengo cargada, se refrescan en vivo (antes había que cerrar y reabrir). (3) `delete()` con catch totalmente silencioso → ahora setea `_error` y la pantalla muestra SnackBar ("borré la foto y reaparece" sin explicación → ahora avisa). (4) Tile de carga (hourglass) mientras carga sin cache — antes la pantalla se veía idéntica a "no hay fotos" y a "rompió".
+**Lecciones**:
+- "El último catch en la cadena" decide lo que ve el usuario: un `catchError((_) => [])` convierte fallo de red en dato vacío, y escribir cache DESPUÉS de ese catchError pisa datos buenos con vacíos. El cache local debe escribirse SOLO con fetch exitoso.
+- Un método de provider que nadie llama es un feature entero faltante (loadComments existía, estaba testeado en el provider y jamás se invocaba desde la pantalla): al auditar "no se muestra X", verificar que el camino UI → provider → query esté CONECTADO de punta a punta, no solo que el método exista.
+- Un provider CRUD sin realtime en una app de pareja es un bug de producto, no una omisión: cada provider nuevo debería copiar el patrón load + subscribe + reload silencioso (finanzas fue el último que quedó afuera).
+- El `clear()` + `await Future.wait(addAll)` sobre una lista de instancia es una carrera esperando realtime: fetch a listas locales y asignación atómica única.
+- Los `limit(N)` "de protección" en queries de listado truncan silenciosamente historiales y cálculos agregados (balance/gráfico) — si la tabla crece, paginar en vez de limitar.
+**Impacto**: `finances_provider.dart`, `letters_screen.dart`, `trivia_provider.dart`, `couple_provider.dart`, `nosotros_screen.dart`, `gallery_provider.dart`, `galeria_screen.dart`, docs.
+**Relacionado con**: D-2 (Supabase), errores-conocidos (patrón catch silencioso), LocalCache (offline-first), análisis de uso en pareja.
+
+## [2026-08-28] - BUGFIX - Los títulos de las cartas no se veían en los bloques del mosaico
+**Resumen**: En la sección de Cartas, los bloques del mosaico "loca" no mostraban el título de las cartas (ni el icono). En `_letterChild`, el título y el icono usaban `_letterIconColor()`, que para cartas NO selladas devolvía `_letterColor()` — el MISMO color que el fondo del bloque (`e.color`). El título se pintaba del mismo color sobre el mismo color → invisible (rosa `_cInbox` sobre rosa, o morado oscuro `_cRead` sobre morado).
+**Cambios realizados**:
+- `lib/screens/letters_screen.dart`: `_letterIconColor()` para cartas no selladas ahora devuelve `Colors.white` (contraste), consistente con el preview de contenido que ya usaba `Colors.white`. Las selladas siguen con `_black` (visible sobre ámbar `_cSealed`).
+**Lecciones**:
+- El contraste dentro de un bloque brutalista (fondo == borde sólido de un solo color) requiere que el contenido (icono/título) use un color DISTINTO al del bloque. Devolver el mismo color para "contenido" y "fondo" los funde. El `resultado` de `_letterColor` es para el fondo del bloque; el color del contenido debe ser de contraste (blanco), no una referencia al fondo.
+**Impacto**: `letters_screen.dart`, docs.
+
+## [2026-08-28] - BUGFIX - Botón back de Android cerraba la app en vez de cerrar overlays/menús
+**Resumen**: Al apretar el back del celular, si había un menú/popup en pantalla que NO era una ruta del Navigator (overlays dibujados con `Stack`), el sistema operativo salía de la app entera en lugar de cerrar ese overlay. Se interceptó el back con `PopScope` en los 2 puntos compartidos que concentran el problema: el kit "loca" (13+ pantallas de mosaico) y el Home (mazo, poemas, panel de notificaciones, match).
+**Cambios realizados**:
+- `lib/widgets/loca_screen.dart`: el build se envuelve en `PopScope(canPop: _openPanel == null && !_busy)`; si hay un panel swink abierto, el back llama `_close()` (cierra el panel) y bloquea el pop (no se sale de la pantalla).
+- `lib/screens/home_screen.dart`: el `_BrutalGrid` se envuelve en `PopScope(canPop: !_notifDrawer && !_showDeck && !_showPoemas && pendingMatch == null)`. Nuevo `_handleBack()` que cierra en orden de prioridad: panel de notificaciones → mazo → poemas → match (`consumeMatch`). Solo cuando no queda ningún overlay deja escapar el back (volver a la pantalla anterior o salir de la app).
+- Tests: suite **238 verdes**, `flutter analyze` sin errores nuevos (20 issues = baseline; el único `curly_braces` de home_screen:620 es pre-existente en `_markAllRead`).
+**Lecciones**:
+- El botón back de Android solo conoce rutas del Navigator. Los overlays/menús "locos" (paneles swink de LocaScreen, mazo, drawer) viven en un `Stack` interno sin registro de navegación, así que en la pantalla raíz el back sale de la app directo. La cura es `PopScope` en el STATE que posee esos flags: `canPop` false mientras haya overlay abierto + `onPopInvokedWithResult` que lo cierra (y no hace `Navigator.pop`).
+- En Flutter 3.44 usar `onPopInvokedWithResult(didPop, _)` (el `onPopInvoked` está deprecado); siempre chequear `if (didPop) return;` antes de manejar.
+- `canPop` debe re-leerse del provider cuando el overlay se controla desde afuera (match del mazo vive en `DeckProvider.pendingMatch`): usar `context.read` en el getter para que `consumeMatch()` dispare rebuild y el back deje de bloquear.
+- Los `if (x) { ...; return; }` de una sola línea disparan `curly_braces_in_flow_control_structures`; usar bloques.
+**Impacto**: `loca_screen.dart`, `home_screen.dart`, docs.
+**Relacionado con**: D-4 (skill_visual), glosario (pantalla "loca", mazo), errores-conocidos (sin nuevos).
+
+## [2026-08-28] - BUGFIX - Pantallas blancas en release (Logros/Metas): guardas en arranger + cache local a prueba de fallos
+**Resumen**: En el APK release, Logros y Metas (y pantallas con cache local) se veían en blanco. Hipótesis raíz: una excepción de build tragada en release — (1) `LocaArranger.arrange` divide por ancho/alto y si la pantalla llega con alto 0 (transición) genera NaN → excepción de layout; (2) la lectura de cache local (`LocalCache`) corría FUERA de try en metas/retos/cartas → si SharedPreferences fallaba, la pantalla reventaba en blanco en Android.
+**Cambios realizados**:
+- `lib/widgets/loca_arranger.dart`: `arrange` ahora retorna vacío si `width <= 0 || height <= 0 || cantidad < 1` (evita división por cero → NaN → pantalla blanca).
+- `metas_screen.dart`, `retos_screen.dart`, `letters_screen.dart`: la lectura de `LocalCache` queda dentro de try/catch (si SharedPreferences falla, no rompe la pantalla).
+- Tests: suite **238 verdes**, analyze sin errores.
+**Nota honesta**: no pude reproducir en un dispositivo Android real; apliqué estas guardas defensivas (la causa más probable de "blanca en release"), pero conviene validar en el emulador/celular del usuario con logs si persiste.
+**Impacto**: `loca_arranger.dart`, `metas_screen.dart`, `retos_screen.dart`, `letters_screen.dart`, docs.
+
+## [2026-08-28] - FEATURE - Trivia con aspecto de mazo apilado (tipo tarjetas de poemas)
+**Resumen**: La pantalla de Trivia ahora se presenta como un MAZO apilado de cards (degradado, Bangers, sin borde) estilado como el mazo de tarjetas. El tile de Trivia abre un overlay a pantalla completa.
+**Cambios realizados**:
+- `lib/screens/trivia/trivia_screen.dart`: el tile de Trivia ahora usa `onTap` para abrir `TriviaDeckOverlay` (antes abría un panel). Nuevo widget `TriviaDeckOverlay`: cards apiladas (2 detrás con offset/escala/escala de opacidad) de las preguntas del banco (`provider.questions`); se desliza a izquierda/derecha para navegar; la card frontal muestra la pregunta + chips de "Tu respuesta" y "Predicción" + Confirmar (`provider.submit`). Marca "respondida" persistida (icono check en el tile).
+- La marca "respondida" del tile se mantiene.
+- Tests: suite **238 verdes**, analyze sin errores.
+**Lecciones**:
+- Para el efecto "mazo", dibujar las cards de atrás con offset/scale/opacity decrecientes y la frontal delante; el gesto `onHorizontalDragEnd` decide avanzar/retroceder por `primaryVelocity`.
+- `LocaEntry.panel` ya no abría la trivia (ahora es `onTap`); mantener `panels` con el panel viejo (sin uso) es código muerto aceptable, o se puede quitar.
+**Pendiente**: pantallas blancas de Logros/Metas en APK (sesión dedicada).
+**Impacto**: `trivia_screen.dart`, docs.
+
+## [2026-08-28] - BUGFIX/FEATURE - Sonido en Android real + bloques de finanzas cuadrados
+**Resumen**: (1) El sonido seguía sin oírse en Android: el fix de ruta anterior dejó `_assetPrefix = 'Assets/sounds/'` y como los calls pasan `'sounds/click.wav'`, la ruta se DOBLAVA (`Assets/sounds/sounds/click.wav`) → clave inválida → silencio. (2) Los bloques del mosaico de finanzas salían muy estirados/delgados.
+**Cambios realizados**:
+- `lib/services/sound_service.dart`: `_assetPrefix` → `'Assets/'` (los calls ya incluyen `sounds/...`, así el resultado final es `Assets/sounds/click.wav`, la clave correcta que busca Android).
+- `lib/widgets/loca_screen.dart`: nuevo `LocaEntry.weight` (opcional) para repartir bloques más cuadrados en el arranger.
+- `lib/screens/finanzas/finanzas_screen.dart`: pesos fijos (`saldo/ingresos/gastos/gráfico`=3, transacciones=2.5, historial/agregar=2) → bloques más equilibrados y cuadrados.
+- Tests: suite **238 verdes**, analyze sin errores.
+**Lecciones**:
+- Al corregir un path con prefijo hay que verificar la concatenación final: `'Assets/sounds/' + 'sounds/click.wav'` duplica el segmento (no suena en Android). El call ya lleva `sounds/...`, así que el prefijo correcto es `'Assets/'`.
+**Pendiente**: Trivia "mazo apilado" (apilar preguntas como las tarjetas del deck) y pantallas blancas de Logros/Metas en APK (sesión dedicada).
+**Impacto**: `sound_service.dart`, `loca_screen.dart`, `finanzas_screen.dart`, docs.
+
+## [2026-08-28] - BUGFIX/UX - Pizarra: notas se ven con su estilo real (fuente, color, imagen) en el canvas
+**Resumen**: El `_noteBody` del pizarrón renderizaba las notas como cards genéricas (monospace, sin imagen), ignorando el estilo que el usuario define en el modal (fuente, tamaño, color, alineación, negrita/italica/subrayado, imagen). El guardado ya persistía ese estilo (`el.fontFamily`, `el.textColor`, `el.fontSize`, `data['imagePath']`, etc.) — el problema era el render simplificado.
+**Cambios realizados**:
+- `lib/screens/pizarra_v2/pizarra_screen_v2.dart` `_noteBody`: ahora aplica `el.fontFamily`, `el.textColor`, `el.fontSize` (escalado para la card), `el.textAlign`, `el.isBold/isItalic/isUnderline`, y renderiza la `imagePath` de la nota (Image.file con errorBuilder). Se mantienen forma, gradiente (lineal/radial) y borde.
+- Quedan pendientes para sesión dedicada (exactitud total): patrones de fondo (12), tipos de borde (6) y audio dentro de la nota en el canvas.
+- Lección de proceso: NO editar archivos Dart con `Set-Content`/PowerShell (~colapsó el archivo a una línea); usar siempre el editor. Se recuperó con `git checkout -- <archivo>` y se reaplicó el cambio correctamente.
+**Impacto**: `pizarra_screen_v2.dart`, docs.
+
+## [2026-08-28] - FEATURE/UX - Chat sin flecha, Home: swap de mini-iconos (mazo primero), mazo con Historial (sin la X)
+**Resumen**: Ajustes de navegación y accesos pedidos por el usuario.
+**Cambios realizados**:
+- `lib/screens/chat_screen.dart`: se quita la flecha de volver del header del chat (volver por gesto/sistema).
+- `lib/screens/home_screen.dart`: en la fila de mini-iconos se intercambian el 1º y el 3º: ahora el **mazo general** (`Icons.style`, nuevo `_openMazo`) es el 1º, Trivia quedó al medio, y Poemas (`auto_stories`) pasó al 3º.
+- `lib/screens/mazo/deck_overlay.dart`: se quita la **X de la esquina** cuando hay tarjetas y en su lugar queda un botón de **Historial** (`Icons.history`) que abre `DeckHistorySheet` (re-deslizar incluido). La X (cerrar) se mantiene solo cuando no hay tarjetas (vacío) para no quedar atrapado.
+- Tests: suite **238 verdes**, `flutter analyze` sin errores (baseline).
+**Lecciones**:
+- Para no dejar al usuario atrapado en un overlay de pantalla completa de solo-swipe, al reemplazar el botón de cierre por otro hay que conservar una salida al menos en el estado vacío.
+- `showDeckHistorySheet` recibe `onReswipe`; para re-deslizar dentro del overlay hay que setear el estado de re-swipe del overlay.
+**Pendiente**: Trivia "crear/sin historial" (agregar pregunta + últimas 5 + historial) y pizarra: persistir notas + render idéntico al modal (sesión dedicada).
+**Impacto**: `chat_screen.dart`, `home_screen.dart`, `deck_overlay.dart`, docs.
+
+## [2026-08-28] - BUGFIX/UX - Swipe izquierdo del Home (panel notif) + título grande en cartas
+**Resumen**: El botón de la columna izquierda del Home no deslizaba con mouse/dedo para abrir el panel de notificaciones; el gesto no ganaba la arena. Además las cartas en el mosaico mostraban poco el título.
+**Cambios realizados**:
+- `lib/screens/home_screen.dart`: `LeftButtons` pasó de StatelessWidget a **StatefulWidget** (`_LeftButtonsState`) con arrastre robusto en el tile superior: `onHorizontalDragStart/Update` acumulan `_dragDx`, y `onHorizontalDragEnd` abre el panel si `dx > 60` o `primaryVelocity > 250`. El tile superior ahora usa `GestureDetector` (tap + drag) sin `TapTile` anidado (evita que el tap externo gane y cancele el drag). `onHorizontalDragCancel` resetea.
+- `lib/screens/letters_screen.dart`: en el mosaico, el título de cada carta ahora se muestra **grande** (fontSize 21, hasta 3 líneas) en vez de 15/1 línea.
+- Tests: suite **238 verdes**, `flutter analyze` sin errores.
+**Lecciones**:
+- Un `HorizontalDragGestureRecognizer` con SOLO `onHorizontalDragEnd` puede no ganar la arena frente al tap (no reclama durante el movimiento): hace falta `onHorizontalDragUpdate` (o `onStart`) que acumule y haga que el recognizer entre y gane; luego se decide en `onEnd` con umbral de desplazamiento + velocidad.
+- Anidar un `TapTile` (con su GestureDetector) dentro del GestureDetector que maneja el drag hace que el tap pueda robar el gesto; para un swipe robusto conviene un único GestureDetector con `onTap`+drag en el tile.
+**Impacto**: `home_screen.dart`, `letters_screen.dart`, docs.
+
+## [2026-08-28] - BUGFIX - Sync de calendario entre usuarios: eventos y clases compartidos (RLS + publicación realtime)
+**Resumen**: El usuario reportó que los eventos (`schedules`) y las clases (`class_schedules`) no se veían entre Facu y Rocio. El código de los providers ya trae TODAS las filas cloud (`select('*')`) y hace merge por `cloudId`, así que el origen estaba en la DB desplegada: o el RLS no era permisivo en esas tablas o no estaban en la publicación realtime.
+**Cambios realizados**:
+- Verificación: `schedule_provider.dart` y `class_schedule_provider.dart` ya hacen `_pushUnsyncedToCloud` + `_pullFromCloud` (pull de todas las filas) + realtime `schedules_sync` / `class_schedules_sync`. `calendar_home_screen.dart` carga ambos en `initState` (`loadSchedules`). No hacía falta tocar el código.
+- `supabase/migration_schedule_class_sync.sql` (nuevo): idempotente — `DROP`+`CREATE POLICY "full_access_schedules"` y `"full_access_class_schedules"` (FOR ALL USING true), `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, `GRANT` a anon/authenticated, y `ALTER PUBLICATION supabase_realtime ADD TABLE schedules` / `class_schedules`. **PENDIENTE ejecutar en SQL Editor** → es lo que hace que ambos usuarios vean los eventos/clases del otro.
+- Builds: `app-release.apk` (93.7 MB) y `furi_app.exe` recompilados con todo el código nuevo (verificado por strings en `app.so`). Fix para build de Windows sin daemon: pasar el entorno MSVC (`vcvarsall.bat amd64`) vía un `.cmd` temporal (evita el `&&` inválido de PowerShell 5.1).
+**Lecciones**:
+- Cuando el provider ya hace pull de TODAS las filas pero el otro usuario no ve nada, sospechar primero RLS/publicación realtime en la DB desplegada (no el código): un `DROP POLICY`+`CREATE full_access` + `ADD TABLE` a `supabase_realtime` es la cura idempotente.
+- Verificar que un build incluye el código nuevo grepeando un string de UI del binario (`app.so`), no nombres de métodos (Dart los minifica en AOT).
+**Pendiente**: en el SQL Editor, ejecutar `supabase/migration_schedule_class_sync.sql`; replicar `LocalCache` a las secciones basadas en provider.
+**Impacto**: `migration_schedule_class_sync.sql` (nuevo), builds exe+apk, docs.
+
+## [2026-08-27] - FEATURE/UX - Home: se quita la campana de notificaciones y el botón superior izquierdo abre un panel deslizante de notificaciones
+**Resumen**: En el Home se eliminó el botón de campana (notificaciones) que estaba pegado al de configuración, y el botón superior izquierdo (columna izquierda) ahora se desliza hacia la derecha para abrir, con animación dinámica, un panel de notificaciones que entra desde la izquierda.
+**Cambios realizados**:
+- `lib/screens/home_screen.dart`: se quita `notificationBadge` (la campana junto a settings); el bloque de settings queda solo con el icono de engranaje y abre Configuración.
+- Se elimina el contador `_unreadNotifications` y el método `_openNotifications` (ruta `notifications` queda sin entrada desde Home).
+- El botón superior de `LeftButtons` ahora acepta `onSwipeRight`: al deslizar a la derecha (>250 vx) abre el panel de notificaciones.
+- Nuevo `_NotificationPanel` (StatefulWidget) que entra con `SlideTransition` desde la izquierda + backdrop oscuro (controlado por `_drawerCtrl` con `easeOutCubic`). Lista notificaciones (`NotificationService.getNotifications`), estados loading/error/empty/data, en cada item abre el detalle y lo marca leído; botón "todas leídas" y cerrar.
+- Tests: suite **238 verdes**, `flutter analyze` sin errores (20 issues baseline/info).
+**Lecciones**:
+- Un gesto horizontal (swipe right) no dispara el tap del `TapTile` interno si no lo "acepta" (dragging supera el slop); por eso el drawer se abre en `onHorizontalDragEnd` con `primaryVelocity`, sin necesidad de conflicto con el tap de confeti.
+- Para un panel que entra desde un costado, `SlideTransition` con curva `easeOutCubic` + un `AnimatedBuilder` sobre un `AnimationController` propio es suficiente y no depende de page-route.
+**Pendiente**: replicar `LocalCache` al resto de secciones basadas en provider (favoritos, finanzas, galería, logros, recompensas, notificaciones, mapa).
+**Impacto**: `home_screen.dart`, docs. La ruta `/notifications` sigue existiendo en el router (sin entrada desde Home).
+**Relacionado con**: D-4 (skill_visual), análisis de uso en pareja.
+
+## [2026-08-27] - FEATURE - Cache local offline-first (piloto metas/retos/cartas): sin "carga" al entrar + sync en segundo plano
+**Resumen**: Primera entrega del cache local offline-first. Se creó un helper reutilizable `LocalCache` (SharedPreferences JSON, "últimos datos conocidos") y se aplicó a metas, retos y cartas: al entrar se muestra el cache al instante (sin tile/spinner de carga), y después se sincroniza con Supabase guardando lo nuevo. Los writes siguen refrescando el cache vía el `_load()` que ya corre al final.
+**Cambios realizados**:
+- `lib/services/local_cache.dart` (nuevo): `LocalCache.getList/setList/remove` — cache por key (`cache_<tabla>`) en SharedPreferences como JSON de `List<Map>`.
+- `metas_screen.dart` (`cache_metas`): `_loadMetas` primero muestra el cache si `_metas` está vacío, luego fetch + `setList`. Al ser los writes → `_loadMetas()`, el cache se refresca solo.
+- `retos_screen.dart` (`cache_retos`): ídem; además el tile de carga queda cubierto por el cache-first.
+- `letters_screen.dart` (`cache_letters_inbox`/`cache_letters_sent`): `_loadLetters` muestra cache de ambas listas + `setList` tras el fetch.
+- Tests: suite **238 verdes**, `flutter analyze` baseline (19 issues, sin errores).
+**Lecciones**:
+- Un "últimos datos conocidos" en SharedPreferences JSON es un primer paso de bajo riesgo para el offline-first, sin tocar SQLite ni el merge del realtime: al entrar mostrás el cache y re-reemplazás con el fetch. No bufferear escrituras offline todavía.
+- En retos había un `}` doble tras el edit (rompía el archivo): al cambiar un método completo conviene revisar el cierre (dos `}` seguidos → estructura rota; `dart analyze <archivo>` puntual lo detecta rápido).
+- Plan: replicar `LocalCache` al resto de secciones (favoritos, finanzas, galería, logros, recompensas, notificaciones, mapa) con su key propia.
+**Pendiente**: replicar el cache al resto de secciones; para el offline "escribir sin internet" real habría que pasar a SQLite con cola de dirty + merge (sesión dedicada).
+**Impacto**: `local_cache.dart` (nuevo), `metas_screen.dart`, `retos_screen.dart`, `letters_screen.dart`, docs.
+**Relacionado con**: D-2 (Supabase), D-3 (SQLite/offline), análisis de uso en pareja.
+
+## [2026-08-27] - FEATURE - Trivia "respondida" + feedback/undo AppFeedback en finanzas, cartas, favoritos y recompensas
+**Resumen**: Cierre de pendientes de la tanda anterior sobre "feeling": la Trivia ahora se marca como respondida (check + swap al marcador), y se extendió el patrón `AppFeedback` (guardado/celebración/undo) a finanzas, cartas, favoritos y recompensas.
+**Cambios realizados**:
+- `lib/screens/trivia/trivia_screen.dart`: el tile "Trivia" pasa a `Icons.check_circle` verde cuando `pv.myAnswerToday != null` (ya respondí hoy) → **marcada como respondida**.
+- `lib/screens/finanzas/finanzas_screen.dart`: al guardar transacción → `AppFeedback.saved('Transacción guardada')`; nuevo `_deleteTransaction()` borra con `AppFeedback.deleted(... UNDO)` que reinserta la transacción.
+- `lib/screens/letters_screen.dart`: al enviar carta → `AppFeedback.saved('Carta enviada')` (con guard `mounted`).
+- `lib/screens/favoritos/favoritos_screen.dart`: al guardar/editar favorito → `AppFeedback.saved('Guardado')`.
+- `lib/screens/recompensas/rewards_screen.dart`: al crear recompensa → `saved`; al marcar cumplida → `success(... celebration: true)`.
+- Nota: un `flutter analyze` full puede reportar una CASCADA de errores espurios de `undefined_method`/`expected_token` en un archivo que está bien (stale cache del daemon): al correr `flutter analyze <archivo>` puntual da 1 sola línea correcta. Ante esa cascada, debuggear con analyze de archivo puntual, no asumir que el archivo está roto.
+- Tests: suite **238 verdes**, `flutter analyze` baseline (19 issues pre-existentes, sin errores).
+**Lecciones**:
+- Marcar "respondida" de la trivia es mostrar el estado de `myAnswerToday` del provider (ya era data); basta cambiar el icono del tile según ese estado, no hace falta lógica nueva.
+- El `AppFeedback.saved` tras un `await` dispara `use_build_context_synchronously`: proteger con `if (mounted)` para no sumar warnings.
+- Extender `AppFeedback` es trivial: misma firma probada en metas; cada pantalla solo importa el helper y lo llama en las acciones de guardado/borrado/cumplido.
+**Pendiente**: cache local offline-first general + quitar el "carga" visual al entrar (grande, sesión dedicada); `AppFeedback`/undo en pizarra (borrado complejo por conectores).
+**Impacto**: `trivia_screen.dart`, `finanzas_screen.dart`, `letters_screen.dart`, `favoritos_screen.dart`, `rewards_screen.dart`, docs.
+**Relacionado con**: D-4 (skill_visual), D-2 (Supabase), análisis de uso en pareja.
+
+## [2026-08-27] - BUGFIX/UX - Sin tile de carga al entrar a las secciones "loca" + cartas muestran título y preview en el bloque
+**Resumen**: El usuario pidió que al entrar a cada sección no se vea una animación/indicador de carga. Se eliminaron los tiles de ampolleta (`Icons.hourglass_top`) que aparecían mientras cargaba data de Supabase en TODAS las pantallas "loca". Además, las cartas recibidas ahora muestran su título Y un poco del contenido dentro del bloque del mosaico (antes solo el título).
+**Cambios realizados**:
+- Eliminado el `LocaEntry(icon: Icons.hourglass_top, ...)` de carga en: `retos_screen.dart`, `metas_screen.dart`, `notifications_screen.dart`, `galeria_screen.dart`, `trivia_screen.dart`, `favoritos_screen.dart`, `finanzas_screen.dart`, `rewards_screen.dart`, `logros_screen.dart`.
+- Retos y metas: quitado el campo `_loading` y sus asignaciones (quedaba sin uso tras borrar el tile). El estado de error (`cloud_off`) se mantiene.
+- `letters_screen.dart`: nuevo `childBuilder` (`_letterChild`) en las cartas del mosaico que renderiza icono de estado + título (Bangers 15) + preview de hasta 40 caracteres del contenido (2 líneas). Las selladas solo muestran título (no spoilean contenido). Se agregó import de `widgets/brutal_style.dart`.
+- No se tocó el auto-swap (el usuario eligió solo el spinner/ampolleta de carga).
+**Lecciones**:
+- Los tiles de carga como `LocaEntry` eran estáticos (sin animación real) pero el usuario los percibe como "animación de carga": la solución fue no mostrarlos y dejar solo los estados error/empty/data.
+- Al quitar un tile condicional, revisar que el campo de estado que lo gatillaba (`_loading`) no quede huérfano (analyzer `unused_field`).
+- Para mostrar contenido en un bloque "loca" junto a ítems que usan `label`, usar `childBuilder` (tiene prioridad sobre el icono+label por defecto y convive con el peso del arranger por `label`).
+**Impacto**: 10 screens, `lib/widgets/` sin cambios, docs.
+**Relacionado con**: skill-pantallas regla 10, D-4, glosario (pantalla "loca").
+
+## [2026-08-27] - FEATURE/BUGFIX - Consistencia visual Rocio, pizarra/calendario/flecha, "X más nuevos + historial" (cartas/metas/retos/finanzas), tapToSwap y marca de vista local
+**Resumen**: Segunda tanda del polish. Se unificó el look "apagado" al entrar como Rocio (antes algunos bloques quedaban brillantes), se quitaron pasos intermedios y flechas innecesarias, se arregló el recorte del calendario, y se montó el sistema de "solo las X más nuevas + historial" en cartas (6), metas (8), retos (5) y finanzas (6). Se agregó el swap al tocar y la marca de "vista" local en cartas.
+**Cambios realizados**:
+- **Brilloso como Rocio**: `lib/theme/app_theme.dart` nuevo `identityTheme(t)` = mutea si `AppState.identity == 'Rocio'`. `lib/widgets/loca_screen.dart` lo aplica centralmente en `build` → **todos** los mosaicos/menús/submenús lucen apagados igual que el resto (antes usaban el tema lleno).
+- **Pizarra directa**: `home_screen.dart` `_openPizarra` ahora entra a `RouterRoutes.pizarra` (canvas) sin pasar por el mosaico.
+- **Calendario cortado**: `calendar_home_screen.dart` el mes usaba `GridView` con `NeverScrollable` y `childAspectRatio` → recortaba la 6ª semana abajo. Reemplazado por grilla de semanas `Expanded` que reparte la altura disponible → mes completo siempre visible.
+- **Flecha de volver**: eliminada de la barra de 3 corazones del `LocaScreen` (todas las secciones). La vuelta queda por gesto/teclado/sistema.
+- **tapToSwap**: `LocaScreen` nuevo `LocaEntry.tapToSwap` → al tocar un bloque con `swapBuilder` fuerza mostrar su info al instante (`_forceSwap`). Aplicado en `finanzas_screen.dart` a saldo/ingresos/gastos.
+- **Favoritos → guardados**: el tile "guardados" ahora abre un panel swink (lista de `allFavorited`); se eliminó el toggle `_showOnlyFavorited` muerto.
+- **Cartas (6 + historial)**: `letters_screen.dart` muestra solo las 6 recibidas más recientes; tile "enviadas" → **"historial"** que lista Recibidas y Enviadas en secciones separadas. **Marca de "vista" local**: `_readLocal` en SharedPreferences (`readLetter-{id}`) para reflejar la leída al instante; `_markReadLocal` al abrir cartas.
+- **Metas (8) / Retos (5) + historial**: `metas_screen.dart` y `retos_screen.dart` muestran 8/5 ítems en su orden + tile "historial" con panel que lista todas como cards (toggle done).
+- **Finanzas (6 + historial)**: `finanzas_screen.dart` muestra las 6 transacciones más recientes + tile "historial" con todas (editar/borrar inline).
+- **Metas feedback/undo** (de la tanda anterior): celebración al cumplir, "Meta guardada", borrado con DESHACER vía `AppFeedback`.
+- Tests: suite **238 verdes**, `flutter analyze` baseline (issues pre-existentes; sin errores en archivos tocados).
+**Lecciones**:
+- El tema brillante por sección era inconsistente: el muteo por identidad debe ser **central** (en el scaffold compartido `LocaScreen`), no por pantalla, o algunas quedan brillantes.
+- Un `GridView` con `NeverScrollableScrollPhysics` + `childAspectRatio` recorta el contenido que excede el alto: para algo que debe verse SIEMPRE completo (un mes), es mejor repartir las filas con `Expanded` y dejar que las celdas se achiquen.
+- Marcar "visto" de forma local (SharedPreferences) da respuesta instantánea sin depender del round-trip de la nube; se puede complementar con el `seen_by` cloud.
+- El sistema "X más nuevos + historial" mantiene el mosaico liviano cuando un listado crece: cap con `.take(X)` para el mosaico + un tile "historial" que muestra todo en un panel.
+- `d.globalPosition` del toque es la fuente confiable para posicionar efectos (confeti) sobre el botón.
+**Pendiente**: cache local offline-first general + quitar el "carga" visual al entrar (grande); trivias "respondidas" (marcado local); extender `AppFeedback` a favoritos/finanzas/cartas/recompensas/pizarra.
+**Impacto**: `app_theme.dart`, `loca_screen.dart`, `home_screen.dart`, `calendar_home_screen.dart`, `favoritos_screen.dart`, `finanzas_screen.dart`, `letters_screen.dart`, `metas_screen.dart`, `retos_screen.dart`, docs.
+**Relacionado con**: D-4 (skill_visual), D-2 (Supabase), análisis de uso en pareja.
+
+## [2026-08-27] - FEATURE+BUGFIX - Polish de uso real: sonido en Android, confeti donde se toca, chat con "escribiendo..."/scroll infinito, feedback/undo en metas y limpieza de botones muertos
+**Resumen**: Primera tanda del análisis de uso serio en pareja. Se corrigieron bugs de confianza (botones muertos, sonido que solo sonaba en PC, confeti que aparecía en la esquina), se agregó feeling (indicador "escribiendo...", scroll infinito del chat, celebración al cumplir metas, confirmación y deshacer), y se limpió código muerto.
+**Cambios realizados**:
+- `lib/services/sound_service.dart`: **fix del sonido en Android**. Los assets viven en `Assets/sounds/` (declarado en pubspec), así la clave real (case-sensitive) es `Assets/sounds/click.wav`, pero el código usaba `AssetSource('sounds/click.wav')`. En PC `audioplayers_windows` resuelve por filesystem e igual lo encontraba; en **Android el asset manager busca la clave exacta y falla en silencio → nada de sonido**. Se agrega `_assetPrefix = 'Assets/sounds/'` y `AssetSource(_asset('...'))`.
+- `lib/services/settings_service.dart`: `SettingsService().init()` **nunca se llamaba** en `main.dart` → los prefs de sonido no se cargaban. Se agrega la llamada en `main()`.
+- `lib/screens/settings_screen.dart`: el tile "Sonidos" era un placeholder sin acción → ahora es un **toggle funcional** (StatefulWidget): muestra volumen_on/off, persiste con `setEnableSound`, y al activar reproduce `success()` como feedback.
+- **Botones muertos** (confianza): `lib/screens/home_screen.dart` — el mini-icono "Mazo" (`Icons.style`) era `onTap: () {}`; ahora dispara confeti (sigue sin navegación, decisión del usuario). "Estudio" sigue decorativo. **Código muerto eliminado**: `providers/tasks_provider.dart` (TasksProvider) y las pantallas huérfanas `question_screen.dart`, `mood_screen.dart`, `notes_screen.dart`, `pizarra/pizarra_screen.dart` (v1).
+- **Confeti posicionado** (bug): `home_screen.dart` — el confeti salía SIEMPRE en la esquina. Causas: `_confettiAt` usaba `context.findRenderObject().localToGlobal()` (descolocaba) y varios botones pasaban `(0,0)`. Fix: normalización por pantalla en `_confettiColorsFor` + nuevo `_confettiGlobal(Offset)` que usa `d.globalPosition` del toque (confiable) en los botones chicos (pesa/finanzas/favoritos/modos/mini-iconos/columna izquierda). Los `block` grandes siguen con centro de canvas.
+- `lib/screens/login_screen.dart` + `lib/widgets/loca_screen.dart`: el Login no mostraba carga ni bloqueaba dobles toques → `LocaEntry.onTapAsync` (nuevo) + overlay de spinner mientras corre `_login`.
+- `lib/providers/chat_provider.dart` + `lib/screens/chat_screen.dart`: (1) **scroll infinito** — el chat cargaba solo los últimos 100; la lista pasó a `reverse: true` (nuevo abajo) para que el paginado ancle la vista, y `loadOlderMessages()` prepara páginas anteriores al llegar al tope. (2) **"escribiendo..."** — nueva tabla `chat_typing` (user_id PK, is_typing, updated_at) con `subscribeTyping()` (realtime), `notifyTyping(bool)` con auto-clear a 1.5s, y banner "escribiendo…" en pantalla. `supabase/migration_chat_typing.sql` **PENDIENTE ejecutar en SQL Editor**.
+- `lib/widgets/app_feedback.dart` (nuevo): helper global de SnackBar brutalista (success/saved/deleted con UNDO/error).
+- `lib/screens/metas_screen.dart`: al cumplir una meta → celebración (`AppFeedback.success(celebration: true)`); guardar → "Meta guardada"; borrar → **SnackBar con DESHACER** (`_restoreMeta` reinserta).
+- Tests: suite **238 verdes**, `flutter analyze` 19-20 issues (baseline, todos pre-existentes; sin errores en archivos tocados).
+**Lecciones**:
+- "El sonido suena en PC pero no en Android": antes de tocar el plugin, verificar que la **ruta del asset coincida EXACTO con la declarada en pubspec** (`Assets/sounds/` incluye `Assets/`). En desktop el plugin resuelve por filesystem y camufla el bug; Android exige la clave exacta.
+- Un `SettingsService()` singleton con `init()` que nadie llama es un toggle "roto" aceptado: al no cargar prefs, `_enableSound` quedaba en default true y el toggle no persistía. Revisar que cada servicio que lee SharedPreferences tenga su `init()` en `main()`.
+- El confeti "en la esquina" era doble culpa: `localToGlobal` con el RenderBox equivocado + varios callbacks pasando `(0,0)`. `d.globalPosition` del gesto es la fuente confiable de posición y no depende de boxes.
+- Paginar historial de chat "hacia arriba" con `reverse: true` (nuevo abajo) hace que el prepend de mensajes viejos **ancle la vista sin saltar** — mucho más simple que medir alturas de items de altura variable.
+- Un "deshacer" de borrado en tablas sin soft-delete se resuelve reinsertando la fila (se pierde el id original, se gana la recuperación). Para metas/retos es aceptable y da control al usuario.
+**Pendiente**: ejecutar `supabase/migration_chat_typing.sql` en SQL Editor (sin eso, `notifyTyping`/`subscribeTyping` fallan en la nube). Extender el patrón de feedback/undo/celebración a favoritos, finanzas, cartas, recompensas y pizarra (mismo `AppFeedback`).
+**Impacto**: `sound_service.dart`, `settings_service.dart`, `settings_screen.dart`, `main.dart`, `home_screen.dart`, `login_screen.dart`, `loca_screen.dart`, `chat_provider.dart`, `chat_screen.dart`, `app_feedback.dart` (nuevo), `metas_screen.dart`, `migration_chat_typing.sql` (nuevo), 5 archivos de código muerto eliminados, docs.
+**Relacionado con**: D-4 (skill_visual), D-2 (Supabase realtime), errores-conocidos (sin nuevos), análisis de uso en pareja.
+
+## [2026-08-27] - FEATURE - Calendario minimalista, clases en franja semanal, ejercicios con biblioteca/mejora/stats, mazo en 3 y fix favoritos
+**Resumen**: Cuatro mejoras pedidas por el usuario: (1) el menú de agregar de Favoritos mostraba 10 categorías y ahora solo las 4 en uso; (2) calendario y clases rediseñados con estética moderna-minimalista (celdas neutras, hoy/selección en acento cian, clase con barra de color + hora protagonista, franja semanal arriba); (3) ejercicios: rutinas ahora llevan ejercicios de una BIBLIOTECA (nombres ya registrados, chips con autollenado de última sesión), logs editables, botón "mejorar" (nuevo registro pre-cargado), stats de avance (primero/último/Δ) e historial de mejora por ejercicio; (4) el botón del mazo en Home se dividió en 3 (Poemas → deck filtrado, Trivia, y tercero Mazo general).
+**Cambios realizados**:
+- `favoritos_screen.dart`: `_catSelector` limita el picker a movie/series/game/music.
+- `calendar_home_screen.dart`: grilla minimalista (quité colores arcoíris por día) — celdas neutras `#122433`, hoy = borde cian, seleccionado = cian lleno, dots de eventos, nav con iconos + "volver a hoy".
+- `class_board_screen.dart`: `_weekStrip` (LUN..DOM con hoy/selección) arriba + agenda full-width con barra de color del tipo, hora grande y profesor.
+- `ejercicios_screen.dart`: `_libraryChips` (chips de `distinctExerciseNames`), `_dialogNewLog` soporta `existing` (editar vía `updateLog`), `_promptItem` reusa chips, `_dialogNewRoutine` ahora crea rutina con items (chips de biblioteca con autollenado de la última sesión + "+ ejercicio"), detalle de log con botones editar/mejorar, `_improvementBlock` (PRIMERO/ÚLTIMO/AVANCE + historial completo por fecha seriesxreps@peso).
+- `deck_overlay.dart`: param `category` (filtra pendientes; fallback a todas). `home_screen.dart`: bloque mazo → 3 mini-botones (menu_book poemas / school trivia / style mazo).
+- Tests suite **238 verdes**, analyze sin issues nuevos.
+**Lecciones**:
+- El autollenado de la rutina desde la biblioteca (última sesión: series/reps/peso/descanso) hace el setup del plan semanal natural y consistente con los logs: mismo origen de datos.
+- `WorkoutLog.loggedOn` es no-nullable: usar `?.`/`??` ahí dispara `dead_null_aware_expression` (lo atrapó el analyzer).
+- La grilla de calendario "minimalista" = menos color por celda (neutra) y acento solo en HOY/SELECCIÓN/eventos: el ruido era los 12 colores por día.
+- **BUILD RÁPIDO (no hace falta `flutter clean`)**: para refrescar el ápice de Dart alcanza con borrar `build\windows\x64\runner\Release\data\app.so` + `\.dart_tool\flutter_build` y correr `flutter build windows --release` (~2 min vs 20+ con clean). El exe runner no cambia (solo código C++), la BD de `Release\.dart_tool\sqflite_common_ffi` tampoco se toca. Verificado por markers en `app.so` (router viejo ausente / features nuevas presentes).
+**Relacionado con**: skill-pantallas regla 10, D-4, glosario (pantalla "loca").
+
+## [2026-08-27] - FEATURE - Tiles legibles (icono+título, tamaño por texto) + mosaico en las 4 pantallas restantes
+**Resumen**: Según feedback, los bloques "solo cuadrado con icono" no se entendían. Ahora cada tile muestra su icono de estado + el TÍTULO del ítem debajo, y el arranger reparte el área en proporción a la cantidad de texto (más texto → bloque más grande), manteniendo el mosaico desordenado. Además se aplicó el mosaico a las 4 pantallas que faltaban (Chat, Calendario, Pizarra, Ejercicios) con wrappers de entrada.
+**Cambios realizados**:
+- `lib/widgets/loca_arranger.dart`: `arrange()` acepta `weights` por ítem — el slicing reparte el área proporcional a los pesos (con jitter de seed y fracción acotada 0.4–0.6 para mantener rectángulos equilibrados).
+- `lib/widgets/loca_screen.dart`: `LocaEntry.label` (título corto) → el tile renderiza `icono + título` en Bangers (2 líneas, ellipsis); pesos automáticos `1 + len/14` (clamp 1–8).
+- Labels cargados en las 13 pantallas: títulos de retos/metas/cartas/recompensas/notificaciones/logros, descripción de transacciones, categorías de favoritos (pelis/series/juegos/música), saldo/ingresos/gastos, Facu/Rocio, etc.
+- `lib/screens/mosaico_wrappers.dart` (nuevo): `ChatMosaicoScreen`, `CalendarMosaicoScreen` (calendario+clases), `PizarraMosaicoScreen`, `EjerciciosMosaicoScreen` (4 tiles Hoy/Ejercicios/Retos/Stats). Home y Nosotros navegan a los wrappers; el contenido funcional original queda detrás (rutas viejas intactas). `EjerciciosScreen` gana `initialTab`.
+- Tests: `loca_arranger_test` +2 (pesos → bloque más grande; sin pesos balanceado). Suite **238 verdes**.
+**Lecciones**:
+- "Que se entienda qué es cada bloque" ≠ texto grande: icono de estado + título chico en Bangers debajo es suficiente, y el título alimenta el tamaño (peso) del bloque → la legibilidad y la variación de tamaño salen de los mismos datos.
+- La fracción de corte debe acotarse (0.4–0.6) aunque el peso lo pida, o se generan bloques tira; el peso se aplica suave.
+- Para pantallas con input/canvas (chat, grilla, canvas, tabs), el mosaico es una capa de entrada (wrapper) que reusa la pantalla funcional: no hay que reescribir la funcionalidad para tener el look.
+**Relacionado con**: skill-pantallas regla 10, D-4, glosario (pantalla "loca").
+
+## [2026-08-27] - FEATURE - Sistema "Loca" extendido a 13 pantallas + mosaico apilado con espacio y columna de acciones fija
+**Resumen**: Continuación de la transformación visual. Se refinó el mosaico (columnas apiladas masonry con espacio entre bloques, sin rotaciones) y se fijaron los botones de acción (+, escribir, enviadas, gps) en una COLUMNA LATERAL fija (mismo lugar y tamaño; los ítems se adaptan). Se convirtieron 9 pantallas más al patrón "loca": Notificaciones, Logros, Recompensas, Configuración, Login, Trivia, Finanzas, Favoritos y Galería.
+**Cambios realizados**:
+- `lib/widgets/loca_arranger.dart`: reescrito a "columnas apiladas" (masonry) — distribuye en hasta 4 columnas de ancho variable y apila bloques de altura variable dentro de cada una; rotación siempre 0 (sin tiles torcidos); dims mínimos 12%.
+- `lib/widgets/loca_screen.dart`: gap (4–12px) entre bloques vía inset; `LocaEntry.isAction` + columna lateral derecha fija (`_actionColumn`) donde viven los botones de acción con tamaño fijo. `LocaEntry.panels` con `(context, close)`.
+- Pantallas convertidas: **Notificaciones** (1 tile × notificación leída/no leída + "marcar todas" lateral), **Logros** (tile × logro desbloqueado/bloqueado + swap "X/N" + cajita lateral), **Recompensas** (tile × recompensa cumplida/pendiente + swap de saldo + alta lateral), **Configuración** (tiles cambiar-sesión/sonido), **Login** (Facu rojo/Rocio violeta full-screen), **Trivia** (tile swap al marcador + juego completo en panel), **Finanzas** (tiles balance/ingreso/gasto con swap + gráfico en panel + 1 tile × transacción + alta lateral), **Favoritos** (tile × categoría → panel con lista + swap de guardados + alta lateral), **Galería** (mosaico de fotos con thumbnail + subir lateral + detalle fullscreen).
+- Tests: suite **236 verdes** (sin cambios de comportamiento; arranger ya testeado). `flutter analyze` baseline.
+**Lecciones**:
+- Un UNA pantalla "loca" de datos se traduce "N tiles homogéneos": cada ítem es a la vez el "visto/no visto" (check/círculo/leída/candado) y el botón que abre SOLO ese ítem. Los modales de detalle/edición existentes se reusan tal cual (sólo cambia la entrada).
+- Las pantallas interactivas (Chat, Calendario, Pizarra, Ejercicios) NO caben en "icono + swink" sin perder funcionalidad (input/grilla/canvas): quedan con su UI funcional; proponer envolverlas en tiles que abran su contenido a fullscreen.
+- El `flutter build windows --release` incremental no refresca `app.so` (stale): cada cambio de Dart exige `flutter clean` + rebuild completo (ver entrada anterior).
+**Aprendizaje build**: cerrar `furi_app.exe` antes de linkear (LNK1104).
+**Impacto**: `loca_arranger.dart`, `loca_screen.dart`, 9 screens, docs. Exe recompilado y BD local restaurada.
+**Relacionado con**: skill-pantallas regla 10, D-4, glosario (pantalla "loca").
+
+## [2026-08-27] - FEATURE - Piloto "loca" iterado: un bloque por ítem (visto/no visto) en lugar de "un botón lista todo"
+**Resumen**: Ajuste del piloto según feedback: el usuario no quería un único botón-icono que abriera la lista entera, sino **UN bloque-icono gigante por cada reto/meta/carta** repartido en el mosaico, con icono de estado "visto/no visto" (check = hecho/leída, círculo = pendiente, candado = carta sellada) y al apretar un ítem se abre SÓLO ese ítem en el panel.
+**Cambios realizados**:
+- `lib/widgets/loca_screen.dart`: `LocaEntry` gana `childBuilder` (contenido custom del bloque, p. ej. icono de estado) además de `icon`/`swapBuilder`.
+- `lib/screens/retos_screen.dart`: 1 tile por reto (check_circle hecho / radio_button_unchecked pendiente, colores de paleta ciclando por índice) + tiles loading (hourglass) / error (cloud_off, tap=reintentar) / "+" crear. Panel por reto (solo ese reto): título + autor + acciones toggle/editar/borrar.
+- `lib/screens/metas_screen.dart`: igual (check/hecho, trofeo de autor).
+- `lib/screens/letters_screen.dart`: 1 tile por carta recibida con estado de leída (`mark_email_read`/`markunread`) y selladas (candado ámbar); tile Enviadas (panel con lista) y tile "+" escribir. Panel por carta (título+cuerpo, o candado "se podrá abrir…" si sellada).
+- Loading/error ahora son tiles visibles (icon-only) en el mosaico, no banners de texto.
+**Lecciones**:
+- `flutter build windows --release` INCREMENTAL devuelve "√ Built" pero NO regenera `data/app.so` con los cambios de Dart (el snapshot queda stale; verificado grepeando strings del binario). Solo `flutter clean` + rebuild garantiza el código nuevo. El `app.so` limpio respondió también por UTF-16 para acentos (los check ASCII como los channel strings bastan para validar).
+- El símbolo de estado como tile único (check/círculo/candado) comunica "visto/no visto" sin texto y cada panel de detalle es 1:1 con su tile: mismo índice en `entries` y `panels`.
+**Impacto**: 1 widget + 3 screens. Suite **236 verdes**. `flutter analyze` baseline. Exe Windows recompilado con clean (verificado: channel strings + `LocaArranger` + diseño por-ítem presentes en `app.so`).
+**Relacionado con**: skill-pantallas regla 10, D-4.
+
+## [2026-08-27] - FEATURE - Sistema "Loca" estilo Nosotros + piloto en 4 pantallas (fase 1 de la transformación visual)
+**Resumen**: Se creó el kit compartido para convertir TODAS las pantallas (excepto Home y Mazo) al sistema de la pantalla Nosotros: mosaico de bloques-icono gigantes que ocupa todo el lienzo, cero texto a simple vista, swaps automáticos sobre el contenido y paneles swink para leer/manipular los datos. Como piloto se rediseñaron Retos, Metas, Cartas y Mapa; el patrón queda listo para replicar al resto.
+**Cambios realizados**:
+- `lib/widgets/loca_arranger.dart` (nuevo): `LocaRect` + `LocaArranger.arrange(width, height, cantidad, seed)` — mosaico determinístico que divide el lienzo en N bloques sin solapamiento (slicing recursivo aleatorio con semilla, corta preferentemente la dimensión larga y clampa contra micro-tiras <12%), con rotaciones de la paleta brutalista (0 o ±0.06/±0.12 rad). Ocupación del 100% del lienzo.
+- `lib/widgets/loca_screen.dart` (nuevo): `LocaEntry` (icon + color + panel/onTap + swapBuilder), `LocaScreen` (fondo ConcretePainter + header con volver/corazones sin texto + entradas distribuidas por seed + backdrop + paneles swink con animación scale/opacity de 400ms tipo Nosotros), `LocaScreen.panel` (shell brutalista) y `LocaScreen.closeIcon`.
+- `lib/screens/retos_screen.dart`: reescrito a LocaScreen — bloque bandera (swap con el próximo reto, abre panel con lista toggle/editar/borrar) + bloque "+" (dialog de crear). Realtime nuevo en `challenges`.
+- `lib/screens/metas_screen.dart`: reescrito a LocaScreen — bloque trofeo (swap con la próxima meta, panel con lista) + "+". Realtime nuevo en `goals`.
+- `lib/screens/letters_screen.dart`: reescrito a LocaScreen — Recibidas (swap con último correo), Enviadas, Escribir (mantiene la vista de composición completa con programación de apertura). Se eliminaron las pestañas texto.
+- `lib/screens/mapa_screen.dart`: reescrito a LocaScreen — bloque mapa (swap con "X km", panel con distancia/pines/estado) + botón GPS (compartir/ingreso manual).
+- Tests TDD: `test/widgets/loca_arranger_test.dart` (8): cantidad exacta, partición total sin overlap, dentro del lienzo, determinismo por seed, seeds distintos → distribuciones distintas, rotaciones de paleta, sin micro-tiras, aspect acotado.
+- Docs: `skill-pantallas.md` (regla 10 "Sistema Loca"), `glosario.md` (pantalla "loca"), `arquitectura.md` (widgets).
+**Lecciones**:
+- El slicing recursivo aleatorio con semilla da "loca" garantizando: (a) mayoría de la long axis para no degradar en tiras, (b) clamp de dimensión mínima 12% para bloques usables, (c) rotaciones chicas (±0.12 rad) que se ven orgánicas pero no rompen la hit-target. El arranger es lógica pura testeable — misma técnica que CoupleStats/WorkoutStats.
+- Cero texto "a simple vista" NO significa cero texto: el contenido llega en el swap (títulos de retos/metas, preview de cartas, distancia) y en los paneles (listas, textos de cartas). Es una capa de presentación (la entrada es solo iconos) que reusa la lógica CRUD existente.
+- `LocaScreen.panels` son builders con firma `(context, close)` para que el contenido interno pueda cerrar el swink (botón X); el estado de apertura vive en el widget compartido, no en cada pantalla.
+- El swap auto-programado exige que el builder lea el estado vivo (la pantalla provee `swapBuilder` con los datos actuales), así al recargar por realtime el swap muestra el ítem nuevo.
+- `LocaArranger` NO debe solapar bloques: el mosaico + rotaciones ya se ve "loco" y evita pelea de taps en las zonas de intersección.
+**Pendiente**: replicar el patrón a las demás pantallas (settings, notifications, trivia, finanzas, galería, favoritos, ejercicios, logros, rewards, chat, calendar, pizarra, login) en tandas, validando con el usuario.
+**Impacto**: `loca_arranger.dart` (nuevo), `loca_screen.dart` (nuevo), 4 screens reescritas, 1 test nuevo (8 casos). Suite **236 verdes** (antes 228). `flutter analyze` 23 (baseline, sin errores nuevos).
+**Relacionado con**: D-4 (estilo brutalista / skill_visual), convenciones (solo iconos), skill-pantallas regla 10, FURI-Nosotros-Skill (swink/swap), glosario.
+
+## [2026-08-27] - REFACTOR - Estilo "Nosotros" unificado en todas las pantallas (excepto Home y Mazo)
+**Resumen**: Refinamiento profundo de TODAS las pantallas navegables (excepto Home, excluida por el usuario, y Mazo, que conserva su diseño deliberado de degradados sin bordes) para alinearlas 100% al sistema de estilo de la pantalla Nosotros: fondo ConcretePainter, tipografía Bangers, bloques brutalistas (borde==relleno, esquinas redondeadas, sombra negra dura), y TapTile en todo lo tappable. Se detectó que la mayoría de pantallas ya usaban este sistema parcialmente; el trabajo cubrió las brechas y pulió la consistencia.
+**Cambios realizados**:
+- `lib/widgets/brutal_style.dart` (nuevo): `BrutalStyle` con helpers estáticos `bg`, `fillIcon`, `card`, `block`, `clip`, `iconAction` — extrae y generaliza `btnBlock`/`fillIcon`/`bg` que vivían hardcodeados en `nosotros_screen.dart` para que todas las pantallas compartan el mismo sistema.
+- **Chat** (`chat_screen.dart`, `chat/widgets/*`): `fontFamily monospace` → Bangers w900, `GestureDetector` → `TapTile`, sombras duras en header/banners/input, botones +/mic/enviar → TapTile.
+- **Calendario** (calendar_home, daily_events, schedule_form, class_board, class_setup): fondos semitransparentes → sólidos, negro puro → `#0D0D0D`, `monospace` → Bangers, `GestureDetector` → `TapTile`, borde==relleno en cards (el setup wizard además pasó de fondo verde plano a ConcretePainter + cian #00D4FF de sección).
+- **Ejercicios / Galería / Favoritos / Finanzas**: ejercicios ganó el fondo ConcretePainter (era el gap crítico) + sombras duras en paneles; galería/favoritos/finanzas ganaron borde==relleno + sombra dura en bloques; finanzas y favoritos convirtieron texto decorativo de diálogos (X/OK/Gasto→Ingreso) en iconos y acciones a TapTile.
+- **Notes / Question / Mapa / Notifications / Settings / Login / Mood**: reemplazado `fontFamily: 'monospace'` restante por GoogleFonts.bangers.
+- **Logros / Recompensas / Trivia**: ya usaban `BrutalStyle.bg`; se limpiaron los `monospace` residuales a Bangers.
+- **Pizarra v1 + Pizarra v2 (solo UI circundante)**: pizarra v1 ganó fondo ConcretePainter + header/herramientas con bloque estándar; pizarra v2 convirtió botones/hints/banners/diálogos a Bangers + TapTile conservando intacto el grid del canvas, el InteractiveViewer y los renderers.
+- `nosotros_screen.dart`: solo limpieza de warnings (sin cambios funcionales).
+**Lecciones**:
+- Antes de una migración masiva de estilo, hacer un grep de brechas (ConcretePainter / Bangers / TapTile por archivo): la mayoría de pantallas ya compartían el sistema y el trabajo real era cerrar las brechas (fondos faltantes, `monospace` residuales, semitransparentes, negro puro).
+- `ConcretePainter` está detrás de `BrutalStyle.bg`; verificar por `BrutalStyle.bg` y no textualmente por `ConcretePainter` (las pantallas nuevas lo usan a través del helper).
+- Los errores de compilación introducidos por cambios paralelos fueron 2 y triviales («const» mal puesto en un `SnackBar` con `GoogleFonts.bangers` y en un `Positioned.fill` con `CustomPaint`). Validate siempre con `flutter analyze` después de batches paralelos.
+- Conservar diseños deliberados documentados: el mazo (degradados sin borde) y el canvas de la pizarra v2 (grid + pan/zoom) no se tocan; solo la UI circundante.
+**Impacto**: `widgets/brutal_style.dart` (nuevo), ~25 archivos de pantallas, `nosotros_screen.dart` (limpieza). Suite **228 tests verdes**, `flutter analyze` sin errores (22 issues, bajo el baseline 23).
+**Relacionado con**: D-4 (estilo brutalista / skill_visual), convenciones (solo iconos), skill-pantallas.
+
+## [2026-08-26] - FEATURE - Fase 1: puntos automáticos, mapa/distancias y más logros 🪙📍🏅
+**Resumen**: Primera tanda de la "capa de juego/unicidad" (Fase 1). Se automatizó la ganancia de puntos (antes `RewardsProvider.addPoints` era un hook sin llamar), se hizo real la pantalla de Mapa/Distancia (era un placeholder de 2.3 km falso), y se amplió la colección de logros de pareja de 8 a 13. El aviso del bot de logro desbloqueado (1.1) ya estaba implementado (categorías #21/#22 de bot.js).
+**Cambios realizados**:
+- **1.2 Puntos automáticos** (`rewards_provider.dart`): nuevo `awardOnce(userId, reason, delta)` IDEMPOTENTE — consulta si la razón ya fue aplicada a ese usuario antes de insertar (el ledger `couple_points` no tiene constraint único), evitando duplicados por realtime/reintentos. Hooks al action-site (no en realtime): mood registrado en `nosotros_screen._addMood` (+1, `mood-$fecha`), día de entrenamiento marcado en `ejercicios_screen._markBtn` (+2, `workout-$fecha`), match del mazo en `home_screen` al cerrar el overlay (match +5 a AMBOS, `match-$cardId`). Cada provider se captura ANTES del await (evita `use_build_context_synchronously`).
+- **1.3 Mapa/Distancia real** (+`geolocator`): modelo `lib/models/couple_location.dart` (`CoupleLocation` + `distanceKm` haversine pura testeable), `LocationProvider` (carga/upsert realtime en `couple_locations` PK user_id, `coupleDistanceKm`), tabla `couple_locations` (migración + schema master, **pendiente ejecutar en SQL Editor**), `mapa_screen.dart` reescrito — botón "Actualizar ubicación" usa GPS (geolocator) con fallback a entrada manual en desktop/denegado; muestra distancia + estado por usuario.
+- **1.4 Más logros** (`couple_achievement.dart` / provider): `AchievementSnapshot` +5 campos (moodCoupleStreak, totalWorkouts, bothSharedLocation, hasFulfilledReward, bothAnsweredTrivia) y 5 logros nuevos: `mood_streak_7`, `workouts_50`, `location_shared`, `reward_fulfilled`, `trivia_day`. Provider computa los nuevos campos (racha de ánimo solo-moods con `CoupleStats.streakFor`, conteo de completions, consultas a `couple_locations`/`couple_rewards`/`question_answers`). El álbum usa `CoupleAchievements.all.length` → "X de 13" se actualizó solo.
+- `main.dart`: + `LocationProvider` (20º provider).
+- Tests TDD: `couple_location_test.dart` (5: haversine BA→Córdoba ~647 km, mismo punto=0, falta dato=0, round-trip, fecha ausente) + `couple_achievement_test.dart` (+5 para los logros nuevos). Suite total **228 verdes** (antes 218). `flutter analyze` 22 (baseline, sin errores). `node --check bot.js` OK.
+**Lecciones**:
+- El hook de puntos debe vivir en el ACTION-SITE (escritura), nunca en un callback realtime: el realtime dispara por cada cambio de fila y duplicaría puntos. `awardOnce` con chequéo por `reason` es la red de seguridad contra reintentos/doble-dispositivo.
+- `distanceKm` por haversine da distancia en LÍNEA RECTA: Buenos Aires→Córdoba da ~647 km, no los ~695 de ruta. Para asserts usar el valor haversine real, no la distancia vial.
+- La pestaña "Mapa" era un placeholder con valor hardcodeado; para el fallback de GPS en desktop/permiso-denegado, un diálogo manual de lat/lng es suficiente y evita romper el build de Windows (geolocator tiene soporte limitado en desktop).
+- `coupled_achievements` claves UNIQUE + `AchievementSnapshot` con defaults 0/false hacen que sumar logros nuevos no rompa los tests existentes de `earnedCodes` (el snapshot vacío sigue → isEmpty).
+- El bot ya tenía la categoría de logro (1.1): confirmar lo existente antes de "implementar" de nuevo (historiel/rewards ya lo documentaba como #21/#22).
+**Pendiente**: ejecutar `supabase/migration_couple_locations.sql` en SQL Editor (para que el mapa funcione contra la nube). Verificar build de Windows tras sumar `geolocator` (plugin nativo → puede exigir `vcvarsall.bat amd64` con TRK0005, según errores-conocidos).
+**Impacto**: `rewards_provider.dart`, `nosotros_screen.dart`, `ejercicios_screen.dart`, `home_screen.dart`, `couple_location.dart` (nuevo), `location_provider.dart` (nuevo), `mapa_screen.dart`, `couple_achievement.dart`, `couple_achievements_provider.dart`, `main.dart`, `pubspec.yaml` (+geolocator), `supabase/migration_couple_locations.sql` (nuevo), `supabase_schema.sql`, 2 tests nuevos, docs.
+**Relacionado con**: D-2 (Supabase), D-8 (points/recompensas), Fase 1 del roadmap, FURI-Nosotros-Skill (distancia), glosario.
+
+## [2026-08-26] - FEATURE - Router GoRouter (último ítem de la Fase 0 del roadmap)
+**Resumen**: Se reemplazó la navegación con `Navigator.push(MaterialPageRoute)` dispersa (~30 call sites en 8 archivos) por un **route table centralizado con GoRouter**. El arranque login/home deja de usar `home:` en MaterialApp y se resuelve con un `redirect` basado en sesión.
+**Cambios realizados**:
+- `pubspec.yaml`: + `go_router: ^17.5.0`.
+- `lib/router.dart` (nuevo): `appRouter` (GoRouter) + `RouterRoutes` (consts de ruta) + `navigatorKey` (movido desde main.dart). 22 rutas: login, home, settings, notifications, nosotros, calendar, trivia, finanzas, galeria, favoritos, pizarra, ejercicios, logros, rewards, chat, retos, cartas, metas, mapa, scheduleForm, dailyEvents, classBoard, classSetup. Las pantallas que reciben `AppMode` lo toman por `state.extra` (helper `_mode(state)` con fallback `AppMode.dark`). `redirect` gatea `/`, `/login` y `/home` según `AppState.myId` (corre dentro de runApp, ya con sesión cargada → no se pudo usar `initialLocation`, que se evaluaría en top-level antes de `loadSession`).
+- `lib/main.dart`: `MaterialApp` → **`MaterialApp.router(routerConfig: appRouter)`** (Flutter 3.44 separó el router en el constructor `.router`; el base ya NO acepta `routerConfig`). Eliminado `navigatorKey` local y el parámetro `startDirect` de `FuriApp` (el redirect resuelve login/home). Escape→maybePop sigue usando `navigatorKey` (ahora de router.dart).
+- Rewire de todos los push: `home_screen.dart` (11), `calendar_home_screen.dart` (5, +`context.push<bool>(classSetup)` con resultado), `daily_events_screen.dart` (3, con inicial+schedule por extra), `nosotros_screen.dart` (5), `logros_screen.dart` (1), `login_screen.dart` (`context.go('/home')` en vez de `pushReplacement`), `settings_screen.dart` (`context.go('/login')` en vez de `pushAndRemoveUntil`). Los flujos que devuelven resultado (`_checkClassSetup` bool; editar form con `Schedule` por `extra`) usan `context.push`, que propaga el `pop`. Poda de imports de pantallas que quedaron sin uso directo (los referencias ahora el router).
+- Tests: suite **218 verdes** (widget_test + providers_test siguen pasando: `FuriApp()` → redirect a `/login` sin sesión). `flutter analyze` 22 (por debajo del baseline 23, gracias a la poda de imports sin uso).
+**Lecciones**:
+- En Flutter 3.44 (y +3.10) `routerConfig` NO es un parámetro del constructor base de `MaterialApp`: es de **`MaterialApp.router`**. El error `The named parameter 'routerConfig' isn't defined` era REAL, pero parecía un glitch del analyzer porque aparecía/desaparecía intermitentemente (cache del daemon durante el warmup); la confirmación definitiva la dio el compilador en `flutter test`, no el analyzer solo.
+- `initialLocation` en GoRouter se evalúa al construir el `final` top-level del módulo de router (antes de `main()` y antes de `AppState.loadSession()`), así que a esa altura `AppState.myId` aún es null → arrancaría siempre en `/login` para usuarios ya logueados. La solución es un `redirect` (corre dentro de `runApp`, con la sesión ya cargada por `main()`).
+- Los screens que reciben objetos (AppMode, Schedule, DateTime) no se pueden ruteear por string: se pasan por `state.extra` y el builder hace el cast/despacho (`is Schedule → ScheduleFormScreen(schedule:)`, `is DateTime → ...(initialDate:)`). Los flujos con retorno tipado (`push<bool>`) se cubren con `context.push<T>`, que propaga el resultado del `pop`.
+- La app antes importaba pantallas solo para navegar a ellas; con el router centralizado esas pantallas las importa `router.dart`, así que se pudaron los imports directos que quedaron sin uso (por eso analyze bajó de 23 a 22).
+- `navigatorKey` debe vivir donde se construye el router (router.dart) y pasarse a `GoRouter`, para que el callback Escape→maybePop apunte al mismo Navigator que GoRouter crea.
+**Pendiente**: ninguno. (Al no haber deep-links reales ni auth, el router no requiere config extra; si se agregan rutas, sumarlas a `RouterRoutes` + tabla de `appRouter`.)
+**Impacto**: `pubspec.yaml`, `router.dart` (nuevo), `main.dart`, 8 screens, docs.
+**Relacionado con**: D-14 (router), Fase 0 del roadmap, errores-conocidos (sin sistema de rutas RESUELTO).
+
+## [2026-08-26] - FEATURE - Merge atómico de reacciones en Postgres (RPC server-side, Fase 0)
+**Resumen**: Último ítem grande de la Fase 0 (junto al router). Se eliminó la race condition de "último write gana" en las reacciones: antes cada provider enviaba el mapa `reactions` completo en cada update, y dos reacciones simultáneas (Facu + Rocio) al mismo ítem pisaban la del otro (BUG 2 CRÍTICO de la auditoría del pizarrón). Ahora el merge ocurre DENTRO de Postgres con row-level lock (`SELECT ... FOR UPDATE`), y los providers hacen optimistic local + reconciliación con la respuesta autoritativa de la RPC.
+**Cambios realizados**:
+- `supabase/migration_reaction_rpc.sql` (nuevo): 2 RPC idempotentes + GRANT a anon/authenticated:
+  - `toggle_reaction(target_table, target_col, row_id, reaction_key, user_id)`: forma `{key:[uid]}`, max 5 keys, toggle on/off (1 reacción por usuario, se quita de todas las keys y se agrega/quita de la key objetivo). Espejo exacto de `Message.toggleReaction`/`BoardSocialData.withToggledReaction`. Whitelist estricta de `(tabla, columna)` para evitar SQL injection en identificadores dinámicos; cubre `messages.reactions`, `gallery.reactions`, `workout_*.social` y `board_elements_v2.data`. Bump de `updated_at` solo donde la columna existe. **PENDIENTE ejecutar en SQL Editor**.
+  - `react_deck_card(row_id, user_id, reaction)`: forma `{uid:emoji}` (mazo), `jsonb_set` atómico + bump `updated_at`.
+- `supabase_schema.sql`: RPCs (#29a/29b) agregadas al schema master (mismo origen que `notify_new_message`).
+- `lib/providers/chat_provider.dart`, `gallery_provider.dart`, `workout_provider.dart`, `deck_provider.dart`, `board_provider_v2.dart`: rewire de las escrituras de reacciones para llamar a la RPC en vez de `.update({...reactions})` con mapa completo. Mantienen optimistic en memoria + rollback a `_error` en fallo y reconcilian contra el mapa autoritativo devuelto por la RPC.
+  - workout: nuevo helper `_reactViaRpc()` (usa `_reactViaRpc`); solo los métodos de reacción (`toggleLogReaction/Routine/Challenge`) cambian — los de comentarios siguen por el update de documento.
+  - board: nuevo método `BoardProviderV2.react()` para **no** disparar el push de documento completo (que reintroduciría el race); `board_element_options.dart` llama `pv.react(...)` en vez de `pv.update(...)`.
+  - deck: `react()` usa `react_deck_card`; el `reactLocal` optimista (que setea `_pendingMatch`/match) se conserva.
+- Tests: `test/services/reaction_merge_contract_test.dart` (nuevo, 6 tests) que documenta en lógica pura el contrato que la RPC DEBE replicar (dos usuarios misma key se preservan, toggle off, mover entre keys, max 5 keys, reemplazo deck, match). Suite total 218 verdes (antes 212). `flutter analyze` 23 (baseline, sin errores; el único en archivos tocados es `gallery_provider.dart:110` preexistente).
+**Lecciones**:
+- El merge client-side en realtime (que ya existía como parche) NO garantiza consistencia en el servidor: el UPDATE final con el mapa completo siempre puede pisar al concurrente. La RPC con `FOR UPDATE` serializa fila a fila y es la defensa real en el origen.
+- Las reacciones viven en **3 formatos distintos** (messages/gallery/board/workout = `{key:[uid]}`; deck = `{uid:emoji}`), así que no hay un RPC genérico de una talla: uno cubre la forma A con whitelist de tablas/columnas y otro la B.
+- En el límite de 5 keys, `toggleReaction` de Dart devuelve el mapa ORIGINAL intacto (no el mutado): el SQL debe chequear el límite ANTES de mutar, o devolvería un estado al que ya le quitó la reacción al usuario aunque no persistió.
+- Al rewirear un método que el codebase reusa para DOS cosas (workout `social` = reacciones + comentarios), NO hay que reemplazar el método completo: solo la rama de reacciones. Los comentarios siguen por el update de documento.
+- En board no alcanza con cambiar el link al RPC: había que un método dedicado (`react`) para que el `pv.update` (que pushea el `data` entero con debounce) no sobrescriba el merge atómico con el mapa local.
+- `flutter analyze` degradó netbook warnings (dead_code/dead_null_aware) por usar `myId ?? ''` donde `myId` ya es no-nullable en chat/workout; `AppState.myId` (nullable) sí lo necesita.
+**Pendiente**: ejecutar `supabase/migration_reaction_rpc.sql` en SQL Editor de Supabase (sin esto, los providers rompen al intentar `rpc('toggle_reaction'...`). La equivalencia del merge quedó testeada en lógica pura, pero la RPC en sí no tiene harness en la suite.
+**Impacto**: 2 RPC + schema master, 4 providers + board react, 1 widget board, 1 test nuevo, docs.
+**Relacionado con**: D-2 (Supabase), BUG 2 CRÍTICO (auditoría pizarrón v2), Fase 0 del roadmap, glosario (reacción).
+
+## [2026-08-26] - REFACTOR - Chat: separación por widgets (reduce chat_screen de 1359 a ~700 líneas)
+**Resumen**: Fase 0 del roadmap. `chat_screen.dart` era el cuelo de botella citado en arquitectura.md. Se extrajeron todos los widgets presentacionales (que no dependen del estado del controller) a archivos dedicados, dejando en `chat_screen.dart` solo el controller de lógica (enviar/adjuntar/grabar/reacciones) + layout (header, msg area, input, banner de reply, banner de error).
+**Cambios realizados**:
+- `lib/screens/chat/chat_style.dart` (nuevo): paleta compartida `ChatStyle` (antes constantes privadas de chat_screen: primary, bg, panel, inputBg, darkText, errorBg, mediaBg).
+- `lib/screens/chat/widgets/chat_react_chip.dart` (nuevo): `ChatReactChip` (chip de emoji/`+`).
+- `lib/screens/chat/widgets/chat_swipe_to_reply.dart` (nuevo): `ChatSwipeToReply` (swipe acumulado).
+- `lib/screens/chat/widgets/chat_reactions_row.dart` (nuevo): `ChatReactionsRow`.
+- `lib/screens/chat/widgets/chat_media_body.dart` (nuevo): `ChatMediaBody` + `_ChatLocalMediaView` + `_ChatVideoThumb` + `_ChatAudioPlayerTile` (media: descargable/local, video, audio, archivo).
+- `lib/screens/chat/widgets/chat_message_tile.dart` (nuevo): `ChatMessageTile` (burbuja con reply/ticks/reacciones).
+- `lib/screens/chat_screen.dart`: reescrito para usar los widgets extraídos; eliminadas las definiciones movidas. Misma ruta (`lib/screens/chat_screen.dart`) → ninguna referencia del resto de la app cambió.
+**Lecciones**:
+- Un refactor de extracción es seguro si MUEVE clases enteras (sin renombrarlas salvo el prefijo `_` → público) y deja la ruta pública del archivo original intacta: cero cambios en los callers.
+- La paleta compartida evita duplicar constantes privadas por archivo; al mover widgets, las constantes de estilo deben viajar a un archivo estilo (`ChatStyle`) o cada widget re-declara las suyas.
+- Verificar con `flutter analyze` + suite completa después del refactor: 212 tests verdes, sin cambios de comportamiento.
+**Impacto**: `chat/chat_style.dart` (nuevo), `chat/widgets/*` (5 nuevos), `chat_screen.dart`. Suite 212 verdes, analyze baseline.
+**Relacionado con**: Fase 0 del roadmap, convenciones (widgets separados, UIN).
+
+## [2026-08-26] - FEATURE - Puntos y Recompensas de pareja 🪙 (cajita de deseos)
+**Resumen**: Última pieza de la capa de juego. El álbum de Logros ahora da acceso a una "cajita de deseos": recompensas físicas que cuestan puntos y se marcan como cumplidas, con un libro de puntos (libro mayor, deltas positivos/negativos) y balances por usuario. Los avisos del bot ganan 2 categorías nuevas: logro desbloqueado (a ambos) y resultado de la trivia del día.
+**Cambios realizados**:
+- `lib/models/rewards.dart` (nuevo): `CoupleReward` (id, title, emoji, cost, fulfilled, createdBy) con fromMap/toMap/copyWith, `PointsEntry` (userId, reason, delta, createdAt), y `PointsStats` lógica pura: `balanceOf`, `total`, `pointsEarned`.
+- `lib/providers/rewards_provider.dart` (nuevo): CRUD de recompensas (`addReward`, `deleteReward`, `toggleFulfilled`) + `addPoints` (hook para automatizar ganancia de puntos en el futuro), balances (`myBalance`, `totalEarned`), pendientes/cumplidas. Realtime en ambas tablas. Registrado en `main.dart` (19º provider).
+- `supabase/migration_rewards.sql` (nuevo): tablas `couple_rewards` y `couple_points` + índices + RLS full access + publicación realtime + GRANTs. **PENDIENTE ejecutar en SQL Editor**.
+- `supabase_schema.sql`: tablas #24c + índices + RLS + policies.
+- `lib/screens/recompensas/rewards_screen.dart` (nuevo): balance (saldo/total/cumplidas), lista de recompensas (cumplidas se marcan en verde), dialog de alta, estados loading/empty/error/data, brutalista. Acceso desde el header de `LogrosScreen` (botón regalo 🎁).
+- `lib/screens/logros/logros_screen.dart`: botón de acceso a Recompensas.
+- `bot-furi/bot.js`: categoría #21 logro desbloqueado (`couple_achievements.awarded_at` en la última hora → a AMBOS, con emoji/título vía `descripcionLogro`) y categoría #22 trivia (`question_answers` del día con los 2 miembros → aviso "¿quién conoce más?"). Tracking `logro-{code}`/`trivia-{date}`.
+- Tests TDD: `test/models/rewards_test.dart` (7). Suite total 212 verdes (antes 205). `flutter analyze` sin issues nuevos (23 preexistentes). `node --check bot.js` OK.
+**Lecciones**:
+- El balance de puntos es lógica pura (`PointsStats`) y la ganancia es un libro mayor (`PointsEntry` con deltas), así el "gasto" de recompensas es solo un delta negativo; no hay que tocar el schema para gastar.
+- La automatización de ganancia de puntos (sumar al hacer mood/entrenar/match) es un hook `addPoints` que el provider ya expone; por ahora la cajita funciona con recompensas y balances calculados en vivo.
+**Pendiente**: automatizar la ganancia de puntos desde acciones reales (llamar `addPoints` desde providers de mood/workout/match).
+**Impacto**: `rewards.dart` (nuevo), `rewards_provider.dart` (nuevo), `migration_rewards.sql` (nuevo), `supabase_schema.sql`, `rewards_screen.dart` (nuevo), `logros_screen.dart`, `main.dart`, `bot-furi/bot.js`, `rewards_test.dart` (nuevo), `bot-whatsapp.md`, `glosario.md`, docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), D-10 (bot), logros (entrada previa), glosario.
+
+## [2026-08-26] - FEATURE - Trivia de pareja 🎯 (pregunta del día: respondés + predecís)
+**Resumen**: Juego diario de "cuánto conocés a tu pareja". Cada día hay una pregunta con opciones; cada uno elige su respuesta y predice la de la otra. Cuando ambos responden, se revela el marcador acumulado de predicciones acertadas ("quién conoce más a quién"). Reusa las tablas `daily_questions`/`question_answers` que estaban vacías. Entrada desde el botón del Home (`Icons.school`, antes sin función).
+**Cambios realizados**:
+- `lib/models/trivia.dart` (nuevo): `TriviaQuestion` (id, question, options) con fromMap/toMap, `TriviaAnswer` (id, questionId, userId, answer, guess, date), `TriviaQuestionBank` (10 preguntas de pareja con 4 opciones), y `TriviaStats` lógica pura: `scoreFor` (un punto por cada predicción que acierta la respuesta real de la pareja), `bothAnsweredFor`, `questionForDay` (selección por índice según día del año).
+- `lib/providers/trivia_provider.dart` (nuevo): siembra el banco en `daily_questions` si está vacío, carga preguntas + todas las respuestas (puntaje acumulado), expone `todayQuestion`/`todayAnswers`/`myAnswerToday`/`bothAnsweredToday`/`myScore`/`partnerScore`/`scoreboard`, `submit()` con delete-then-insert (permite re-responder el día). Realtime en `question_answers`. Registrado en `main.dart` (18º provider).
+- `supabase/migration_trivia.sql` (nuevo): `daily_questions.options JSONB`, `question_answers.guess TEXT`, índices y publicación realtime de `question_answers`. **PENDIENTE ejecutar en SQL Editor**.
+- `supabase_schema.sql`: columnas `options` y `guess` en el CREATE master.
+- `lib/screens/trivia/trivia_screen.dart` (nuevo): pregunta del día, chips de opciones para "Tu respuesta" y "Predecí a tu pareja", botón confirmar (se habilita con ambas), estado despues de responder (permite actualizar), marcador cuando ambos contestaron, header con scoreboard, estados loading/error/empty/data, brutalista.
+- `lib/main.dart`: registrado `TriviaProvider`. `lib/screens/home_screen.dart`: `_openEstudio` ahora abre `TriviaScreen(mode: _mode)` (el botón Icons.school antes no hacía nada).
+- Tests TDD: `test/models/trivia_test.dart` (12). Suite total 205 verdes (antes 193). `flutter analyze` sin issues nuevos (23 preexistentes).
+**Lecciones**:
+- El `date` de `question_answers` (DATE, default CURRENT_DATE) viene como ISO sin zona y en `fromMap` hay que guardarlo como String para comparar contra el día local (`_today()`) sin desfases.
+- Filtrar "respuestas de hoy" por columna `date` (String dd-aa) es más simple que parsear `created_at`; el modelo debe persistir ese campo.
+- `TapTile` compartido exige `onTap` no-null: para un botón deshabilitable hay que pasar `() {}` y deshabilitar solo visual/metodo, no `null`.
+- Reusar tablas vacías (`daily_questions`/`question_answers`) además de respetar el esquema evita migraciones nuevas de tablas.
+**Pendiente**: aviso del bot WhatsApp del resultado diario de trivia (o lectura del marcador).
+**Impacto**: `trivia.dart` (nuevo), `trivia_provider.dart` (nuevo), `migration_trivia.sql` (nuevo), `supabase_schema.sql`, `trivia_screen.dart` (nuevo), `main.dart`, `home_screen.dart`, `trivia_test.dart` (nuevo), docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), D-10 (bot PENDIENTE), glosario.
+
+## [2026-08-26] - FEATURE - FURI del mes 🃏 (memoria del mazo)
+**Resumen**: Los matches del mazo ("FURI!!") ahora dejan memoria: el mazo muestra el "FURI del mes" (el match más reciente con categoría+preview+mes), el conteo de FURIs del mes y la fecha del primer FURI de la pareja. El historial del mazo ganó un banner conmemorativo.
+**Cambios realizados**:
+- `lib/models/deck_memory.dart` (nuevo): `DeckMemory.latestMatch` (match más reciente por updatedAt), `firstMatch` (el primero), `matchesInMonth` (conteo por mes), `summary` (descripción legible). Lógica pura testeable.
+- `lib/screens/mazo/deck_history_sheet.dart`: nuevo banner "FURI del mes" arriba del historial (fondo degradado de la categoría, emoji, resumen, "N este mes", "Primer FURI: fecha"); se oculta si no hay matches.
+- Tests TDD: `test/models/deck_memory_test.dart` (6). Suite total 187 verdes. `flutter analyze` sin issues nuevos.
+**Lecciones**:
+- Reusar `DeckCard.isMatch` y `updatedAt` como timestamp del match (cuando se actualizó la reacción) da la memoria sin tocar el schema.
+- `DeckCard.updatedAt` no es const y `matchesInMonth` compara con `DateTime.now()` — hay que pasar el mes explícito para mantener el test determinístico.
+**Impacto**: `deck_memory.dart` (nuevo), `deck_history_sheet.dart`, `deck_memory_test.dart` (nuevo), docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), mazo (entrada previa), glosario.
+
+## [2026-08-26] - FEATURE - Cartas con apertura programada 💌 + entrega ceremonial por bot
+**Resumen**: Las cartas de la pareja ahora pueden programar su apertura. Si se elige una fecha de apertura, la carta queda "sellada" (🔒) para el destinatario hasta ese día: se ve el título pero el contenido no se revela, ni en la lista ni en Nosotros. El bot de WhatsApp no spoilea las cartas selladas al crearse y, cuando llega el momento, las "entrega" con un mensaje ceremonial a quien debía recibirlas.
+**Cambios realizados**:
+- `lib/models/letter.dart`: nuevo `Letter.isSealed({scheduledOpen, isIncoming, now})` — lógica pura: una carta está sellada cuando tiene `scheduled_open` futuro y es carta recibida (el autor siempre lee la suya).
+- `lib/screens/letters_screen.dart`: estado `_scheduledOpen` en el compositor + barra "Programar apertura" (picker de fecha, se guarda `scheduled_open` en el INSERT, se resetea al enviar/cancelar). `_isSealed`/`_showSealed`: cards selladas muestran candado + "se abre el dd/mm/yyyy" y abren un diálogo de sobre sellado (no el contenido). Cuerpo de la carta y barra de programación ajustados para no superponerse.
+- `lib/screens/nosotros_screen.dart`: `_loadPartnerLetter` ahora ignora cartas selladas (`scheduled_open` futuro) y no las marca como vistas.
+- `bot-furi/bot.js`: categoría #4 LETTERS ignora cartas futuras (no spoilear). Nueva categoría 4b "entrega ceremonial": consulta cartas cuyo `scheduled_open` cayó en la última hora (`.gte(haceUnaHora).lte(ahora)`) y avisa al destinatario con `💌 ... tu carta "... " acaba de abrirse`. Tracking `letteropen-{id}-{fecha}`.
+- Tests TDD: `test/models/letter_test.dart` (5). Suite total 187 verdes (antes 182). `flutter analyze` sin issues nuevos (23 preexistentes). `node --check bot.js` OK.
+**Lecciones**:
+- El modelo `Letter` ya tenía `scheduled_open` pero nada lo usaba: faltaba el "puente" entre el campo, el compositor (no lo guardaba) y el gating (nadie lo validaba). El campo por sí solo no es la feature.
+- El gating por "sellado" debe ser por ROL, no solo por fecha: si no, el autor no podría releer la carta que escribió. `isIncoming` (¿to_user = yo?) + fecha futura = sellada; una carta propia siempre se puede leer.
+- Las fechas de apertura se guardan en UTC (`toUtc().toIso8601String()`) y el bot compara contra `ahora.toISOString()` (también UTC) — coherencia de zona evitada.
+- El bot ya tenía tracking anti-duplicado por `(tabla, registro_id)`: reusé el mismo patrón para la entrega ceremonial con key distinta (`letteropen-`) para no colisionar con la de "nueva" (`letter-`).
+**Impacto**: `letter.dart`, `letters_screen.dart`, `nosotros_screen.dart`, `bot-furi/bot.js`, `letter_test.dart` (nuevo), `bot-whatsapp.md`, `glosario.md`, docs.
+**Relacionado con**: D-2 (Supabase), D-10 (bot), D-4 (skill_visual), errores-conocidos (sin nuevos), glosario (carta sellada).
+
+## [2026-08-26] - FEATURE - Logros de pareja 🏅 (colección de insignias desbloqueables)
+**Resumen**: Segunda pieza de la capa de juego/unicidad. La pareja desbloquea logros (insignias) al cumplir hitos: registraron mood ambos, entrenaron ambos, primer FURI!! del mazo, rachas de pareja (3/7 días y mejor racha 14+), y cantidad de mensajes (100/1000). Se muestran en una pantalla "álbum" a la que se accede tocando el chip 🔥 de racha del Home. Las reglas son datos y la evaluación es lógica pura testeable (mismo patrón que `CoupleStats`).
+**Cambios realizados**:
+- `lib/models/couple_achievement.dart` (nuevo): `CoupleAchievement` (code, emoji, title, description), `AchievementSnapshot` (coupleStreak, bestCoupleStreak, bothLoggedMood, bothWorkedOut, hasDeckMatch, totalMessages) con `copyWith`, `EarnedAchievement` (fromMap/toMap), y `CoupleAchievements` con 8 definiciones + `byCode` + `earnedCodes(snapshot)` (lógica pura).
+- `lib/providers/couple_achievements_provider.dart` (nuevo): `load()` carga los ya otorgados, construye el snapshot (queries a `moods`, `workout_completions`, `messages.count()`, `deck_cards` reacciones), calcula los códigos obtenidos, e inserta los nuevos (guard por UNIQUE + diferencia de sets). Expone `earnedCodes`, `collected`, `remaining`. Realtime en `couple_achievements` (el otro dispositivo ve los logros al instante). Sin cache local. Registrado en `main.dart` (17º provider).
+- `supabase/migration_couple_achievements.sql` (nuevo): tabla `couple_achievements` (id, achievement_code UNIQUE, awarded_at, created_at) + índice + RLS full access + publicación realtime + GRANTs. **PENDIENTE ejecutar en SQL Editor**.
+- `supabase_schema.sql`: tabla `couple_achievements` (#24b) + índice + RLS + policy.
+- `lib/screens/logros/logros_screen.dart` (nuevo): álbum en grilla 2 columnas con contador "X de 8 desbloqueados"; logros desbloqueados a color del tema, pendientes desvanecidos con candado 🔒; estados loading/error/data; skill_visual (fondo=borde, redondo, sombra brutalista, sin negro puro); reutiliza `TapTile` compartido (animación + sonido).
+- `lib/screens/home_screen.dart`: el chip 🔥 de racha ahora es tappable (`coupleTile` con `onTap`) y abre `LogrosScreen(mode: _mode)`. Nuevo método `_openLogros()`.
+- Tests TDD: `test/models/couple_achievement_test.dart` (16). Suite total 182 verdes (antes 166). `flutter analyze` sin issues nuevos (los 23 preexistentes).
+**Lecciones**:
+- Persistir los logros otorgados en una tabla (`couple_achievements`) es mejor que evaluarlos en vivo cada vez: da historial, sync entre dispositivos y base para el bot. La evaluación (`earnedCodes(snapshot)`) sigue siendo lógica pura testeable; el provider solo arma el snapshot.
+- El `messages.count()` de postgrest devuelve `int` directo (`PostgrestFilterBuilder<int>`), no hace falta traer las filas — clave para contar mensajes sin peso.
+- Guard de duplicados natural: la columna es UNIQUE y el provider inserta solo los códigos que faltan (`earnedNow.difference(earnedCodes)`), así repetir `load()` es idempotente.
+- El match del mazo ya lo resuelve `DeckCard.isMatch` (≥2 reacciones todas 'encanta'); reutilicé la regla en el provider en vez de reimplementarla.
+**Pendiente**: aviso del bot WhatsApp de logro desbloqueado (categoría nueva leyendo `couple_achievements.awarded_at` de la última hora → a ambos). Ver Fase 2.x del roadmap.
+**Impacto**: `couple_achievement.dart` (nuevo), `couple_achievements_provider.dart` (nuevo), `migration_couple_achievements.sql` (nuevo), `supabase_schema.sql`, `logros_screen.dart` (nuevo), `main.dart`, `home_screen.dart`, `couple_achievement_test.dart` (nuevo), docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), D-10 (bot PENDIENTE), racha de pareja (entrada previa 2026-08-26), glosario.
+
+## [2026-08-26] - FEATURE - Racha de pareja 🔥 (días consecutivos en que ambos están activos)
+**Resumen**: Se agregó la "racha de pareja" como nueva capa de juego del Home: días consecutivos en que AMBOS miembros de la pareja estuvieron activos (registraron mood o completaron un entrenamiento). Es el primer entregable del roadmap de "capa de juego/unicidad" y usa el patrón ya probado de `WorkoutStats` (lógica pura testeable) + `WorkoutProvider` (Supabase + realtime sin cache local).
+**Cambios realizados**:
+- `lib/models/couple_stats.dart` (nuevo): `CoupleActivity` (userId + día, `fromMap` tolerante a `date`/`completed_on`/`created_at`) y `CoupleStats` con lógica pura: `activeByDay` (agrupa por día → set de usuarios activos), `bothActiveDays` (días donde TODOS los miembros están activos), `streakFor` (racha actual terminando hoy o ayer, mismo criterio que `WorkoutStats.streakFor`), `bestStreak` (racha más larga), `isBothActiveOn`.
+- `lib/providers/couple_provider.dart` (nuevo): `CoupleProvider` carga `moods` + `workout_completions` (solo `user_id` + fecha), unifica en actividades, calcula `bothDays` = días con ambos (`members: {myId, partnerId}`), y expone `coupleStreak`, `bestCoupleStreak`, `todayActive`. Realtime en ambas tablas (recarga por evento). Registrado como provider global.
+- `lib/main.dart`: import + `ChangeNotifierProvider(create: (_) => CoupleProvider())`.
+- `lib/screens/home_screen.dart`: `_BrutalGridState.initState` carga `CoupleProvider` post-frame; nuevo widget `coupleTile` (chip 🔥 + número con `GoogleFonts.bangers`, fondo=borde color del tema, sombra brutalista) posicionado en la esquina superior derecha con `Consumer<CoupleProvider>`, sin alterar la grilla.
+- Tests TDD: `test/models/couple_stats_test.dart` (14 tests). Suite total 166 verdes (antes 152). `flutter analyze` sin issues nuevos (los 23 son preexistentes).
+**Lecciones**:
+- Espejar `WorkoutStats` es el camino correcto: agregar lógica de "racha" requiere la misma estructura de días consecutivos terminando en hoy/ayer (el día en curso no cuenta hasta completarse).
+- La "racha de pareja" NO puede calcularse con una tabla propia (habría que escribir cada día); se deriva de señales existentes con `user_id` + fecha. Moods es la señal diaria más confiable (ambos la registran en Nosotros); workout_completions la refuerza.
+- El Home es una grilla brutalista muy ajustada: un widget nuevo NO debe romper el layout; un chip flotante posicionado con `Consumer` en el Stack evita tocar las coordenadas de los bloques.
+- Ojo al escribir providers por primera vez: `Identical`/`a == a` en un `removeWhere` es un bug silencioso (siempre true → borra todo); revisar el código resultante antes de correr.
+**Pendiente**: aviso del bot WhatsApp de "racha de pareja rota" (requiere calcular ambos-miembros-activos en JS → requerimiento no trivial, dejar para próxima iteración).
+**Impacto**: `couple_stats.dart` (nuevo), `couple_provider.dart` (nuevo), `main.dart`, `home_screen.dart`, `couple_stats_test.dart` (nuevo), docs.
+**Relacionado con**: D-2 (Supabase), D-4 (skill_visual), patrón WorkoutStats/WorkoutProvider, glosario (nuevo concepto racha de pareja).
+
 ## [2026-08-17] - FEATURE - Calendario completo: eventos por día, gestión de tipos y recordatorios programados (port desde Gastronomia-App)
 **Resumen**: Se portaron a F.U.R.I las funciones de calendario/clases/eventos de Gastronomia-App que faltaban: pantalla de eventos por día con navegación por fecha, gestión de tipos de clase y de evento (crear/editar/borrar con color e icono), campo Profesor en el formulario de evento, y recordatorios locales programados (eventos: 1h antes + al empezar; clases: semanal recurrente 1h antes). Se conectaron los accesos desde el calendario (botones Clases + Día) y se rescató `ClassBoardScreen`, que era código muerto (nadie navegaba a él).
 **Cambios realizados**:
@@ -58,11 +595,11 @@
 - `supabase_schema.sql`: agregada tabla `deck_cards` (#24) con índice, RLS y policy.
 - `lib/models/deck_card.dart` (nuevo): `DeckReaction` (4 valores), `DeckCategory` (8 categorías), `DeckCard` con `toMap`/`fromMap` (reacciones JSONB tolerantes), `withReaction` (inmutable), `mergedReactions`/`mergedFromCloud` (merge anti-race: las reacciones locales pisan a las cloud del mismo user), `isMatch` (>=2 reacciones y todas encanta).
 - `lib/providers/deck_provider.dart` (nuevo): `load()` (Supabase + realtime `deck_cards_changes`), `pendingFor`/`historyFor` (filtran por reacción del usuario activo), `matches`/`matchCount`, `add()`, `react()` (update optimista + JSONB), `delete()`, `applyCloudCards()` (lógica pura: merge cloud+local y detección de transición a match → `pendingMatch`), `consumeMatch()`. Registrado en `lib/main.dart` (14º provider).
-- `lib/screens/mazo/deck_style.dart` (nuevo): estilo por categoría (emoji, label, color brutalista) y por reacción (label, color, icono, dirección).
-- `lib/screens/mazo/deck_overlay.dart` (nuevo): overlay encima del Home con stack de 3 tarjetas (escala descendente), drag en 4 direcciones con sello de reacción, rotación progresiva, snap-back y salida animada (160ms) → `pv.react()`. Header con contador de pendientes, botón historial, botón + crear y X cerrar. 4 botones de acción (X roja, pulgar amarillo, meh gris, corazón verde) para desktop/sin drag. Estados LOADING/EMPTY/ERROR/DATA. Modo re-swipe con banner "deslizá de nuevo".
-- `lib/screens/mazo/create_deck_card_modal.dart` (nuevo): dialog con chips de las 8 categorías (fondo=borde, check en la seleccionada), TextField multilinea (max 1000), botón guardar con icono check que se habilita al escribir (listener del controller).
-- `lib/screens/mazo/deck_history_sheet.dart` (nuevo): bottom sheet con las tarjetas ya deslizadas: mi reacción + reacciones de la pareja + botón re-deslizar (vuelve al overlay en modo re-swipe de esa tarjeta).
-- `lib/screens/mazo/deck_match_overlay.dart` (nuevo): pantalla "FURI!!" gigante en color de la categoría + tarjeta + confetti (flutter_confetti) + botón seguir. No dice "match" (pedido del usuario).
+- `lib/screens/mazo/deck_style.dart` (nuevo): estilo por categoría (emoji, label, **degradado 3 colores**) y por reacción (label, **degradado 3 colores**, icono, dirección).
+- `lib/screens/mazo/deck_overlay.dart` (nuevo): overlay encima del Home con stack de 3 tarjetas (escala descendente), drag en 4 direcciones con sello de reacción, rotación progresiva, snap-back y salida animada (160ms) → `pv.react()`. **Solo botón X cerrar en header** (sin botones de acción abajo). **Tarjetas sin borde** (degradado puro, borderRadius 32), **mÃ¡s delgadas y altas** (75% ancho × 92% alto), fuente **Bangers** blanco tamaño 28. Etiquetas de reacción al deslizar **sin borde** (solo degradado + Bangers blanco). CategorÃ­a **POEMAS**: degradado rojo-rosa-rojo.
+- `lib/screens/mazo/create_deck_card_modal.dart` (nuevo): dialog con chips de las 8 categorías (fondo=borde, check en la seleccionada), TextField multilinea (max 1000), botÃ³n guardar con icono check que se habilita al escribir (listener del controller).
+- `lib/screens/mazo/deck_history_sheet.dart` (nuevo): bottom sheet con las tarjetas ya deslizadas: mi reacción + reacciones de la pareja + botÃ³n re-deslizar (vuelve al overlay en modo re-swipe de esa tarjeta).
+- `lib/screens/mazo/deck_match_overlay.dart` (nuevo): pantalla "FURI!!" gigante en color de la categoría + tarjeta + confetti (flutter_confetti) + botÃ³n seguir. No dice "match" (pedido del usuario).
 - `lib/screens/home_screen.dart`: `_initDeck()` en initState (post frame: load + abrir overlay si hay pendientes); `_openMazo()` en el bloque con iconos ▶/🖼️/▶ del Home (antes decorativo); Stack del Home ahora monta `DeckOverlay` (si `_showDeck`) y `DeckMatchOverlay` vía `Consumer<DeckProvider>` cuando hay `pendingMatch` (encima de todo, incluso sin deck abierto).
 - `bot-furi/bot.js`: categoría #14 `deck_cards` (tarjeta nueva en última hora → avisa a la pareja del creador, con categoría y preview de 90 chars) y categoría #15 `deck match` (reactions con >=2 valores todos 'encanta' y updated_at en última hora → avisa a AMBOS con "🃏 *FURI!!*"). Tracking keys `deck-{id}` y `deckmatch-{id}`.
 - Tests TDD: `test/models/deck_card_test.dart` (12 tests) + `test/providers/deck_provider_test.dart` (13 tests). Total 25 nuevos, todos verdes.
@@ -71,6 +608,9 @@
 - La detección de match debe ser por TRANSICIÓN (local no-match → merged match), no por estado: si no, cada reload/realtime de una carta ya matcheada volvería a disparar la pantalla "FURI!!".
 - `pendingFor(null)` devuelve todas las cartas (sin identidad cargada no se puede filtrar) — útil para tests.
 - Un `showDialog`/bottom sheet que se habilita según el texto necesita `_ctrl.addListener(() => setState(() {}))`; evaluar `_ctrl.text` una sola vez en el build deja el botón congelado.
+- **Degradados de 3 colores por categoría**: IDEAS (rojo-amarillo-naranja), CHISTES (morado-amarillo-fucsia), POEMAS (rojo-rosa-rojo), RECETAS (verde-amarillo-verde), RETOS (rojo-naranja-fucsia), RANDOM (morado-amarillo-cian), SUEÑO (azul-celeste-violeta), ME PASÓ (rojo-amarillo-fucsia). Reacciones también con degradados de 3 colores.
+- **Sin bordes en tarjetas ni sellos**: el degradado es el fondo y el borde se camufla eliminando `Border.all`.
+- **Bangers + blanco**: fuente consistente con el resto de la app, tamaño grande para legibilidad.
 **Impacto**: `supabase/migration_deck_cards.sql` (nuevo), `supabase_schema.sql`, `lib/models/deck_card.dart` (nuevo), `lib/providers/deck_provider.dart` (nuevo), `lib/screens/mazo/` (5 archivos nuevos), `lib/main.dart`, `lib/screens/home_screen.dart`, `bot-furi/bot.js`, tests (2 archivos nuevos), docs.
 **Relacionado con**: D-2 (Supabase), D-4 (skill_visual), D-10 (bot), errores-conocidos (race de reacciones JSONB), skill-pantallas, glosario, bot-whatsapp.
 

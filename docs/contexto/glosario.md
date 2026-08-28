@@ -7,18 +7,26 @@
 - **Pareja**: La otra persona. Se vincula por `couple_code` y `partner_id` en profiles.
 - **Código de pareja**: Código único para vincular dos perfiles.
 - **Mood**: Estado de ánimo diario. Se registra uno por día.
-- **Carta**: Mensaje con apertura programada (puede tener fecha futura).
+- **Carta**: Mensaje con apertura programada (puede tener fecha futura). Si tiene `scheduled_open` futuro y es carta recibida, queda "sellada" (🔒): no se revela el contenido hasta esa fecha; el bot la "entrega" ceremonialmente cuando se abre.
 - **Reto/Challenge**: Desafío de pareja con duración en días.
 - **Meta/Goal**: Objetivo compartido (completado no completado).
 - **Pregunta diaria**: Pregunta del día para ambos (banco de preguntas).
 - **Pizarra/Pizarrón**: Lienzo infinito colaborativo con notas personalizables. Las notas tienen forma, color, degradados, patrones, fuente y borde. Se arrastran, editan y eliminan en tiempo real.
-- **Mazo/Tarjeta**: Tarjeta swipe tipo Tinder creada por Facu o Rocio (ideas, chistes, poemas, recetas, retos, random, sueño, me pasó). Se desliza en 4 direcciones: derecha=me encanta, izquierda=no me gusta, abajo=me gusta, arriba=meh. Hay **match** cuando ambos dan me encanta a la misma tarjeta (pantalla "FURI!!" con confetti). Las deslizadas se pueden re-deslizar desde el historial.
+- **Mazo/Tarjeta**: Tarjeta swipe tipo Tinder creada por Facu o Rocio (ideas, chistes, poemas, recetas, retos, random, sueño, me pasó). Se desliza en 4 direcciones: derecha=me encanta, izquierda=no me gusta, abajo=me gusta, arriba=meh. Hay **match** cuando ambos dan me encanta a la misma tarjeta (pantalla "FURI!!" con confetti). Las deslizadas se pueden re-deslizar desde el historial. Tarjetas con **degradado de 3 colores por categoría**, **sin bordes**, **fuente Bangers blanco**, más **delgadas y altas** (75%×92%). Reacciones con degradado y sin borde.
 - **Ejercicio/WorkoutLog**: Registro de un ejercicio entrenado (nombre obligatorio; series, reps, peso, descanso, grupo muscular y notas opcionales). Sección Ejercicios (botón pesa del Home).
 - **Rutina/WorkoutRoutine**: Conjunto de ejercicios (`items` JSONB); puede asignarse a un día de la semana (plan semanal 1=lunes..7=domingo).
 - **Sesión completada/WorkoutCompletion**: Marca "entrené este día" por persona (badges F/R por día).
 - **Reto de ejercicio/WorkoutChallenge**: Reto con `approved_by`/`completed_by` — ambos deben aprobar y ambos completar (2 personas).
 - **Racha de entrenamiento**: Días consecutivos entrenados por persona; se calcula desde `workout_completions`. El bot avisa si se corta (>=3 días).
+- **Racha de pareja**: Días consecutivos en que AMBOS miembros estuvieron activos (registraron mood o completaron un entrenamiento). Se calcula desde `moods` + `workout_completions` (señales con `user_id` + fecha) con `CoupleStats`/`CoupleProvider`, sin tabla propia. Visible en el Home como chip 🔥.
+- **Logro de pareja**: Insignia desbloqueable al cumplir un hito (ambos con mood, ambos entrenaron, primer FURI!!, rachas de 3/7/14 días, 100/1000 mensajes). Definido como datos estáticos (`CoupleAchievement`) y evaluado con lógica pura (`CoupleAchievements.earnedCodes`); los otorgados se persisten en `couple_achievements` y se muestran en el álbum de Logros (tocando el chip 🔥). | `couple_achievements`
+- **Trivia de pareja**: Juego diario con una pregunta de opción múltiple; cada uno elige su respuesta (`answer`) y predice la de su pareja (`guess`). Un punto por predicción acertada = "quién conoce más a quién" (`TriviaStats.scoreFor`). Preguntas en `daily_questions` (con `options`), respuestas en `question_answers`. Entrada desde el botón Icons.school del Home. | `daily_questions`, `question_answers`
+- **Memoria FURI**: Los matches del mazo dejan memoria: match más reciente ("FURI del mes"), primer FURI y conteo mensual. Lógica pura en `DeckMemory` sobre `deck_cards` (reusa `DeckCard.isMatch` + `updatedAt`). | `deck_cards`
+- **Recompensa de pareja**: Deseo físico de la "cajita" con costo en puntos, marcable como cumplida. | `couple_rewards`
+- **Punto de pareja**: Movimiento del libro mayor de puntos (deltas +/− por razón). Balance por usuario con `PointsStats` (lógica pura). | `couple_points`
+- **Ubicación de pareja**: Última ubicación conocida de cada miembro (lat/lng). La distancia entre ambos se calcula con haversine (`distanceKm`, lógica pura). El botón DISTANCIA 🗺️ de Nosotros actualiza la propia (GPS con fallback manual) y muestra la distancia en tiempo real. | `couple_locations`
 - **Modo de color**: Uno de 5 temas visuales (flower, green, dark, blue, heart).
+- **Pantalla "loca"**: Pantalla estilo Nosotros cuya entrada es un mosaico de bloques-icono gigantes que ocupa todo el lienzo (sin texto a simple vista). Kit compartido `LocaScreen` (`LocaEntry` + paneles swink + swap) y mosaico determinístico `LocaArranger` (seed por pantalla = cada pantalla distribuye distinto). El contenido real (listas/cartas/detalles) se abre al tocar el icono.
 - **Tipo de evento/Tipo de clase**: Categoría con nombre, color y (solo eventos) icono que se asigna a los eventos del calendario. Se gestionan desde el formulario de evento (`event_types`) y desde `ClassBoardScreen` (`class_types`). Solo existen en SQLite local.
 
 ## Entidades Principales
@@ -38,6 +46,7 @@
 | DailyQuestion | Pregunta del día | `daily_questions` |
 | QuestionAnswer | Respuesta a pregunta | `question_answers` |
 | Notification | Notificación in-app | `notifications` |
+| ChatTyping | Indicador "escribiendo..." del chat (1 fila por usuario: is_typing, updated_at); la pareja lo ve con realtime | `chat_typing` |
 | Note | Nota del pizarrón v2 con forma, color, gradiente, patrón, fuente y borde personalizables; persiste en `board_elements_v2` | SQLite `board_elements_v2` + Supabase `board_elements_v2` |
 | Pizarra v2 | Lienzo infinito colaborativo con grid de puntos, notas renderizadas con estilo real, drag-to-move, edit y delete | Provisto por `BoardProviderV2` |
 | DeviceToken | Token FCM | `device_tokens` |
@@ -53,6 +62,8 @@
 | WorkoutCompletion | Día entrenado por persona (badges F/R) | `workout_completions` |
 | WorkoutChallenge | Reto con aprobación/completado conjuntos | `workout_challenges` |
 | Favorite | Favorito por categoría, con `rating_facu`/`rating_rocio` (rating dual por usuario) y `critica` texto compartido | `favorites` |
+| CoupleStreak/Racha de pareja | Cálculo derivado (sin tabla) de días en que ambos estuvieron activos, vía `CoupleStats.activeByDay`/`bothActiveDays` | Se deriva de `moods` + `workout_completions` |
+| CoupleAchievement/Logro | Insignia de pareja desbloqueada al cumplir un hito; `achievement_code` UNIQUE | `couple_achievements` |
 
 ## Siglas y Acrónimos
 

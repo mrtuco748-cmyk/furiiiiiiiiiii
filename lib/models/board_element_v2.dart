@@ -28,7 +28,15 @@ class BoardElementPriority {
 
 /// Elemento del pizarrón v2 — completo y serializable.
 class BoardElementV2 {
+  /// Id cloud (BIGSERIAL de Supabase). null = nunca sincronizado.
   final int? id;
+  /// Id cloud persistido aparte del rowid local de SQLite (ver `cloud_id`).
+  /// Un elemento creado OFFLINE tiene `id == null` (SIN id cloud) y su fila
+  /// local usa un rowid autoincrementado distinto: ese rowid NUNCA debe usarse
+  /// como id cloud al sincronizar (cola y puede sobrescribir un elemento ajeno
+  /// del mismo id). Guardamos el id cloud en `cloudId`/`cloud_id` para
+  /// distinguir INSERT (cloudId==null) de UPDATE (cloudId!=null).
+  final int? cloudId;
   final String type;
   final String title;
   final String content;
@@ -62,6 +70,7 @@ class BoardElementV2 {
 
   BoardElementV2({
     this.id,
+    this.cloudId,
     required this.type,
     this.title = '',
     this.content = '',
@@ -133,6 +142,7 @@ class BoardElementV2 {
 
   factory BoardElementV2.fromMap(Map<String, dynamic> m) => BoardElementV2(
         id: m['id'] as int?,
+        cloudId: (m['cloud_id'] as num?)?.toInt() ?? (m['id'] as num?)?.toInt(),
         type: m['type'] as String? ?? 'note',
         title: m['title'] as String? ?? '',
         content: m['content'] as String? ?? '',
@@ -177,6 +187,8 @@ class BoardElementV2 {
   BoardElementV2 copyWith({
     int? id,
     bool clearId = false,
+    int? cloudId,
+    bool clearCloudId = false,
     String? type,
     String? title,
     String? content,
@@ -211,6 +223,9 @@ class BoardElementV2 {
   }) =>
       BoardElementV2(
         id: clearId ? null : (id ?? this.id),
+        cloudId: clearCloudId
+            ? null
+            : (cloudId ?? (clearId ? null : this.cloudId)),
         type: type ?? this.type,
         title: title ?? this.title,
         content: content ?? this.content,

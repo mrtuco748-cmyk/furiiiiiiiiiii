@@ -47,8 +47,7 @@ class _BoardSearchPanelState extends State<BoardSearchPanel> {
     if (q.isEmpty) return const [];
     return _pool.where((e) {
       return e.title.toLowerCase().contains(q) ||
-          e.content.toLowerCase().contains(q) ||
-          e.tags.any((t) => t.toLowerCase().contains(q));
+          e.content.toLowerCase().contains(q);
     }).toList();
   }
 
@@ -127,16 +126,6 @@ class _BoardSearchPanelState extends State<BoardSearchPanel> {
                               fontSize: 13,
                             ),
                           ),
-                          subtitle: el.tags.isNotEmpty
-                              ? Text(
-                                  el.tags.take(2).join(', '),
-                                  maxLines: 1,
-                                  style: const TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 11,
-                                  ),
-                                )
-                              : null,
                           onTap: () => widget.onGoToElement(el),
                         ),
                     ],

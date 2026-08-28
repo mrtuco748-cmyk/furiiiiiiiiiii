@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
 import '../database/database_helper.dart';
@@ -12,7 +11,6 @@ import '../app_state.dart';
 class BoardProviderV2 extends ChangeNotifier {
   List<BoardElementV2> _elements = [];
   List<BoardActivity> _activity = [];
-  List<Map<String, dynamic>> _savedTags = [];
   List<Map<String, dynamic>> _boards = [];
   bool _loading = false;
   String? _error;
@@ -26,7 +24,6 @@ class BoardProviderV2 extends ChangeNotifier {
   List<BoardElementV2> get allElements => _elements;
   List<BoardElementV2> get archivedElements => _elements.where((e) => e.isArchived).toList();
   List<BoardActivity> get activity => _activity;
-  List<Map<String, dynamic>> get savedTags => _savedTags;
   List<Map<String, dynamic>> get boards => _boards;
   bool get loading => _loading;
   String? get error => _error;
@@ -126,7 +123,6 @@ class BoardProviderV2 extends ChangeNotifier {
     }
 
     _loading = false;
-    await _loadTags();
     if (_isOnline) await loadBoards();
     notifyListeners();
   }
@@ -157,6 +153,17 @@ class BoardProviderV2 extends ChangeNotifier {
             }
             if (map['data'] is String) {
               try { map['data'] = jsonDecode(map['data'] as String); } catch (_) {}
+            }
+            // Id cloud distinto del rowid local. Reglas:
+            //  - cloud_id != null → id = cloud_id (elemento sincronizado)
+            //  - cloud_id null + synced=1 → id legado = cloud_id (migración v9)
+            //  - cloud_id null + synced=0 → nunca sincronizado → id = null
+            final cloudId = map['cloud_id'] as int?;
+            final synced = map['synced'] as int? ?? 0;
+            if (cloudId == null && synced == 0) {
+              map['id'] = null;
+            } else {
+              map['id'] = cloudId ?? map['id'];
             }
             return BoardElementV2.fromMap(map);
           })
@@ -240,10 +247,10 @@ class BoardProviderV2 extends ChangeNotifier {
     for (final row in unsynced) {
       try {
         final el = BoardElementV2.fromMap(Map<String, dynamic>.from(row));
-        final localId = el.id;
+        final localId = el.cloudId;
 
         if (localId != null) {
-          // BUG 9: Elemento ya sincronizado pero modificado offline → UPDATE
+          // Elemento ya sincronizado pero modificado offline → UPDATE por id cloud.
           await SupabaseConfig.client
               .from('board_elements_v2')
               .update(el.toMap())
@@ -252,36 +259,35 @@ class BoardProviderV2 extends ChangeNotifier {
           await db.update(
             'board_elements_v2',
             {'synced': 1},
-            where: 'id = ?',
+            where: 'cloud_id = ?',
             whereArgs: [localId],
           );
+          final mi = _elements.indexWhere((e) => e.cloudId == localId);
+          if (mi >= 0) {
+            _elements[mi] = _elements[mi].copyWith(
+                id: localId, cloudId: localId);
+          }
         } else {
-          // Elemento nuevo, nunca sincronizado → INSERT
+          // Elemento nuevo, nunca sincronizado → INSERT. Insertar SIN id local
+          // (el rowid de SQLite NO es un id cloud válido y colisionaría).
           final res = await SupabaseConfig.client
               .from('board_elements_v2')
-              .insert(el.copyWith(clearId: true).toMap())
+              .insert(el.copyWith(clearId: true, clearCloudId: true).toMap())
               .select()
               .single()
               .timeout(const Duration(seconds: 10));
           final cloudId = res['id'] as int;
 
-          // Actualizar con id cloud (memoria + SQLite). El id local de SQLite
-          // NO es el id cloud: hay que reconciliar la fila local con el cloud.
+          final updated = el.copyWith(id: cloudId, cloudId: cloudId);
+          // Reconciliar en memoria (por createdAt del snapshot) y en SQLite
+          // usando cloud_id como clave.
           final idx = _elements.indexWhere((e) => e.createdAt == el.createdAt);
-          if (idx >= 0) {
-            _elements[idx] = _elements[idx].copyWith(id: cloudId);
-          }
-
-          // Guardar fila local reconciliada con id cloud
-          await _saveToLocal(_elements.firstWhere(
-            (e) => e.id == cloudId,
-            orElse: () => el.copyWith(id: cloudId),
-          ));
+          if (idx >= 0) _elements[idx] = updated;
           await db.update(
             'board_elements_v2',
-            {'synced': 1},
-            where: 'id = ?',
-            whereArgs: [cloudId],
+            {'cloud_id': cloudId, 'synced': 1},
+            where: 'created_at = ?',
+            whereArgs: [el.createdAt.toIso8601String()],
           );
         }
       } catch (e) {
@@ -381,7 +387,9 @@ class BoardProviderV2 extends ChangeNotifier {
             .single()
             .timeout(const Duration(seconds: 10));
 
-        final cloudEl = BoardElementV2.fromMap(res);
+        final cloudId = res['id'] as int;
+        final cloudEl = BoardElementV2.fromMap(res)
+            .copyWith(id: cloudId, cloudId: cloudId);
         final idx = _elements.indexWhere((e) => e.createdAt == el.createdAt);
         if (idx >= 0) {
           _elements[idx] = cloudEl.copyWith(
@@ -391,11 +399,11 @@ class BoardProviderV2 extends ChangeNotifier {
             content: _elements[idx].content,
             data: _elements[idx].data,
           );
-          // Marcar synced en SQLite
+          // Marcar synced en SQLite, guardando cloud_id del id cloud.
           final db = await DatabaseHelper().database;
           await db.update(
             'board_elements_v2',
-            {'synced': 1, 'id': cloudEl.id},
+            {'synced': 1, 'cloud_id': cloudId, 'id': cloudId},
             where: 'created_at = ?',
             whereArgs: [el.createdAt.toIso8601String()],
           );
@@ -520,6 +528,60 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
         await _markUnsynced(id);
       }
     });
+  }
+
+  /// Reacciona a un elemento vía RPC de merge atómico (evita el race de
+  /// "último write gana" que ocurría al enviar el `data` completo en cada
+  /// update). Optimista en memoria + reconciliación con la respuesta
+  /// autoritativa que devuelve el servidor.
+  Future<void> react(
+    BoardElementV2 el,
+    Map<String, dynamic> newData,
+    String key,
+  ) async {
+    var idx = _elements.indexWhere((e) => identical(e, el));
+    if (idx == -1) idx = _elements.indexWhere((e) => e.id == el.id);
+    if (idx == -1) return;
+    if (_elements[idx].isLocked) return;
+    final prev = _elements[idx];
+    final updated = prev.copyWith(data: newData, updatedAt: DateTime.now());
+    _elements[idx] = updated;
+    notifyListeners();
+    await _saveToLocal(updated, syncedFlag: _isOnline ? 1 : 0);
+
+    final id = updated.id;
+    if (id == null || !_isOnline) return;
+
+    try {
+      final res = await SupabaseConfig.client
+          .rpc('toggle_reaction', params: {
+            'target_table': 'board_elements_v2',
+            'target_col': 'data',
+            'row_id': id,
+            'reaction_key': key,
+            'user_id': AppState.myId ?? '',
+          })
+          .timeout(const Duration(seconds: 5));
+      final authoritative = _reactionsOf({'reactions': res});
+      final mi = _elements.indexWhere((e) => e.id == id);
+      if (mi >= 0) {
+        final live = _elements[mi];
+        final mergedData = Map<String, dynamic>.from(live.data)
+          ..['reactions'] = {
+            for (final entry in authoritative.entries)
+              entry.key: List<String>.from(entry.value),
+          };
+        _elements[mi] = live.copyWith(data: mergedData);
+        await _saveToLocal(_elements[mi], syncedFlag: 1);
+      }
+      notifyListeners();
+    } catch (e) {
+      _elements[idx] = prev;
+      _error = 'No se pudo guardar la reacción';
+      debugPrint('BoardProviderV2.react error: $e');
+      await _markUnsynced(id);
+      notifyListeners();
+    }
   }
 
   /// Borra un elemento.
@@ -668,30 +730,6 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
     }
   }
 
-  Future<void> _loadTags() async {
-    try {
-      final db = await DatabaseHelper().database;
-      final rows = await db.query('board_tags', orderBy: 'created_at ASC');
-      _savedTags = rows.map((r) => {'name': r['name'], 'color': r['color']}).toList();
-    } catch (e) {
-      debugPrint('BoardProviderV2._loadTags error: $e');
-    }
-  }
-
-  Future<void> saveTag(String name, String color) async {
-    try {
-      final db = await DatabaseHelper().database;
-      await db.insert(
-        'board_tags',
-        {'name': name, 'color': color, 'created_at': DateTime.now().toIso8601String()},
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-      await _loadTags();
-    } catch (e) {
-      debugPrint('BoardProviderV2.saveTag error: $e');
-    }
-  }
-
   // --- Actividad ---
 
   Future<void> _addActivity({
@@ -755,18 +793,24 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
       map['is_archived'] = el.isArchived ? 1 : 0;
       map['tags'] = jsonEncode(el.tags);
       map['data'] = jsonEncode(el.data);
+      map['cloud_id'] = el.cloudId;
       if (syncedFlag != null) map['synced'] = syncedFlag;
 
-      if (el.id != null) {
-        await db.update(
+      // Un elemento con id cloud se matchea por cloud_id (nunca por el rowid
+      // local, que NO coincide con el id cloud).
+      if (el.cloudId != null) {
+        final updated = await db.update(
           'board_elements_v2',
-          map,
-          where: 'id = ?',
-          whereArgs: [el.id],
+          Map<String, dynamic>.from(map)..['id'] = el.cloudId,
+          where: 'cloud_id = ?',
+          whereArgs: [el.cloudId],
         );
+        if (updated == 0) {
+          await db.insert('board_elements_v2', map);
+        }
       } else {
-        // Sin id cloud todavía: actualizar la fila local por created_at
-        // para no acumular filas duplicadas en cada save.
+        // Sin id cloud todavía: matchear la fila local por created_at para no
+        // acumular filas duplicadas en cada save.
         final updated = await db.update(
           'board_elements_v2',
           map,

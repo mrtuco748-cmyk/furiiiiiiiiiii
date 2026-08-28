@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../supabase_config.dart';
 import '../app_state.dart';
+import '../router.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/swap_widget.dart';
 import '../widgets/responsive_wrapper.dart';
 import '../theme/app_theme.dart';
-import 'chat_screen.dart';
-import 'letters_screen.dart';
-import 'retos_screen.dart';
-import 'metas_screen.dart';
-import 'mapa_screen.dart';
+import '../providers/rewards_provider.dart';
+import '../widgets/app_feedback.dart';
 
 const _purple = Color(0xFF7000FF);
 const _black = Color(0xFF000000);
@@ -89,6 +89,8 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
   final _mostUsedEmojis = ['😊','😍','😂','🥰','😢','😡','🥳','❤️','🔥','😎','🤗','😴'];
   RealtimeChannel? _channel;
   Timer? _reloadTimer;
+  Map<String, dynamic>? _retoSwapItem;
+  String _retoSwapTitle = '';
 
   void _scheduleReload() {
     _reloadTimer?.cancel();
@@ -184,12 +186,13 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
   }
 
   Future<void> _loadAll() async {
+    var failures = 0;
     try {
       final results = await Future.wait([
-        _loadChallenges().catchError((e) { debugPrint('challenges error: $e'); return <Map<String, dynamic>>[]; }),
-        _loadPartnerLetter().catchError((e) { debugPrint('letters error: $e'); return null; }),
-        _loadTodayMoods().catchError((e) { debugPrint('moods error: $e'); return <Map<String, dynamic>>[]; }),
-        _loadAllQuestions().catchError((e) { debugPrint('questions error: $e'); return <Map<String, dynamic>>[]; }),
+        _loadChallenges().catchError((e) { debugPrint('challenges error: $e'); failures++; return <Map<String, dynamic>>[]; }),
+        _loadPartnerLetter().catchError((e) { debugPrint('letters error: $e'); failures++; return null; }),
+        _loadTodayMoods().catchError((e) { debugPrint('moods error: $e'); failures++; return <Map<String, dynamic>>[]; }),
+        _loadAllQuestions().catchError((e) { debugPrint('questions error: $e'); failures++; return <Map<String, dynamic>>[]; }),
       ]);
       if (!mounted) return;
       debugPrint('Nosotros: challenges=${(results[0] as List).length}, letter=${results[1] != null}, moods=${(results[2] as List).length}, questions=${(results[3] as List).length}');
@@ -212,8 +215,17 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         _partnerQuestions = allQ.where((q) => q['from_user'] == widget.partnerId).toList();
         _latestQuestion = _partnerQuestions.isNotEmpty ? _partnerQuestions.first : null;
       });
+      // Si fallaron (casi) todas las queries es problema de conexión: avisar.
+      // Antes cualquier error quedaba en debugPrint y la pantalla parecía que
+      // "la pareja no hizo nada hoy".
+      if (failures >= 3) {
+        AppFeedback.error(context, 'Sin conexión: Nosotros no se pudo cargar');
+      }
     } catch (e) {
       debugPrint('Nosotros _loadAll error: $e');
+      if (mounted) {
+        AppFeedback.error(context, 'Sin conexión: Nosotros no se pudo cargar');
+      }
     }
   }
 
@@ -239,6 +251,10 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         .limit(1);
     if (data.isEmpty) return null;
     final letter = data[0] as Map<String, dynamic>;
+    // No presentar cartas aún selladas (apertura programada en el futuro).
+    final openRaw = letter['scheduled_open'];
+    final openAt = openRaw == null ? null : DateTime.tryParse(openRaw.toString());
+    if (openAt != null && openAt.isAfter(DateTime.now())) return null;
     // Solo presenta cartas no leidas por el usuario actual.
     await _markSeen(letter, 'letters');
     return letter['seen_by'] != null &&
@@ -286,6 +302,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
     if (emoji.isEmpty) return;
     HapticFeedback.heavyImpact();
     final today = DateTime.now().toIso8601String().split('T')[0];
+    final rewards = context.read<RewardsProvider>();
     try {
       await SupabaseConfig.client.from('moods').insert({
         'user_id': widget.myId,
@@ -293,8 +310,10 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         'date': today,
       });
       _loadAll();
+      rewards.awardOnce(widget.myId, 'mood-$today', 1);
     } catch (e) {
       debugPrint('NosotrosScreen._selectMood error: $e');
+      if (mounted) AppFeedback.error(context, 'No se pudo registrar la emoción');
     }
   }
 
@@ -314,6 +333,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       _scheduleReload();
     } catch (e) {
       debugPrint('NosotrosScreen._answerQuestion error: $e');
+      if (mounted) AppFeedback.error(context, 'No se pudo enviar la respuesta');
     }
   }
 
@@ -334,31 +354,23 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       _loadAll();
     } catch (e) {
       debugPrint('NosotrosScreen._sendNewQuestion error: $e');
+      if (mounted) AppFeedback.error(context, 'No se pudo enviar la pregunta');
     }
   }
 
   void _navigateToChat() {
     HapticFeedback.heavyImpact();
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ChatScreen(
-        myId: widget.myId, partnerId: widget.partnerId ?? '',
-        myName: 'Yo', mode: widget.mode,
-      ),
-    ));
+    context.push(RouterRoutes.chat, extra: widget.mode);
   }
 
   void _navigateToRetos() {
     HapticFeedback.heavyImpact();
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RetosScreen(mode: widget.mode),
-    ));
+    context.push(RouterRoutes.retos, extra: widget.mode);
   }
 
   void _navigateToLetters() {
     HapticFeedback.heavyImpact();
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => LettersScreen(mode: widget.mode, name: 'Yo'),
-    ));
+    context.push(RouterRoutes.cartas, extra: widget.mode);
   }
 
   void _onEmocionesTap() {
@@ -397,16 +409,12 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
 
   void _navigateToMetas() {
     HapticFeedback.heavyImpact();
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => MetasScreen(mode: widget.mode),
-    ));
+    context.push(RouterRoutes.metas, extra: widget.mode);
   }
 
   void _navigateToMapa() {
     HapticFeedback.heavyImpact();
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => MapaScreen(mode: widget.mode),
-    ));
+    context.push(RouterRoutes.mapa, extra: widget.mode);
   }
 
   Widget fillIcon(IconData icon, Color color) {
@@ -460,13 +468,11 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
           (c['completed'] as bool? ?? false) == false).toList();
 
   Widget _buildRetosSwapContent(ThemeSet t) {
-    final retos = _partnerRetos;
-    if (retos.isEmpty) {
+    final reto = _retoSwapItem;
+    if (reto == null) {
       return Center(child: Text('Sin retos', style: GoogleFonts.bangers(color: Colors.white70, fontSize: 13)));
     }
-    final random = retos[Random().nextInt(retos.length)];
-    final title = random['title'] as String? ?? '';
-    _markSeen(random, 'challenges');
+    final title = _retoSwapTitle;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(6),
@@ -477,6 +483,16 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         ]),
       ),
     );
+  }
+
+  void _onRetosSwapShow() {
+    final retos = _partnerRetos;
+    if (retos.isEmpty) return;
+    final random = retos[Random().nextInt(retos.length)];
+    _retoSwapItem = random;
+    _retoSwapTitle = random['title'] as String? ?? '';
+    _markSeen(random, 'challenges');
+    if (mounted) setState(() {});
   }
 
   Widget _buildCartasSwapContent(ThemeSet t) {
@@ -627,6 +643,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
           initialDelay: const Duration(seconds: 4),
           swapDuration: const Duration(seconds: 7),
           iconDuration: const Duration(seconds: 4),
+          onSwapShow: _onRetosSwapShow,
           iconChild: fillIcon(Icons.flag, t.light),
           swapChild: _buildRetosSwapContent(t),
         ),

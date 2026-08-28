@@ -13,7 +13,7 @@ import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFF00D4FF);
-const _dark = Color(0xFF000000);
+const _dark = Color(0xFF0D0D0D);
 const _near = Color(0xFF1A1A1A);
 const _cDeep = Color(0xFF003344);
 const _cBright = Color(0xFF0088AA);
@@ -141,7 +141,7 @@ class _ScheduleFormScreenState extends State<ScheduleFormScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _type == t.name ? _c : Color(t.color).withValues(alpha: 0.2),
+                      color: _type == t.name ? _c : _near,
                       border: Border.all(color: Color(t.color), width: 3),
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
@@ -218,10 +218,10 @@ class _ScheduleFormScreenState extends State<ScheduleFormScreen> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-color: _c.withValues(alpha: 0.25),
-            border: Border.all(color: _c, width: 3),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
+                  color: _near,
+                  border: Border.all(color: _near, width: 3),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                 ),
                 child: const Icon(Icons.close, color: Color(0xFF00D4FF), size: 24),
               ),
@@ -236,11 +236,11 @@ color: _c.withValues(alpha: 0.25),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.red,
-                  border: Border.all(color: _dark, width: 3),
+                  border: Border.all(color: Colors.red, width: 3),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                 ),
-                child: const Icon(Icons.check, color: Color(0xFF000000), size: 24),
+                child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 24),
               ),
             ),
           ),
@@ -288,11 +288,11 @@ color: _c.withValues(alpha: 0.25),
           child: Container(
             decoration: BoxDecoration(
               color: _c,
-              border: Border.all(color: _dark, width: 4),
+              border: Border.all(color: _c, width: 4),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
             ),
-            child: const Center(child: Icon(Icons.arrow_back, color: Color(0xFF000000), size: 26)),
+            child: const Center(child: Icon(Icons.arrow_back, color: Color(0xFF0D0D0D), size: 26)),
           ),
         ),
       ),
@@ -373,7 +373,7 @@ color: _c.withValues(alpha: 0.25),
       borderRadius: BorderRadius.circular(14),
       child: Container(
         decoration: BoxDecoration(
-          color: _c.withValues(alpha: 0.25),
+          color: _near,
           border: Border.all(color: _c, width: 3),
           borderRadius: BorderRadius.circular(14),
           boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
@@ -405,7 +405,7 @@ color: _c.withValues(alpha: 0.25),
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: displayColor.withValues(alpha: 0.25),
+            color: _near,
             border: Border.all(color: displayColor, width: 3),
             borderRadius: BorderRadius.circular(14),
             boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
@@ -426,7 +426,7 @@ color: _c.withValues(alpha: 0.25),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: _c.withValues(alpha: 0.25),
+          color: _near,
           border: Border.all(color: _c, width: 3),
           borderRadius: BorderRadius.circular(14),
           boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
@@ -600,7 +600,7 @@ color: _c.withValues(alpha: 0.25),
                         color: sel ? _c : _dark,
                         borderRadius: BorderRadius.circular(10),
                         border:
-                            Border.all(color: sel ? _dark : _cBright, width: 2),
+                            Border.all(color: sel ? _c : _cBright, width: 2),
                       ),
                       child: Icon(
                         EventType(name: '', color: 0, icon: name).iconData,
@@ -639,7 +639,7 @@ color: _c.withValues(alpha: 0.25),
                       border: Border.all(color: _dark, width: 3),
                       borderRadius: BorderRadius.circular(18),
                     ),
-                    child: const Icon(Icons.check, color: Color(0xFF000000), size: 22),
+                    child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 22),
                   ),
                 ),
               ),
@@ -658,7 +658,7 @@ color: _c.withValues(alpha: 0.25),
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: _c.withValues(alpha: 0.25),
+            color: _near,
             border: Border.all(color: _c, width: 3),
             borderRadius: BorderRadius.circular(14),
             boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
@@ -687,7 +687,7 @@ color: _c.withValues(alpha: 0.25),
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: _c.withValues(alpha: 0.25),
+            color: _near,
             border: Border.all(color: _c, width: 3),
             borderRadius: BorderRadius.circular(14),
             boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
@@ -715,14 +715,14 @@ color: _c.withValues(alpha: 0.25),
           child: Container(
             decoration: BoxDecoration(
               color: _saving ? _cDeep : _c,
-              border: Border.all(color: _dark, width: 5),
+              border: Border.all(color: _saving ? _cDeep : _c, width: 5),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
             ),
             child: Center(
               child: _saving
                   ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 3, color: _dark))
-                  : const Icon(Icons.check, color: Color(0xFF000000), size: 32),
+                  : const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 32),
             ),
           ),
         ),
@@ -739,8 +739,8 @@ color: _c.withValues(alpha: 0.25),
           borderRadius: BorderRadius.circular(18),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.25),
-              border: Border.all(color: Colors.red, width: 4),
+              color: const Color(0xFF4A0000),
+              border: Border.all(color: const Color(0xFF4A0000), width: 4),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
             ),

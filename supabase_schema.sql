@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS challenges (
 CREATE TABLE IF NOT EXISTS daily_questions (
   id BIGSERIAL PRIMARY KEY,
   question TEXT NOT NULL,
+  options JSONB,  -- opciones de opción múltiple (trivia de pareja)
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -104,9 +105,15 @@ CREATE TABLE IF NOT EXISTS question_answers (
   question_id BIGINT REFERENCES daily_questions(id),
   user_id UUID REFERENCES profiles(id) NOT NULL,
   answer TEXT NOT NULL,
+  guess TEXT,  -- predicción de la respuesta de la pareja (trivia)
   date DATE DEFAULT CURRENT_DATE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- TriviaProvider.submit usa upsert onConflict 'user_id,date'; sin este índice
+-- el ON CONFLICT en una DB nueva falla ("no unique or exclusion constraint...").
+CREATE UNIQUE INDEX IF NOT EXISTS idx_question_answers_user_date
+  ON question_answers(user_id, date);
 
 -- 10. DEVICE TOKENS (FCM push notifications)
 CREATE TABLE IF NOT EXISTS device_tokens (
@@ -194,6 +201,12 @@ CREATE TRIGGER on_message_insert_send_push
 
 -- INDEXES
 CREATE INDEX IF NOT EXISTS idx_messages_participants ON messages(from_user, to_user);
+-- Indice unico para device_tokens: evita duplicados (mismo token, dos filas)
+-- y permite upsert limpio desde la app. La Edge Function send-push poda los
+-- tokens UNREGISTERED (instalaciones viejas) que antes se acumulaban para
+-- siempre y hacian que el push "no llegara".
+CREATE UNIQUE INDEX IF NOT EXISTS idx_device_tokens_user_token
+  ON device_tokens(user_id, token);
 CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(read) WHERE read = false;
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_letters_recipient ON letters(to_user, is_opened);
@@ -320,6 +333,52 @@ CREATE TABLE IF NOT EXISTS board_elements (
 
 CREATE INDEX IF NOT EXISTS idx_board_elements_board_id ON board_elements(board_id);
 
+-- 18a. BOARD ELEMENTS V2 (espejo del schema SQLite local; el cloud_id es
+--      columna solo-local de SQLite, no existe en la nube)
+CREATE TABLE IF NOT EXISTS board_elements_v2 (
+  id BIGSERIAL PRIMARY KEY,
+  type TEXT NOT NULL DEFAULT 'note',
+  title TEXT DEFAULT '',
+  content TEXT DEFAULT '',
+  x DOUBLE PRECISION NOT NULL DEFAULT 0,
+  y DOUBLE PRECISION NOT NULL DEFAULT 0,
+  width DOUBLE PRECISION,
+  height DOUBLE PRECISION,
+  rotation DOUBLE PRECISION NOT NULL DEFAULT 0,
+  color TEXT,
+  text_color TEXT,
+  font_family TEXT,
+  font_size DOUBLE PRECISION,
+  text_align TEXT DEFAULT 'left',
+  is_bold BOOLEAN NOT NULL DEFAULT false,
+  is_italic BOOLEAN NOT NULL DEFAULT false,
+  is_underline BOOLEAN NOT NULL DEFAULT false,
+  emoji_header TEXT,
+  tags JSONB DEFAULT '[]'::jsonb,
+  priority TEXT DEFAULT 'normal',
+  assigned_to TEXT,
+  user_id TEXT DEFAULT '',
+  status TEXT DEFAULT 'draft',
+  is_collapsed BOOLEAN NOT NULL DEFAULT false,
+  is_locked BOOLEAN NOT NULL DEFAULT false,
+  is_archived BOOLEAN NOT NULL DEFAULT false,
+  board_id BIGINT NOT NULL DEFAULT 1,
+  z INTEGER NOT NULL DEFAULT 0,
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  is_new BOOLEAN NOT NULL DEFAULT true
+);
+
+CREATE INDEX IF NOT EXISTS idx_board_elements_v2_board_id
+  ON board_elements_v2(board_id);
+
+ALTER TABLE board_elements_v2 ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "full_access_board_elements_v2" ON board_elements_v2;
+CREATE POLICY "full_access_board_elements_v2" ON board_elements_v2 FOR ALL USING (true);
+GRANT ALL ON board_elements_v2 TO authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE board_elements_v2_id_seq TO authenticated, service_role;
+
 -- 18b. BOARDS (tableros anidables, proyecto a proyecto)
 CREATE TABLE IF NOT EXISTS boards (
   id BIGSERIAL PRIMARY KEY,
@@ -420,6 +479,45 @@ CREATE TABLE IF NOT EXISTS deck_cards (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 24b. COUPLE ACHIEVEMENTS (logros de pareja que se desbloquean al cumplir hitos)
+CREATE TABLE IF NOT EXISTS couple_achievements (
+  id BIGSERIAL PRIMARY KEY,
+  achievement_code TEXT NOT NULL UNIQUE,  -- código de la regla (ej: streak_7)
+  awarded_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 24c. COUPLE REWARDS + POINTS (cajita de deseos y puntos de pareja)
+CREATE TABLE IF NOT EXISTS couple_rewards (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  emoji TEXT NOT NULL DEFAULT '🎁',
+  cost INTEGER NOT NULL DEFAULT 10,
+  fulfilled BOOLEAN NOT NULL DEFAULT false,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS couple_points (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  delta INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Unicidad (user_id, reason): premisa del awardOnce idempotente (ON CONFLICT).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_couple_points_user_reason
+  ON couple_points(user_id, reason);
+
+-- 24d. COUPLE LOCATIONS (última ubicación de cada miembro → distancia realtime)
+CREATE TABLE IF NOT EXISTS couple_locations (
+  user_id TEXT PRIMARY KEY,
+  lat DOUBLE PRECISION NOT NULL DEFAULT 0,
+  lng DOUBLE PRECISION NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- 25. WORKOUT LOGS (ejercicios registrados, sueltos o de rutina)
 CREATE TABLE IF NOT EXISTS workout_logs (
   id BIGSERIAL PRIMARY KEY,
@@ -455,10 +553,19 @@ CREATE TABLE IF NOT EXISTS workout_completions (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID REFERENCES profiles(id) NOT NULL,
   completed_on DATE DEFAULT CURRENT_DATE,
-  routine_id BIGINT,
+  -- NOT NULL para que la UNIQUE (user_id, completed_on, routine_id) funcione:
+  -- en Postgres dos NULL en una columna UNIQUE se consideran DISTINTOS, así que
+  -- con routine_id nullable el mismo día sin rutina podía duplicarse.
+  routine_id BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (user_id, completed_on, routine_id)
 );
+
+-- Migración de filas existentes con routine_id NULL (backfill antes del NOT NULL).
+UPDATE workout_completions SET routine_id = 0 WHERE routine_id IS NULL;
+ALTER TABLE workout_completions ALTER COLUMN routine_id DROP DEFAULT;
+ALTER TABLE workout_completions ALTER COLUMN routine_id SET NOT NULL;
+ALTER TABLE workout_completions ALTER COLUMN routine_id SET DEFAULT 0;
 
 -- 28. WORKOUT CHALLENGES (retos con aprobacion y completado conjuntos)
 CREATE TABLE IF NOT EXISTS workout_challenges (
@@ -493,6 +600,9 @@ CREATE INDEX IF NOT EXISTS idx_workout_logs_logged_on ON workout_logs(logged_on)
 CREATE INDEX IF NOT EXISTS idx_workout_logs_name ON workout_logs(exercise_name);
 CREATE INDEX IF NOT EXISTS idx_workout_routines_day ON workout_routines(day_of_week);
 CREATE INDEX IF NOT EXISTS idx_workout_completions_on ON workout_completions(completed_on);
+CREATE INDEX IF NOT EXISTS idx_couple_achievements_awarded ON couple_achievements(awarded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_couple_rewards_created ON couple_rewards(created_at);
+CREATE INDEX IF NOT EXISTS idx_couple_points_user ON couple_points(user_id);
 
 -- RLS for new tables
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
@@ -510,6 +620,10 @@ ALTER TABLE workout_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_routines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_completions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE couple_achievements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE couple_rewards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE couple_points ENABLE ROW LEVEL SECURITY;
+ALTER TABLE couple_locations ENABLE ROW LEVEL SECURITY;
 
 -- Policies for new tables
 DO $$ BEGIN
@@ -528,6 +642,10 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "full_access_workout_routines" ON workout_routines;
   DROP POLICY IF EXISTS "full_access_workout_completions" ON workout_completions;
   DROP POLICY IF EXISTS "full_access_workout_challenges" ON workout_challenges;
+  DROP POLICY IF EXISTS "full_access_couple_achievements" ON couple_achievements;
+  DROP POLICY IF EXISTS "full_access_couple_rewards" ON couple_rewards;
+  DROP POLICY IF EXISTS "full_access_couple_points" ON couple_points;
+  DROP POLICY IF EXISTS "full_access_couple_locations" ON couple_locations;
 END $$;
 
 CREATE POLICY "full_access_tasks" ON tasks FOR ALL USING (true);
@@ -545,3 +663,144 @@ CREATE POLICY "full_access_workout_logs" ON workout_logs FOR ALL USING (true);
 CREATE POLICY "full_access_workout_routines" ON workout_routines FOR ALL USING (true);
 CREATE POLICY "full_access_workout_completions" ON workout_completions FOR ALL USING (true);
 CREATE POLICY "full_access_workout_challenges" ON workout_challenges FOR ALL USING (true);
+CREATE POLICY "full_access_couple_achievements" ON couple_achievements FOR ALL USING (true);
+CREATE POLICY "full_access_couple_rewards" ON couple_rewards FOR ALL USING (true);
+CREATE POLICY "full_access_couple_points" ON couple_points FOR ALL USING (true);
+CREATE POLICY "full_access_couple_locations" ON couple_locations FOR ALL USING (true);
+
+-- 29. RPC DE MERGE ATÓMICO DE REACCIONES (Fase 0 — mismos orígenes que
+--     supabase/migration_reaction_rpc.sql). Eliminan el race de "último write
+--     gana" haciendo el merge dentro de Postgres con row-level lock.
+--     29a. toggle_reaction: forma {key: [userIds]}, max 5 keys, toggle on/off.
+--          Cubre messages.reactions, gallery.reactions, workout_*.social y
+--          board_elements_v2.data.
+--     29b. react_deck_card: forma {userId: emoji} (mazo), reemplazo atómico.
+CREATE OR REPLACE FUNCTION public.toggle_reaction(
+  target_table TEXT,
+  target_col   TEXT,
+  row_id       BIGINT,
+  reaction_key TEXT,
+  user_id      TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+DECLARE
+  doc     JSONB;
+  base    JSONB;
+  reac    JSONB;
+  w       JSONB;
+  k       TEXT;
+  arr     JSONB;
+  new_arr JSONB;
+  already BOOLEAN;
+  nkeys   INT;
+BEGIN
+  IF NOT (
+        (target_table = 'messages'   AND target_col = 'reactions')
+     OR (target_table = 'gallery'    AND target_col = 'reactions')
+     OR (target_table = 'workout_logs'       AND target_col = 'social')
+     OR (target_table = 'workout_routines'   AND target_col = 'social')
+     OR (target_table = 'workout_challenges' AND target_col = 'social')
+     OR (target_table = 'board_elements_v2'  AND target_col = 'data')
+  ) THEN
+    RAISE EXCEPTION 'tabla/columna no permitida: %.%', target_table, target_col;
+  END IF;
+
+  IF reaction_key IS NULL OR reaction_key = '' OR user_id IS NULL OR user_id = '' THEN
+    RAISE EXCEPTION 'reaction_key y user_id son requeridos';
+  END IF;
+
+  EXECUTE format('SELECT %I FROM %I WHERE id = $1 FOR UPDATE', target_col, target_table)
+    INTO doc USING row_id;
+  IF doc IS NULL THEN
+    RAISE EXCEPTION 'registro no encontrado: %', row_id;
+  END IF;
+
+  IF target_col IN ('social', 'data') THEN
+    base := doc;
+    reac := doc -> 'reactions';
+  ELSE
+    base := NULL;
+    reac := doc;
+  END IF;
+  IF reac IS NULL OR jsonb_typeof(reac) != 'object' THEN
+    reac := '{}'::jsonb;
+  END IF;
+
+  already := (reac -> reaction_key) IS NOT NULL
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(reac -> reaction_key) AS e
+               WHERE e = user_id
+             );
+
+  SELECT count(*)::int INTO nkeys FROM jsonb_object_keys(reac);
+  IF NOT already AND NOT (reac ? reaction_key) AND nkeys >= 5 THEN
+    RETURN reac;
+  END IF;
+
+  FOR k IN SELECT key FROM jsonb_object_keys(reac) AS key LOOP
+    arr := reac -> k;
+    IF jsonb_typeof(arr) = 'array' THEN
+      new_arr := (
+        SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+        FROM jsonb_array_elements_text(arr) AS e
+        WHERE e <> user_id
+      );
+      IF jsonb_array_length(new_arr) = 0 THEN
+        reac := reac - k;
+      ELSE
+        reac := jsonb_set(reac, ARRAY[k], new_arr);
+      END IF;
+    END IF;
+  END LOOP;
+
+  IF NOT already THEN
+    reac := jsonb_set(reac, ARRAY[reaction_key],
+      COALESCE(reac -> reaction_key, '[]'::jsonb) || to_jsonb(user_id));
+  END IF;
+
+  IF target_col IN ('social', 'data') THEN
+    w := jsonb_set(base, ARRAY['reactions'], reac);
+  ELSE
+    w := reac;
+  END IF;
+
+  IF target_table IN ('workout_logs','workout_routines','workout_challenges','board_elements_v2') THEN
+    EXECUTE format('UPDATE %I SET %I = $1, updated_at = NOW() WHERE id = $2', target_table, target_col) USING w, row_id;
+  ELSE
+    EXECUTE format('UPDATE %I SET %I = $1 WHERE id = $2', target_table, target_col) USING w, row_id;
+  END IF;
+
+  RETURN reac;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.react_deck_card(
+  row_id   BIGINT,
+  user_id  TEXT,
+  reaction TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+DECLARE
+  reac JSONB;
+BEGIN
+  IF user_id IS NULL OR user_id = '' OR reaction IS NULL OR reaction = '' THEN
+    RAISE EXCEPTION 'user_id y reaction son requeridos';
+  END IF;
+
+  SELECT reactions INTO reac FROM deck_cards WHERE id = row_id FOR UPDATE;
+  IF reac IS NULL OR jsonb_typeof(reac) != 'object' THEN reac := '{}'::jsonb; END IF;
+
+  reac := jsonb_set(reac, ARRAY[user_id], to_jsonb(reaction));
+  UPDATE deck_cards SET reactions = reac, updated_at = NOW() WHERE id = row_id;
+  RETURN reac;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.toggle_reaction(TEXT, TEXT, BIGINT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.react_deck_card(BIGINT, TEXT, TEXT) TO anon, authenticated;

@@ -45,22 +45,38 @@ class ClassScheduleProvider extends ChangeNotifier {
     }
   }
 
-  /// Las clases previas al sync viven solo en SQLite (sin cloudId). Al cargar,
-  /// se suben a Supabase para que el bot y la pareja las conozcan.
+  /// Sube a Supabase las clases pendientes: las locales sin cloudId (nunca
+  /// sincronizadas) Y las YA sincronizadas pero modificadas offline (synced=0,
+  /// que antes se perdían para siempre).
   Future<void> _syncUnsyncedToSupabase() async {
-    final unsynced = _schedules.where((s) => s.cloudId == null).toList();
-    for (final s in unsynced) {
-      final cloudId = await _pushToSupabase(s.toSupabaseMap());
-      if (cloudId != null) {
-        await _db.update('class_schedules', {'cloudId': cloudId}, s.id!);
-        final i = _schedules.indexWhere((x) => x.id == s.id);
-        if (i != -1) _schedules[i] = s.copyWith(cloudId: cloudId);
-      }
+    final rows = await _db.getWhere(
+      'class_schedules',
+      'cloudId IS NULL OR synced = 0',
+      <dynamic>[],
+    );
+    for (final r in rows) {
+      final s = ClassSchedule.fromMap(r);
+      final cloudId = r['cloudId'] as int?;
+      final newCloudId = await _pushToSupabase(
+        s.toSupabaseMap(),
+        localId: s.id,
+        cloudId: cloudId,
+      );
+      if (newCloudId == null) continue; // sin red: reintentar en próxima carga
+      await _db.update(
+        'class_schedules',
+        {'cloudId': newCloudId, 'synced': 1},
+        s.id!,
+      );
+      final i = _schedules.indexWhere((x) => x.id == s.id);
+      if (i != -1) _schedules[i] = s.copyWith(cloudId: newCloudId);
     }
   }
 
   /// Trae TODAS las clases cloud y las mergea en SQLite local por cloudId.
-  /// Asi las clases cargadas por la pareja aparecen en este dispositivo.
+  /// Las clases de la pareja aparecen, y sus EDICIONES sobre clases existentes
+  /// (día, hora, profesor) también bajan (antes solo se insert/delete, jamás
+  /// se actualizaba una fila local existente → cambios de la pareja se perdían).
   Future<void> _pullFromCloud() async {
     final data =
         await SupabaseConfig.client.from('class_schedules').select('*');
@@ -82,6 +98,14 @@ class ClassScheduleProvider extends ChangeNotifier {
             ..['cloudId'] = c.cloudId,
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
+      } else {
+        // La clase cloud es la autoritativa para datos compartidos: actualizar
+        // la fila local existente con el cloudId.
+        final localMap = c.toMap()
+          ..remove('id')
+          ..remove('cloudId')
+          ..['cloudId'] = c.cloudId;
+        await _db.update('class_schedules', localMap, pair.first['id'] as int);
       }
     }
     for (final m in localMaps) {
@@ -127,8 +151,12 @@ class ClassScheduleProvider extends ChangeNotifier {
     final localRow = await _db.getById('class_schedules', s.id!);
     final cloudId = localRow?['cloudId'] as int?;
     await _db.update('class_schedules', s.toMap(), s.id!);
-    await _pushToSupabase(s.toSupabaseMap(),
+    final pushed = await _pushToSupabase(s.toSupabaseMap(),
         localId: s.id, cloudId: cloudId);
+    if (pushed == null) {
+      // Pull offline/falló: marcar dirty para re-push en la próxima carga.
+      await _db.update('class_schedules', {'synced': 0}, s.id!);
+    }
     final i = _schedules.indexWhere((x) => x.id == s.id);
     if (i != -1) _schedules[i] = s;
     notifyListeners();
@@ -224,6 +252,15 @@ class ClassScheduleProvider extends ChangeNotifier {
             ..['cloudId'] = cloudS.cloudId,
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
+      } else {
+        // UPDATE de una clase existente por parte de la pareja: aplicar
+        // autoritativamente (antes se ignoraba → los cambios del otro no bajaban).
+        final localMap = cloudS.toMap()
+          ..remove('id')
+          ..remove('cloudId')
+          ..['cloudId'] = cloudS.cloudId;
+        await _db.update(
+          'class_schedules', localMap, rows.first['id'] as int);
       }
       await _reloadFromLocal();
       notifyListeners();

@@ -6,13 +6,26 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/gallery_provider.dart';
 import '../../app_state.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/loca_screen.dart';
 import '../../widgets/tap_tile.dart';
-import '../../widgets/concrete_painter.dart';
-import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFFFF66C4);
-const _dark = Color(0xFF000000);
+const _dark = Color(0xFF1A0A14);
+const _galeriaTheme = ThemeSet(
+  a: Color(0xFFFF66C4),
+  b: Color(0xFFD84AA0),
+  c: Color(0xFFB23BFF),
+  d: Color(0xFF993355),
+  e: Color(0xFF3D1028),
+  dark: Color(0xFF1A0A14),
+  light: Color(0xFFFFFFFF),
+  mid: Color(0xFF2A1422),
+);
 
+/// Galería estilo "Nosotros": un bloque-foto por foto (thumbnail en mosaico);
+/// subir (+) fija en la columna lateral. Tap → detalle a pantalla completa
+/// (descripción, reacciones, comentarios).
 class GaleriaScreen extends StatefulWidget {
   const GaleriaScreen({super.key});
   @override
@@ -20,10 +33,7 @@ class GaleriaScreen extends StatefulWidget {
 }
 
 class _GaleriaScreenState extends State<GaleriaScreen> {
-  String? _selectedAlbum;
   int? _fullScreenId;
-  bool _uploading = false;
-  String _uploadStatus = '';
 
   @override
   void initState() {
@@ -34,16 +44,13 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   Future<void> _pickAndUpload() async {
     HapticFeedback.heavyImpact();
     final picker = ImagePicker();
-    setState(() => _uploadStatus = 'Seleccionando...');
     final file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800, imageQuality: 70);
-    if (file == null) { setState(() => _uploadStatus = ''); return; }
-    setState(() { _uploading = true; _uploadStatus = 'Subiendo...'; });
-    await context.read<GalleryProvider>().uploadAndAdd(file.path, album: _selectedAlbum, label: 'Foto');
+    if (file == null) return;
+    await context.read<GalleryProvider>().uploadAndAdd(file.path, album: null, label: 'Foto');
     final err = context.read<GalleryProvider>().error;
     if (err != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err, style: GoogleFonts.bangers(fontSize: 12)), backgroundColor: const Color(0xFFFF4444), duration: const Duration(seconds: 4)));
     }
-    if (mounted) setState(() { _uploading = false; _uploadStatus = ''; });
   }
 
   ImageProvider? _getImage(String? url) {
@@ -55,28 +62,88 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   @override
   Widget build(BuildContext context) {
     if (_fullScreenId != null) return _fullScreenView();
-    return Scaffold(backgroundColor: _c, body: ResponsiveWrapper(builder: (context, w, h) {
-      return SizedBox(width: w, height: h, child: Stack(children: [
-        Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-        _headerBar(w, h),
-        _albumStrip(w, h),
-        _mosaicBlock(w, h),
-        _fab(w, h),
-      ]));
-    }));
+    return Consumer<GalleryProvider>(
+      builder: (context, pv, _) {
+        final items = pv.items;
+        final entries = <LocaEntry>[
+          if (pv.hasError)
+            LocaEntry(icon: Icons.cloud_off, color: const Color(0xFFFF4444), onTap: () => context.read<GalleryProvider>().load()),
+          // Mientras carga (sin cache) mostrar un tile en vez de vacío absoluto
+          // (antes se veía igual a "no hay fotos" y a "rompió").
+          if (pv.loading && items.isEmpty)
+            LocaEntry(icon: Icons.hourglass_top, color: _c, iconColor: _dark),
+          if (!pv.loading && !pv.hasError && items.isEmpty)
+            LocaEntry(icon: Icons.camera_alt, color: _c, iconColor: _dark),
+          for (var i = 0; i < items.length; i++)
+            LocaEntry(
+              icon: Icons.camera_alt,
+              color: _c,
+              iconColor: _dark,
+              childBuilder: (_) => _photoTile(items[i]),
+              onTap: () {
+                if (_fullScreenId == null) {
+                  setState(() => _fullScreenId = items[i].id);
+                  if (items[i].id != null) context.read<GalleryProvider>().loadComments(items[i].id!);
+                }
+              },
+            ),
+          LocaEntry(
+            icon: Icons.add_a_photo,
+            color: _c,
+            iconColor: _dark,
+            label: 'subir',
+            onTap: _pickAndUpload,
+            isAction: true,
+          ),
+        ];
+        return LocaScreen(
+          seed: 47,
+          theme: _galeriaTheme,
+          entries: entries,
+        );
+      },
+    );
+  }
+
+  Widget _photoTile(GalleryItem item) {
+    final img = _getImage(item.url);
+    final myInitial = AppState.identity?.substring(0, 1).toUpperCase() ?? '?';
+    final partnerInitial = myInitial == 'F' ? 'R' : 'F';
+    final ownerInitial = item.userId == AppState.myId ? myInitial : partnerInitial;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(fit: StackFit.expand, children: [
+        if (img != null)
+          Image(image: img, fit: BoxFit.cover),
+        if (img == null)
+          Center(child: Icon(Icons.broken_image, color: _dark.withValues(alpha: 0.3), size: 40)),
+        Positioned(left: 4, top: 4, child: Container(
+          width: 18, height: 18, alignment: Alignment.center,
+          decoration: BoxDecoration(color: _dark.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(6)),
+          child: Text(ownerInitial, style: GoogleFonts.bangers(color: _c, fontSize: 10, fontWeight: FontWeight.w900)),
+        )),
+      ]),
+    );
   }
 
   Widget _fullScreenView() {
     final items = context.read<GalleryProvider>().items;
     final item = items.firstWhere((i) => i.id == _fullScreenId, orElse: () => GalleryItem(url: '', type: 'photo'));
     final img = _getImage(item.url);
-    final darkBg = const Color(0xFF1A0A14);
-    return Scaffold(backgroundColor: darkBg, body: SafeArea(child: Stack(children: [
+    return Scaffold(backgroundColor: _dark, body: SafeArea(child: Stack(children: [
       Positioned.fill(child: img != null ? Image(image: img, fit: BoxFit.cover) : Icon(Icons.broken_image, color: _c, size: 80)),
       Positioned.fill(child: Container(color: const Color(0xFF000000).withValues(alpha: 0.45))),
       Align(alignment: Alignment.bottomCenter, child: _detailPanel(item)),
       Positioned(left: 12, top: 8, child: TapTile(onTap: () => setState(() => _fullScreenId = null), child: Container(width: 44, height: 44, decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.arrow_back, color: Color(0xFF000000), size: 26)))),
-      Positioned(right: 12, top: 8, child: TapTile(onTap: () { context.read<GalleryProvider>().delete(_fullScreenId!); setState(() => _fullScreenId = null); }, child: Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFFFF4444), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.delete, color: Colors.white, size: 24)))),
+      Positioned(right: 12, top: 8, child: TapTile(onTap: () async {
+        final pv = context.read<GalleryProvider>();
+        await pv.delete(_fullScreenId!);
+        if (mounted) setState(() => _fullScreenId = null);
+        final err = pv.error;
+        if (err != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err, style: GoogleFonts.bangers(fontSize: 12)), backgroundColor: const Color(0xFFFF4444), duration: const Duration(seconds: 4)));
+        }
+      }, child: Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFFFF4444), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.delete, color: Colors.white, size: 24)))),
     ])));
   }
 
@@ -124,7 +191,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     final text = item.description ?? '';
     return Row(children: [
       Expanded(child: text.isEmpty
-          ? Text('sin descripcion - tapa el texto', style: GoogleFonts.bangers(color: Colors.white24, fontSize: 13))
+          ? Text('sin descripcion', style: GoogleFonts.bangers(color: Colors.white24, fontSize: 13))
           : Text(text, style: GoogleFonts.bangers(color: Colors.white, fontSize: 15))),
       TapTile(onTap: () => _editDescription(pv, item), child: Container(width: 36, height: 36, decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.edit, color: Color(0xFF000000), size: 20))),
     ]);
@@ -152,62 +219,5 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
         return TapTile(onTap: () { if (item.id != null) pv.toggleReaction(item.id!, e); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: active ? _c : const Color(0xFF2A1422), borderRadius: BorderRadius.circular(10)), child: Text(e, style: const TextStyle(fontSize: 16))));
       }).toList()),
     ]);
-  }
-
-  Widget _headerBar(double w, double h) {
-    final barH = h * 0.07;
-    return Positioned(left: w * 0.03, top: h * 0.015, width: w * 0.94, height: barH, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _c, border: Border.all(color: _dark, width: 4), borderRadius: BorderRadius.circular(18)), child: Row(children: [
-      Expanded(child: Center(child: Text('GALERIA', style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 20, color: _dark)))),
-      TapTile(onTap: _pickAndUpload, child: Container(width: barH, height: barH, decoration: BoxDecoration(color: _dark, borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.cloud_upload, color: Color(0xFFFF66C4), size: 24))),
-    ]))));
-  }
-
-  Widget _albumStrip(double w, double h) {
-    final barH = h * 0.07;
-    return Positioned(left: w * 0.03, top: h * 0.015 + barH + h * 0.015, width: w * 0.94, height: h * 0.08,
-      child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _c, border: Border.all(color: _dark, width: 3), borderRadius: BorderRadius.circular(18)),
-        child: Consumer<GalleryProvider>(builder: (context, pv, _) {
-          final albums = pv.albums;
-          if (albums.isEmpty) return const Center(child: Icon(Icons.photo_album, color: Color(0xFF993355), size: 24));
-          return ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), itemCount: albums.length, itemBuilder: (context, index) {
-            final album = albums[index]; final selected = album == _selectedAlbum;
-            return Padding(padding: const EdgeInsets.only(right: 8), child: TapTile(onTap: () { HapticFeedback.heavyImpact(); setState(() => _selectedAlbum = selected ? null : album); }, child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: selected ? _dark : _c, border: Border.all(color: _dark, width: 2), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.photo_album, color: selected ? _c : _dark, size: 20), const SizedBox(width: 4), Text(album, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 11, color: selected ? _c : _dark))])))));
-          });
-        }))));
-  }
-
-  Widget _mosaicBlock(double w, double h) {
-    final barH = h * 0.07;
-    final top = h * 0.015 + barH + h * 0.015 + h * 0.08 + h * 0.01;
-    return Positioned(left: w * 0.03, top: top, width: w * 0.94, height: h * 0.70,
-      child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(decoration: BoxDecoration(color: _c, border: Border.all(color: _dark, width: 4), borderRadius: BorderRadius.circular(18)),
-        child: ClipRRect(borderRadius: BorderRadius.circular(14), child: Consumer<GalleryProvider>(builder: (context, pv, _) {
-          if (pv.loading || _uploading) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            CircularProgressIndicator(color: _dark, strokeWidth: 4),
-            if (_uploadStatus.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_uploadStatus, style: GoogleFonts.bangers(color: _dark, fontSize: 12))),
-          ]));
-          final items = _selectedAlbum != null ? pv.byAlbum(_selectedAlbum!) : pv.items;
-          if (items.isEmpty) return Center(child: Icon(Icons.camera_alt, color: _dark.withValues(alpha: 0.3), size: 56));
-          return GridView.builder(padding: const EdgeInsets.all(6), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 6, mainAxisSpacing: 6), itemCount: items.length, itemBuilder: (context, i) {
-            final item = items[i];
-            final myInitial = (AppState.identity?.substring(0, 1).toUpperCase() ?? '?');
-            final partnerInitial = myInitial == 'F' ? 'R' : 'F';
-            final ownerInitial = item.userId == AppState.myId ? myInitial : partnerInitial;
-            final img = _getImage(item.url);
-            return GestureDetector(onTap: () { if (item.id != null) context.read<GalleryProvider>().loadComments(item.id!); setState(() => _fullScreenId = item.id); }, child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Container(decoration: BoxDecoration(color: _c.withValues(alpha: 0.5), border: Border.all(color: _dark, width: 2), borderRadius: BorderRadius.circular(12)),
-              child: Stack(children: [
-                if (img != null) Positioned.fill(child: Image(image: img, fit: BoxFit.cover)),
-                if (img == null) Center(child: Icon(Icons.broken_image, color: _dark.withValues(alpha: 0.3), size: 30)),
-                Positioned(left: 4, top: 4, child: Container(width: 18, height: 18, alignment: Alignment.center, decoration: BoxDecoration(color: _dark.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(6)), child: Text(ownerInitial, style: GoogleFonts.bangers(color: _c, fontSize: 10, fontWeight: FontWeight.w900)))),
-                Positioned(right: 2, top: 2, child: GestureDetector(onTap: () { if (item.id != null) context.read<GalleryProvider>().delete(item.id!); }, child: Container(width: 22, height: 22, decoration: BoxDecoration(color: const Color(0xFFFF4444).withValues(alpha: 0.9), borderRadius: BorderRadius.circular(6)), child: const Icon(Icons.close, color: Colors.white, size: 14)))),
-              ])),
-            ));
-          });
-        })))),
-    );
-  }
-
-  Widget _fab(double w, double h) {
-    return Positioned(right: w * 0.05, bottom: h * 0.03, child: TapTile(onTap: _pickAndUpload, child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Container(width: w * 0.13, height: w * 0.13, decoration: BoxDecoration(color: _dark, border: Border.all(color: _c, width: 4), borderRadius: BorderRadius.circular(18), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)]), child: const Center(child: Icon(Icons.add_a_photo, color: Color(0xFFFF66C4), size: 28))))));
   }
 }

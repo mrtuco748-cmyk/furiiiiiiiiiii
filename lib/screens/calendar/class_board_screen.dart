@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../providers/class_schedule_provider.dart';
 import '../../providers/class_type_provider.dart';
 import '../../models/class_schedule.dart';
@@ -11,16 +12,10 @@ import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
 
 const _c = Color(0xFF00D4FF);
-const _dark = Color(0xFF000000);
+const _dark = Color(0xFF0D0D0D);
 const _near = Color(0xFF1A1A1A);
 const _cDeep = Color(0xFF003344);
 const _cBright = Color(0xFF0088AA);
-
-const _dayIcons = [
-  Icons.looks_one, Icons.looks_two, Icons.looks_3,
-  Icons.looks_4, Icons.looks_5, Icons.looks_6,
-  Icons.circle,
-];
 
 Widget fillIcon(IconData icon, Color color) {
   return FittedBox(
@@ -108,10 +103,9 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
               const Icon(Icons.category, color: Color(0xFF00D4FF), size: 26),
               const SizedBox(width: 8),
               Text('Tipos de clase',
-                  style: TextStyle(
+                  style: GoogleFonts.bangers(
                       color: _c,
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w900,
                       fontSize: 15)),
             ]),
             content: SizedBox(
@@ -154,9 +148,8 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                           ),
                         ),
                         title: Text(t.name,
-                            style: const TextStyle(
+                            style: GoogleFonts.bangers(
                                 color: Colors.white,
-                                fontFamily: 'monospace',
                                 fontSize: 13)),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -196,8 +189,8 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _dark,
-                      border: Border.all(color: _c, width: 3),
+                      color: _near,
+                      border: Border.all(color: _near, width: 3),
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                     ),
@@ -225,8 +218,7 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
             side: const BorderSide(color: _c, width: 4),
           ),
           title: Text('Editar tipo',
-              style: TextStyle(
-                  color: _c, fontFamily: 'monospace', fontSize: 15)),
+              style: GoogleFonts.bangers(color: _c, fontSize: 15)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -264,9 +256,10 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _dark,
-                    border: Border.all(color: _c, width: 3),
+                    color: _near,
+                    border: Border.all(color: _near, width: 3),
                     borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                   ),
                   child: const Icon(Icons.close, color: Color(0xFF00D4FF), size: 22),
                 ),
@@ -287,10 +280,11 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: _c,
-                    border: Border.all(color: _dark, width: 3),
+                    border: Border.all(color: _c, width: 3),
                     borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                   ),
-                  child: const Icon(Icons.check, color: Color(0xFF000000), size: 22),
+                  child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 22),
                 ),
               ),
             ),
@@ -311,12 +305,12 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
         ),
         child: TextField(
           controller: ctrl,
-          style: const TextStyle(
-              color: Color(0xFF00D4FF), fontFamily: 'monospace', fontSize: 13),
+          style: GoogleFonts.bangers(
+              color: const Color(0xFF00D4FF), fontSize: 13),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(
-                color: Color(0xFF0088AA), fontFamily: 'monospace', fontSize: 13),
+            hintStyle: GoogleFonts.bangers(
+                color: const Color(0xFF0088AA), fontSize: 13),
             border: InputBorder.none,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -347,8 +341,8 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _dark,
-                  border: Border.all(color: _c, width: 3),
+                  color: _near,
+                  border: Border.all(color: _near, width: 3),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                 ),
@@ -365,11 +359,11 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.red,
-                  border: Border.all(color: _dark, width: 3),
+                  border: Border.all(color: Colors.red, width: 3),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
                 ),
-                child: const Icon(Icons.check, color: Color(0xFF000000), size: 24),
+                child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 24),
               ),
             ),
           ),
@@ -396,7 +390,7 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
 
               return SizedBox(width: w, height: h, child: Stack(children: [
                 _backBtn(w, h),
-                _dayColumn(w, h),
+                _weekStrip(w, h),
                 _classCards(w, h),
                 _typesBtn(w, h),
                 _addBtn(w, h),
@@ -419,63 +413,67 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: _c,
-              border: Border.all(color: _dark, width: 4),
+              border: Border.all(color: _c, width: 4),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
             ),
-            child: const Center(child: Icon(Icons.arrow_back, color: Color(0xFF000000), size: 26)),
+            child: const Center(child: Icon(Icons.arrow_back, color: Color(0xFF0D0D0D), size: 26)),
           ),
         ),
       ),
     );
   }
 
-  Widget _dayColumn(double w, double h) {
+  Widget _weekStrip(double w, double h) {
+    const names = ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'];
+    final stripH = h * 0.075;
     return Positioned(
-      left: w * 0.02, top: h * 0.09, width: w * 0.12, height: h * 0.88,
-      child: Column(
-        children: List.generate(7, (i) {
-          final day = i + 1;
-          final isSelected = day == _selectedDay;
-          return Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: h * 0.01),
-                child: TapTile(
-                  onTap: () => setState(() => _selectedDay = day),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isSelected ? _c : _cDeep,
-                        border: Border.all(color: isSelected ? _dark : _c, width: isSelected ? 4 : 3),
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-                      ),
-                      child: Center(
-                        child: Icon(_dayIcons[i], color: isSelected ? _dark : _c, size: 22),
-                      ),
-                    ),
-                  ),
+      left: w * 0.03, top: h * 0.10, width: w * 0.94, height: stripH,
+      child: Row(children: List.generate(7, (i) {
+        final day = i + 1;
+        final selected = day == _selectedDay;
+        final isToday = day == DateTime.now().weekday;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: TapTile(
+              onTap: () => setState(() => _selectedDay = day),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: selected ? _c : (isToday ? const Color(0xFF0E2A38) : _near),
+                  border: Border.all(color: selected ? _c : (isToday ? _c : _cDeep), width: 2),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: selected
+                      ? const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)]
+                      : null,
                 ),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text(names[i], style: GoogleFonts.bangers(fontSize: 11, fontWeight: FontWeight.w900,
+                    color: selected ? _dark : (isToday ? _c : _white70))),
+                ]),
               ),
-          );
-        }),
-      ),
+            ),
+          ),
+        );
+      })),
     );
   }
 
+  static const _white70 = Color(0xB3FFFFFF);
+
   Widget _classCards(double w, double h) {
     final schedules = context.watch<ClassScheduleProvider>().getByDay(_selectedDay);
+    final top = h * 0.195;
 
     if (schedules.isEmpty) {
       return Positioned(
-        left: w * 0.17, top: h * 0.09, width: w * 0.81, height: h * 0.84,
+        left: w * 0.03, top: top, width: w * 0.94, height: h * 0.74,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
           child: Container(
             decoration: BoxDecoration(
               color: _near,
-              border: Border.all(color: _cBright, width: 3),
+              border: Border.all(color: _near, width: 3),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
             ),
@@ -490,11 +488,11 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: _c,
-                      border: Border.all(color: _dark, width: 4),
+                      border: Border.all(color: _c, width: 4),
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
                     ),
-                    child: const Icon(Icons.add, color: Color(0xFF000000), size: 30),
+                    child: const Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30),
                   ),
                 ),
               ),
@@ -505,62 +503,52 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
     }
 
     return Positioned(
-      left: w * 0.17, top: h * 0.09, width: w * 0.72, height: h * 0.84,
+      left: w * 0.03, top: top, width: w * 0.94, height: h * 0.74,
       child: ListView(
         padding: EdgeInsets.zero,
         children: schedules.asMap().entries.map((entry) {
           final s = entry.value;
           final color = _typeColor(s.classTypeId);
           return Padding(
-            padding: EdgeInsets.only(bottom: h * 0.016),
-            child: SizedBox(
-                height: h * 0.14,
-                child: GestureDetector(
-                  onLongPress: () => _deleteSchedule(s),
-                  child: TapTile(
-                    onTap: () => _openEditDialog(s),
-                    child: ClipRRect(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: GestureDetector(
+              onLongPress: () => _deleteSchedule(s),
+              child: TapTile(
+                onTap: () => _openEditDialog(s),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _near,
+                      border: Border.all(color: _near, width: 4),
                       borderRadius: BorderRadius.circular(18),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: _dark,
-                          border: Border.all(color: color, width: 4),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(children: [
-                            Icon(Icons.school, color: color, size: 32),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(s.title,
-                                    style: TextStyle(color: color, fontFamily: 'monospace', fontWeight: FontWeight.w900, fontSize: 15),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(children: [
-                                    Icon(Icons.access_time, color: color, size: 14),
-                                    const SizedBox(width: 6),
-                                    Text(s.startTime,
-                                      style: TextStyle(color: color, fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
-                                  ]),
-                                ],
-                              ),
-                            ),
-                            Icon(Icons.book, color: color, size: 28),
-                          ]),
-                        ),
-                      ),
+                      boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
                     ),
+                    child: Row(children: [
+                      Container(width: 8, height: 84, decoration: BoxDecoration(color: color, borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)))),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(children: [
+                          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(s.startTime, style: GoogleFonts.bangers(color: color, fontWeight: FontWeight.w900, fontSize: 20)),
+                            Text(s.endTime, style: GoogleFonts.bangers(color: _white70, fontSize: 11)),
+                          ]),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(s.title, style: GoogleFonts.bangers(color: color, fontWeight: FontWeight.w900, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              if (s.professor.isNotEmpty)
+                                Padding(padding: const EdgeInsets.only(top: 3), child: Text(s.professor, style: GoogleFonts.bangers(color: _white70, fontSize: 11))),
+                            ]),
+                          ),
+                          Icon(Icons.school, color: color.withValues(alpha: 0.5), size: 26),
+                        ]),
+                      ),
+                    ]),
                   ),
                 ),
               ),
+            ),
           );
         }).toList(),
       ),
@@ -577,7 +565,7 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: _cDeep,
-              border: Border.all(color: _c, width: 4),
+              border: Border.all(color: _cDeep, width: 4),
               borderRadius: BorderRadius.circular(16),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
             ),
@@ -598,11 +586,11 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: _c,
-              border: Border.all(color: _dark, width: 5),
+              border: Border.all(color: _c, width: 5),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
             ),
-            child: const Center(child: Icon(Icons.add, color: Color(0xFF000000), size: 30)),
+            child: const Center(child: Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30)),
           ),
         ),
       ),
@@ -612,29 +600,9 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
   Widget _loadingState(double w, double h) {
     return SizedBox(width: w, height: h, child: Stack(children: [
       _backBtn(w, h),
+      _weekStrip(w, h),
       Positioned(
-        left: w * 0.02, top: h * 0.09, width: w * 0.12, height: h * 0.88,
-        child: Column(
-          children: List.generate(7, (i) => Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: h * 0.01),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _cDeep,
-                    border: Border.all(color: _c, width: 2),
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-                  ),
-                ),
-              ),
-            ),
-          )),
-        ),
-      ),
-      Positioned(
-        left: w * 0.17, top: h * 0.09, width: w * 0.81, height: h * 0.84,
+        left: 0, top: h * 0.30, width: w, height: h * 0.4,
         child: Center(child: SizedBox(width: 36, height: 36, child: CircularProgressIndicator(color: _c, strokeWidth: 4))),
       ),
     ]));
@@ -664,8 +632,8 @@ class _ClassBoardScreenState extends State<ClassBoardScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: _dark,
-                      border: Border.all(color: Colors.red, width: 3),
+                      color: _near,
+                      border: Border.all(color: _near, width: 3),
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
                     ),
@@ -764,7 +732,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
       debugPrint('ClassBoardScreen._saveSchedule error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('error', style: TextStyle(fontFamily: 'monospace')), backgroundColor: Colors.red),
+          const SnackBar(content: Text('error', style: TextStyle(fontWeight: FontWeight.w900)), backgroundColor: Colors.red),
         );
       }
     }
@@ -812,11 +780,11 @@ class _AddClassDialogState extends State<_AddClassDialog> {
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: sel ? _c : _cDeep,
-                            border: Border.all(color: sel ? _dark : _c, width: sel ? 3 : 2),
+                            border: Border.all(color: sel ? _c : _cDeep, width: sel ? 3 : 2),
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(2, 2), blurRadius: 0)],
                           ),
-                          child: Icon(_dayIcons[i], color: sel ? _dark : _c, size: 20),
+                          child: Text('$d', style: GoogleFonts.bangers(color: sel ? _dark : _c, fontSize: 13, fontWeight: FontWeight.w900)),
                         ),
                       ),
                     ),
@@ -861,7 +829,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: _cDeep,
-                    border: Border.all(color: _c, width: 2),
+                    border: Border.all(color: _cDeep, width: 2),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(Icons.settings, color: Color(0xFF00D4FF), size: 20),
@@ -879,8 +847,8 @@ class _AddClassDialogState extends State<_AddClassDialog> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _dark,
-                border: Border.all(color: _c, width: 3),
+                color: _near,
+                border: Border.all(color: _near, width: 3),
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
               ),
@@ -896,11 +864,11 @@ class _AddClassDialogState extends State<_AddClassDialog> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: _c,
-                border: Border.all(color: _dark, width: 4),
+                border: Border.all(color: _c, width: 4),
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
               ),
-              child: const Icon(Icons.check, color: Color(0xFF000000), size: 24),
+              child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 24),
             ),
           ),
         ),
@@ -920,10 +888,10 @@ class _AddClassDialogState extends State<_AddClassDialog> {
         ),
         child: TextField(
           controller: ctrl,
-          style: const TextStyle(color: Color(0xFF00D4FF), fontFamily: 'monospace', fontSize: 13),
+          style: GoogleFonts.bangers(color: const Color(0xFF00D4FF), fontSize: 13),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFF0088AA), fontFamily: 'monospace', fontSize: 13),
+            hintStyle: GoogleFonts.bangers(color: const Color(0xFF0088AA), fontSize: 13),
             border: InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
@@ -959,7 +927,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
         side: const BorderSide(color: _c, width: 4),
       ),
       title: Text('Elegir color',
-          style: TextStyle(color: _c, fontFamily: 'monospace', fontSize: 15)),
+          style: GoogleFonts.bangers(color: _c, fontSize: 15)),
       content: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -990,8 +958,8 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _dark,
-                border: Border.all(color: _c, width: 3),
+                color: _near,
+                border: Border.all(color: _near, width: 3),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: const Icon(Icons.close, color: Color(0xFF00D4FF), size: 22),

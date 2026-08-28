@@ -1,26 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_state.dart';
+import '../models/deck_card.dart';
 import '../theme/app_theme.dart';
+import '../router.dart';
 import '../widgets/tap_tile.dart';
 import '../widgets/mode_btn.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/responsive_wrapper.dart';
 import '../services/notification_service.dart';
 import '../providers/deck_provider.dart';
+import '../providers/couple_provider.dart';
+import '../providers/rewards_provider.dart';
 
-import 'nosotros_screen.dart';
-import 'notifications_screen.dart';
-import 'settings_screen.dart';
-import 'calendar/calendar_home_screen.dart';
-import 'finanzas/finanzas_screen.dart';
-import 'galeria/galeria_screen.dart';
-import 'favoritos/favoritos_screen.dart';
-import 'pizarra_v2/pizarra_screen_v2.dart';
-import 'ejercicios/ejercicios_screen.dart';
 import 'mazo/deck_overlay.dart';
 import 'mazo/deck_match_overlay.dart';
 
@@ -43,11 +39,16 @@ class _BrutalGrid extends StatefulWidget {
   State<_BrutalGrid> createState() => _BrutalGridState();
 }
 
-class _BrutalGridState extends State<_BrutalGrid> {
+class _BrutalGridState extends State<_BrutalGrid>
+    with SingleTickerProviderStateMixin {
   AppMode _mode = AppState.identity == 'Rocio'
       ? AppMode.dark : AppState.identity == 'Facu' ? AppMode.blue : AppMode.flower;
-  int _unreadNotifications = 0;
   bool _showDeck = false;
+  bool _showPoemas = false;
+  bool _notifDrawer = false;
+  late final AnimationController _drawerCtrl;
+  late final Animation<Offset> _drawerSlide;
+  late final Animation<double> _drawerFade;
 
   Future<void> _loadMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -72,9 +73,65 @@ class _BrutalGridState extends State<_BrutalGrid> {
   void initState() {
     super.initState();
     NotificationService.startListening();
-    _loadUnread();
     _loadMode();
+    _drawerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 320));
+    _drawerSlide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _drawerCtrl, curve: Curves.easeOutCubic));
+    _drawerFade = CurvedAnimation(parent: _drawerCtrl, curve: Curves.easeInOut);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initDeck());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CoupleProvider>().load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _drawerCtrl.dispose();
+    super.dispose();
+  }
+
+  void _openNotificationDrawer() {
+    setState(() => _notifDrawer = true);
+    _drawerCtrl.forward(from: 0);
+  }
+
+  void _closeNotificationDrawer() {
+    _drawerCtrl.reverse().then((_) {
+      if (mounted) setState(() => _notifDrawer = false);
+    });
+  }
+
+  /// Panel de notificaciones que se desliza desde la izquierda con animación.
+  Widget _notificationDrawer(ThemeSet t) {
+    return Positioned.fill(
+      child: AnimatedBuilder(
+        animation: _drawerCtrl,
+        builder: (context, _) {
+          final visible = _notifDrawer || _drawerCtrl.isAnimating;
+          return IgnorePointer(
+            ignoring: !visible,
+            child: Stack(children: [
+              GestureDetector(
+                onTap: _closeNotificationDrawer,
+                behavior: HitTestBehavior.opaque,
+                child: Container(color: Colors.black.withValues(alpha: 0.5 * _drawerFade.value)),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: 0.82,
+                  heightFactor: 1,
+                  child: SlideTransition(
+                    position: _drawerSlide,
+                    child: _NotificationPanel(theme: t, onClose: _closeNotificationDrawer),
+                  ),
+                ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _initDeck() async {
@@ -86,21 +143,8 @@ class _BrutalGridState extends State<_BrutalGrid> {
     }
   }
 
-  Future<void> _loadUnread() async {
-    final count = await NotificationService.getUnreadCount();
-    if (mounted) setState(() => _unreadNotifications = count);
-  }
-
   void _openSettings() {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => SettingsScreen(mode: _mode),
-    ));
-  }
-
-  void _openNotifications() {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => NotificationsScreen(mode: _mode),
-    )).then((_) => _loadUnread());
+    context.push(RouterRoutes.settings, extra: _mode);
   }
 
   ThemeSet mutedTheme(ThemeSet t) {
@@ -119,79 +163,107 @@ class _BrutalGridState extends State<_BrutalGrid> {
 
   void _openNosotros(double x, double y) {
     _confettiAt(x, y);
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => NosotrosScreen(
-        myId: AppState.myId ?? '', partnerId: AppState.partnerId, mode: _mode,
-      ),
-    ));
+    context.push(RouterRoutes.nosotros, extra: _mode);
   }
 
   void _confettiAt(double x, double y) {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final global = box.localToGlobal(Offset(x, y));
-    final screen = MediaQuery.of(context).size;
-    Confetti.launch(context, options: ConfettiOptions(
-      particleCount: 25, spread: 60, startVelocity: 50, gravity: 0.8, decay: 0.92,
-      x: global.dx / screen.width, y: global.dy / screen.height,
-      colors: const [Color(0xFFFFDE59), Color(0xFF00F0FF), Color(0xFFFF5757), Color(0xFF00FF66), Color(0xFF7000FF), Color(0xFFFF66C4)],
-    ));
+    _confettiColorsFor(context, x: x, y: y);
+  }
+
+  /// Confeti en la posición global del toque (usado por botones chicos que no
+  /// conocen sus coordenadas de canvas: pesa/finanzas/favoritos/modos/mini).
+  void _confettiGlobal(Offset g) {
+    _confettiColorsFor(context, x: g.dx, y: g.dy);
   }
 
   void _openCalendar(double x, double y) {
     _confettiAt(x, y);
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const CalendarHomeScreen(),
-    ));
+    context.push(RouterRoutes.calendarMosaico);
   }
 
   void _openEstudio(double x, double y) {
+    // Sin navegación por ahora (botón decorativo).
     _confettiAt(x, y);
   }
 
   void _openFinanzas(double x, double y) {
-    _confettiAt(x, y);
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const FinanzasScreen(),
-    ));
+    context.push(RouterRoutes.finanzas);
   }
 
   void _openGaleria(double x, double y) {
     _confettiAt(x, y);
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const GaleriaScreen(),
-    ));
+    context.push(RouterRoutes.galeria);
   }
 
   void _openFavoritos(double x, double y) {
-    _confettiAt(x, y);
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const FavoritosScreen(),
-    ));
+    context.push(RouterRoutes.favoritos);
   }
 
   void _openPizarra(double x, double y) {
     _confettiAt(x, y);
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const PizarraScreenV2(),
-    ));
+    context.push(RouterRoutes.pizarra);
   }
 
   void _openEjercicios(double x, double y) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => EjerciciosScreen(mode: _mode),
-    ));
+    context.push(RouterRoutes.ejerciciosMosaico, extra: _mode);
+  }
+
+  void _openTrivia(double x, double y) {
+    context.push(RouterRoutes.trivia, extra: _mode);
+  }
+
+  void _openPoemas(double x, double y) {
+    context.read<DeckProvider>().load();
+    setState(() => _showPoemas = true);
   }
 
   void _openMazo(double x, double y) {
-    _confettiAt(x, y);
     context.read<DeckProvider>().load();
     setState(() => _showDeck = true);
   }
 
+  void _openLogros() {
+    context.push(RouterRoutes.logros, extra: _mode);
+  }
+
+  bool get _canPop {
+    final deckPv = context.read<DeckProvider>();
+    return !_notifDrawer &&
+        !_showDeck &&
+        !_showPoemas &&
+        deckPv.pendingMatch == null;
+  }
+
+  /// Cierra los overlays internos en orden de prioridad y SOLO deja escapar el
+  /// back cuando no queda ninguno. Si no, Android saldría de la app directo.
+  void _handleBack() {
+    if (_notifDrawer) {
+      _closeNotificationDrawer();
+      return;
+    }
+    if (_showDeck) {
+      setState(() => _showDeck = false);
+      return;
+    }
+    if (_showPoemas) {
+      setState(() => _showPoemas = false);
+      return;
+    }
+    final deckPv = context.read<DeckProvider>();
+    if (deckPv.pendingMatch != null) {
+      deckPv.consumeMatch();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ResponsiveWrapper(
+    return PopScope(
+      canPop: _canPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: ResponsiveWrapper(
       builder: (context, w, h) {
         final gap = w * 0.025;
         final c1 = w * 0.1;
@@ -212,18 +284,24 @@ class _BrutalGridState extends State<_BrutalGrid> {
         final y4 = y3 + rh[3] + gap;
         final y5 = y4 + rh[4] + gap;
 
-        final raw = getTheme(_mode);
-        final t = raw;
+final raw = getTheme(_mode);
+                final t = raw;
 
-        return SizedBox(width: w, height: h, child: Stack(
-          children: [
+                return SizedBox(width: w, height: h, child: Stack(
+                  children: [
             bg(w, h),
-            block(0, 0, c1, y5 + rh[5], t.d, LeftButtons(t: t, onTopTap: () => _confettiAt(0, 0), onBottomTap: () => _confettiAt(0, 0)), _confettiAt, borderWidth: 4),
+            Consumer<CoupleProvider>(
+              builder: (context, couplePv, _) {
+                return Positioned(right: c4 * 0.15, top: 4,
+                  child: coupleTile(couplePv, t, onTap: () => _openLogros()));
+              },
+            ),
+            block(0, 0, c1, y5 + rh[5], t.d, LeftButtons(t: t, onTopTap: () {}, onBottomTap: () {}, onSwipeRight: _openNotificationDrawer, onDown: _confettiGlobal), _confettiAt, borderWidth: 4),
             block(x2, 0, x4 - x2, rh[0], t.a,
               Center(child: Text(AppState.identity == 'Rocio' ? 'Mis Cosas' : 'Herramientas',
                 style: GoogleFonts.bangers(color: t.light, fontWeight: FontWeight.bold, fontSize: w * 0.055))),
               _confettiAt, borderWidth: 5),
-            block(x4, 0, c4, rh[0], t.dark, notificationBadge(t, _unreadNotifications, _openNotifications), (x, y) => _openSettings(), borderWidth: 3),
+            block(x4, 0, c4, rh[0], t.dark, fillIcon(Icons.settings, t.light), (x, y) => _openSettings(), borderWidth: 3),
             block(x2, y1, c2, rh[1], t.b,
               Transform.rotate(angle: -0.05, alignment: Alignment.center, child: fillIcon(Icons.calendar_month, t.dark)),
               _openCalendar, borderWidth: 6),
@@ -249,19 +327,19 @@ class _BrutalGridState extends State<_BrutalGrid> {
               ), _openGaleria, borderWidth: 4),
             block(x2, y4, x4 - x2, rh[4], t.dark,
               Row(children: [
-                Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.play_arrow, t.d, t: t))),
+                Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.style, t.c, t: t, onTap: () => _openMazo(0, 0), onDown: _confettiGlobal))),
                 gapW(6),
-                Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.image, t.a, t: t))),
+                Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.quiz, t.b, t: t, onTap: () => _openTrivia(0, 0), onDown: _confettiGlobal))),
                 gapW(6),
-                Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.play_arrow, t.b, t: t))),
-              ]), _openMazo, borderWidth: 5),
+                Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.auto_stories, t.a, t: t, onTap: () => _openPoemas(0, 0), onDown: _confettiGlobal))),
+              ]), (x, y) {}, borderWidth: 5),
             Positioned(left: x2, top: y5, width: x4 - x2, height: rh[5],
               child: Row(children: [
-                Expanded(flex: 6, child: bottomBtn(const Color(0xFF39FF14), Icons.fitness_center, const Color(0xFF062B06), 5, _openEjercicios)),
+                Expanded(flex: 6, child: bottomBtn(const Color(0xFF39FF14), Icons.fitness_center, const Color(0xFF062B06), 5, _openEjercicios, _confettiGlobal)),
                 gapW(6),
-                Expanded(flex: 10, child: bottomBtn(t.a, Icons.bar_chart, t.light, 6, _openFinanzas)),
+                Expanded(flex: 10, child: bottomBtn(t.a, Icons.bar_chart, t.light, 6, _openFinanzas, _confettiGlobal)),
                 gapW(6),
-                Expanded(flex: 11, child: bottomBtn(t.b, Icons.star, t.dark, 4, _openFavoritos)),
+                Expanded(flex: 11, child: bottomBtn(t.b, Icons.star, t.dark, 4, _openFavoritos, _confettiGlobal)),
               ]),
             ),
             modosBlock(x4, y3, c4, rh[3] + gap + rh[4], t, [
@@ -280,6 +358,14 @@ class _BrutalGridState extends State<_BrutalGrid> {
                   onClose: () => setState(() => _showDeck = false),
                 ),
               ),
+            if (_showPoemas)
+              Positioned.fill(
+                child: DeckOverlay(
+                  category: DeckCategory.poemas,
+                  onClose: () => setState(() => _showPoemas = false),
+                ),
+              ),
+            _notificationDrawer(t),
             Consumer<DeckProvider>(
               builder: (context, deckPv, _) {
                 final match = deckPv.pendingMatch;
@@ -287,7 +373,18 @@ class _BrutalGridState extends State<_BrutalGrid> {
                 return Positioned.fill(
                   child: DeckMatchOverlay(
                     card: match,
-                    onDone: () => deckPv.consumeMatch(),
+                    onDone: () {
+                      final rw = context.read<RewardsProvider>();
+                      final cid = match.id;
+                      if (cid != null) {
+                        rw.awardOnce(AppState.myId ?? '', 'match-$cid', 5);
+                        final partner = AppState.partnerId;
+                        if (partner != null) {
+                          rw.awardOnce(partner, 'match-$cid', 5);
+                        }
+                      }
+                      deckPv.consumeMatch();
+                    },
                   ),
                 );
               },
@@ -295,26 +392,34 @@ class _BrutalGridState extends State<_BrutalGrid> {
           ],
         ));
       },
-    );
+    ));
   }
 }
 
-Widget notificationBadge(ThemeSet t, int count, VoidCallback onTapNotif) {
-  return Stack(alignment: Alignment.center, children: [
-    Transform.rotate(angle: 0.1, alignment: Alignment.center, child: fillIcon(Icons.settings, t.a)),
-    Positioned(right: 6, bottom: 6, child: GestureDetector(
-      onTap: onTapNotif,
-      child: Stack(children: [
-        Icon(Icons.notifications, color: t.light, size: 22),
-        if (count > 0) Positioned(right: -4, top: -4, child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: t.e, shape: BoxShape.circle, border: Border.all(color: t.dark, width: 2)),
-          child: Text(count > 9 ? '9+' : '$count',
-            style: GoogleFonts.bangers(fontSize: 10, fontWeight: FontWeight.bold, color: t.light)),
-        )),
+Widget coupleTile(CoupleProvider pv, ThemeSet t, {VoidCallback? onTap}) {
+  if (pv.loading && pv.coupleStreak == 0) return const SizedBox.shrink();
+  return TapTile(
+    onTap: onTap ?? () {},
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: t.c,
+        border: Border.all(color: t.c, width: 3),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0),
+        ],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.local_fire_department,
+            color: const Color(0xFFFFDE59), size: 18),
+        const SizedBox(width: 5),
+        Text('${pv.coupleStreak}',
+            style: GoogleFonts.bangers(
+                color: t.light, fontWeight: FontWeight.bold, fontSize: 18)),
       ]),
-    )),
-  ]);
+    ),
+  );
 }
 
 Widget modosBlock(double l, double t, double w, double h, ThemeSet theme, List<Widget> btns) {
@@ -335,6 +440,22 @@ Widget fillIcon(IconData icon, Color color) {
   return FittedBox(fit: BoxFit.contain,
     child: SizedBox(width: 120, height: 120, child: Icon(icon, color: color, size: 120)));
 }
+
+/// Lanza confeti en una posición dado en píxeles de pantalla.
+void _confettiColorsFor(BuildContext ctx, {required double x, required double y}) {
+  final screen = MediaQuery.of(ctx).size;
+  Confetti.launch(ctx, options: ConfettiOptions(
+    particleCount: 25, spread: 60, startVelocity: 50, gravity: 0.8, decay: 0.92,
+    x: (x / screen.width).clamp(0.05, 0.95),
+    y: (y / screen.height).clamp(0.05, 0.95),
+    colors: _confettiColors,
+  ));
+}
+
+const _confettiColors = [
+  Color(0xFFFFDE59), Color(0xFF00F0FF), Color(0xFFFF5757),
+  Color(0xFF00FF66), Color(0xFF7000FF), Color(0xFFFF66C4),
+];
 
 Widget bg(double w, double h) {
   return Positioned.fill(child: CustomPaint(painter: ConcretePainter()));
@@ -362,16 +483,24 @@ Widget block(double l, double t, double w, double h, Color bg, Widget child,
   ));
 }
 
-Widget miniIcon(IconData icon, Color color, {required ThemeSet t}) {
-  return Container(
+Widget miniIcon(IconData icon, Color color, {required ThemeSet t, VoidCallback? onTap, ValueChanged<Offset>? onDown}) {
+  final inner = Container(
     decoration: BoxDecoration(color: t.mid, border: Border.all(color: t.mid, width: 3), borderRadius: BorderRadius.circular(10)),
     child: fillIcon(icon, color),
   );
+  if (onTap == null) return inner;
+  return GestureDetector(
+    onTapDown: onDown == null ? null : (d) => onDown(d.globalPosition),
+    child: TapTile(onTap: onTap, child: inner),
+  );
 }
 
-Widget bottomBtn(Color color, IconData icon, Color iconColor, int bw, void Function(double x, double y) onTap) {
-  return TapTile(
-    onTap: () => onTap(0, 0),
+Widget bottomBtn(Color color, IconData icon, Color iconColor, int bw,
+    void Function(double x, double y) onTap, ValueChanged<Offset>? onDown) {
+  return GestureDetector(
+    onTapDown: onDown == null ? null : (d) => onDown(d.globalPosition),
+    child: TapTile(
+      onTap: () => onTap(0, 0),
     child: ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: Container(
@@ -381,20 +510,46 @@ Widget bottomBtn(Color color, IconData icon, Color iconColor, int bw, void Funct
         child: Padding(padding: const EdgeInsets.all(8), child: fillIcon(icon, iconColor)),
       ),
     ),
+    ),
   );
 }
 
-class LeftButtons extends StatelessWidget {
+class LeftButtons extends StatefulWidget {
   final ThemeSet t;
   final VoidCallback onTopTap;
   final VoidCallback onBottomTap;
-  const LeftButtons({super.key, required this.t, required this.onTopTap, required this.onBottomTap});
+  final VoidCallback? onSwipeRight;
+  final ValueChanged<Offset>? onDown;
+  const LeftButtons({super.key, required this.t, required this.onTopTap, required this.onBottomTap, this.onSwipeRight, this.onDown});
+
+  @override
+  State<LeftButtons> createState() => _LeftButtonsState();
+}
+
+class _LeftButtonsState extends State<LeftButtons> {
+  double _dragDx = 0;
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.t;
     return Column(children: [
-      Expanded(child: TapTile(
-        onTap: onTopTap,
+      Expanded(child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: widget.onDown == null ? null : (d) => widget.onDown!(d.globalPosition),
+        onTap: widget.onTopTap,
+        onHorizontalDragStart: (_) => _dragDx = 0,
+        onHorizontalDragUpdate: (d) => _dragDx += d.delta.dx,
+        onHorizontalDragEnd: widget.onSwipeRight == null
+            ? null
+            : (d) {
+                final opened =
+                    _dragDx > 60 || (d.primaryVelocity ?? 0) > 250;
+                _dragDx = 0;
+                if (opened) {
+                  widget.onSwipeRight!();
+                }
+              },
+        onHorizontalDragCancel: () => _dragDx = 0,
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
           child: Container(color: const Color(0xFFFFDE59), child: Column(
@@ -404,14 +559,17 @@ class LeftButtons extends StatelessWidget {
         ),
       )),
       const SizedBox(height: 6),
-      Expanded(child: TapTile(
-        onTap: onBottomTap,
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
-          child: Container(color: const Color(0xFF00F0FF), child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(3, (_) => tbLine(t)),
-          )),
+      Expanded(child: GestureDetector(
+        onTapDown: widget.onDown == null ? null : (d) => widget.onDown!(d.globalPosition),
+        child: TapTile(
+          onTap: widget.onBottomTap,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+            child: Container(color: const Color(0xFF00F0FF), child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(3, (_) => tbLine(t)),
+            )),
+          ),
         ),
       )),
     ]);
@@ -423,4 +581,162 @@ Widget tbLine(ThemeSet t) {
     decoration: BoxDecoration(color: t.b, border: Border.all(color: t.dark, width: 3),
       borderRadius: BorderRadius.circular(8),
       boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(2, 2), blurRadius: 0)]));
+}
+
+/// Panel de notificaciones que se desliza desde la izquierda. Lista las
+/// notificaciones (leídas/no leídas), permite abrir y darse por aludido.
+class _NotificationPanel extends StatefulWidget {
+  final ThemeSet theme;
+  final VoidCallback onClose;
+  const _NotificationPanel({required this.theme, required this.onClose});
+
+  @override
+  State<_NotificationPanel> createState() => _NotificationPanelState();
+}
+
+class _NotificationPanelState extends State<_NotificationPanel> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _items = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final list = await NotificationService.getNotifications();
+      if (mounted) setState(() { _items = list; _loading = false; });
+    } catch (e) {
+      if (mounted) { _loading = false; _error = e.toString(); }
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    await NotificationService.markAllAsRead();
+    if (mounted) setState(() {
+      for (final n in _items) { n['read'] = true; }
+    });
+  }
+
+  void _open(Map<String, dynamic> n) {
+    final id = (n['id'] as num?)?.toInt();
+    if (id != null) {
+      NotificationService.markAsRead(id);
+    }
+    if (mounted) setState(() => n['read'] = true);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: widget.theme.a, width: 4),
+        ),
+        title: Text(n['title']?.toString() ?? '',
+            style: GoogleFonts.bangers(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(n['body']?.toString() ?? '',
+            style: GoogleFonts.bangers(fontSize: 14, color: Colors.white70)),
+        actions: [
+          TapTile(onTap: () => Navigator.pop(ctx), child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: widget.theme.a, borderRadius: BorderRadius.circular(10), border: Border.all(color: widget.theme.a, width: 2)),
+            child: const Icon(Icons.close, color: Colors.white, size: 24),
+          )),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.theme;
+    return Material(
+      color: const Color(0xFF101010),
+      child: SafeArea(child: Column(children: [
+        Container(height: 1, color: t.d),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Row(children: [
+            Icon(Icons.notifications, color: t.a, size: 24),
+            const SizedBox(width: 8),
+            Text('Notificaciones', style: GoogleFonts.bangers(color: t.light, fontSize: 18, fontWeight: FontWeight.w900)),
+            const Spacer(),
+            if (_items.isNotEmpty)
+              TapTile(onTap: _markAllRead, child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(Icons.done_all, color: t.c, size: 22),
+              )),
+            const SizedBox(width: 4),
+            TapTile(onTap: widget.onClose, child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: const Icon(Icons.close, color: Colors.white, size: 24),
+            )),
+          ]),
+        ),
+        Expanded(child: _body(t)),
+      ])),
+    );
+  }
+
+  Widget _body(ThemeSet t) {
+    if (_loading) return const Center(child: CircularProgressIndicator(strokeWidth: 3));
+    if (_error != null) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.cloud_off, color: Colors.white38, size: 48),
+        const SizedBox(height: 12),
+        TapTile(onTap: _load, child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.a, width: 2)),
+          child: const Icon(Icons.refresh, color: Colors.white, size: 24),
+        )),
+      ]));
+    }
+    if (_items.isEmpty) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.notifications_none, color: Colors.white38, size: 56),
+        const SizedBox(height: 8),
+        Text('Sin notificaciones', style: GoogleFonts.bangers(color: Colors.white38, fontSize: 14)),
+      ]));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: _items.length,
+      itemBuilder: (context, i) {
+        final n = _items[i];
+        final read = n['read'] == true;
+        final color = read ? Colors.white38 : t.a;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: GestureDetector(
+            onTap: () => _open(n),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: read ? const Color(0xFF1A1A1A) : const Color(0xFF242424),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: read ? const Color(0xFF2A2A2A) : color, width: 2),
+              ),
+              child: Row(children: [
+                Icon(read ? Icons.mark_email_read : Icons.markunread, color: color, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(n['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.bangers(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                  if ((n['body']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(n['body'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.bangers(color: Colors.white54, fontSize: 11)),
+                  ],
+                ])),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }

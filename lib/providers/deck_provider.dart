@@ -160,21 +160,49 @@ class DeckProvider extends ChangeNotifier {
     final userId = AppState.myId;
     final cardId = card.id;
     if (userId == null || cardId == null) return;
-    final updated = reactLocal(card, reaction, userId);
+    reactLocal(card, reaction, userId);
     try {
-      await SupabaseConfig.client
-          .from('deck_cards')
-          .update({
-            'reactions': updated.reactions,
-            'updated_at': updated.updatedAt.toIso8601String(),
+      // Merge atómico en el servidor (RPC react_deck_card): forma {uid: emoji}.
+      final res = await SupabaseConfig.client
+          .rpc('react_deck_card', params: {
+            'row_id': cardId,
+            'user_id': userId,
+            'reaction': reaction,
           })
-          .eq('id', cardId)
           .timeout(const Duration(seconds: 10));
+      final authoritative = _parseReactionMap(res);
+      final li = _cards.indexWhere((c) => c.id == cardId);
+      if (li >= 0) {
+        final live = _cards[li];
+        _replace(
+          live,
+          DeckCard(
+            id: live.id,
+            category: live.category,
+            content: live.content,
+            createdBy: live.createdBy,
+            reactions: {...live.reactions, ...authoritative},
+            createdAt: live.createdAt,
+            updatedAt: DateTime.now(),
+          ),
+        );
+        notifyListeners();
+      }
     } catch (e) {
       _error = 'No se pudo guardar la reaccion';
       debugPrint('DeckProvider.react error: $e');
       await load();
     }
+  }
+
+  Map<String, String> _parseReactionMap(dynamic raw) {
+    final out = <String, String>{};
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (k is String && v is String) out[k] = v;
+      });
+    }
+    return out;
   }
 
   Future<void> delete(int id) async {

@@ -6,12 +6,13 @@ import 'package:provider/provider.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'router.dart';
 import 'supabase_config.dart';
 import 'app_state.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'services/ai_service.dart';
+import 'services/settings_service.dart';
+import 'services/sound_service.dart';
 import 'providers/schedule_provider.dart';
 import 'providers/event_type_provider.dart';
 import 'providers/class_schedule_provider.dart';
@@ -25,7 +26,12 @@ import 'providers/favorites_provider.dart';
 import 'providers/board_data_provider.dart';
 import 'providers/board_provider_v2.dart';
 import 'providers/workout_provider.dart';
+import 'providers/couple_provider.dart';
+import 'providers/couple_achievements_provider.dart';
+import 'providers/trivia_provider.dart';
+import 'providers/rewards_provider.dart';
 import 'providers/deck_provider.dart';
+import 'providers/location_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/menu_provider.dart';
 import 'database/database_helper.dart';
@@ -34,8 +40,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +47,6 @@ void main() {
     ErrorWidget.builder = (FlutterErrorDetails details) => _crashWidget(details.exception.toString(), details.stack?.toString() ?? 'WIDGET CRASH:');
 
     String? initError;
-    bool saved = false;
 
     final bool isDesktop =
         !kIsWeb &&
@@ -73,13 +76,19 @@ void main() {
     try { await DatabaseHelper().database; }
     catch (e) { initError = initError ?? 'Database: $e'; }
 
+    try { await SettingsService().init(); }
+    catch (e) { initError = initError ?? 'Settings: $e'; }
+
+    try { await SoundService().startBackgroundMusic(); }
+    catch (e) { initError = initError ?? 'Sound: $e'; }
+
     if (initError == null) {
       try { AiService().init(); }
       catch (e) { initError = 'AI: $e'; }
     }
 
     if (initError == null) {
-      try { saved = await AppState.loadSession(); }
+      try { await AppState.loadSession(); }
       catch (e) { initError = 'AppState: $e'; }
     }
 
@@ -88,7 +97,7 @@ void main() {
       return;
     }
 
-    runApp(FuriApp(startDirect: saved));
+    runApp(const FuriApp());
   }, (error, stack) {
     runApp(_CrashApp(message: 'UNCAUGHT: $error\n$stack'));
   });
@@ -125,8 +134,7 @@ class GoBackIntent extends Intent {
 }
 
 class FuriApp extends StatelessWidget {
-  final bool startDirect;
-  const FuriApp({super.key, this.startDirect = false});
+  const FuriApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -155,16 +163,20 @@ class FuriApp extends StatelessWidget {
             ChangeNotifierProvider(create: (_) => BoardDataProvider()),
             ChangeNotifierProvider(create: (_) => BoardProviderV2()),
             ChangeNotifierProvider(create: (_) => WorkoutProvider()),
+            ChangeNotifierProvider(create: (_) => CoupleProvider()),
+            ChangeNotifierProvider(create: (_) => CoupleAchievementsProvider()),
+            ChangeNotifierProvider(create: (_) => TriviaProvider()),
+            ChangeNotifierProvider(create: (_) => RewardsProvider()),
             ChangeNotifierProvider(create: (_) => DeckProvider()),
+            ChangeNotifierProvider(create: (_) => LocationProvider()),
             ChangeNotifierProvider(create: (_) => ThemeProvider()),
             ChangeNotifierProvider(create: (_) => MenuProvider()),
           ],
-          child: MaterialApp(
-            navigatorKey: navigatorKey,
+          child: MaterialApp.router(
+            routerConfig: appRouter,
             debugShowCheckedModeBanner: false,
             title: 'F.U.R.I',
             theme: ThemeData(useMaterial3: true),
-            home: startDirect ? const HomeScreen() : const LoginScreen(),
           ),
         ),
       ),

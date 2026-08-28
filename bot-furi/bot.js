@@ -37,6 +37,15 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 // no depender de esa llamada (que puede romper el stream) en cada corrida.
 const LID_CACHE_FILE = path.join(__dirname, 'lids.json');
 const lidCache = {};
+// Ventana de deteccion dinamica: GitHub Actions cron (*/30) corre con horas de
+// retraso, asi que una ventana fija de 1h perdía eventos en silencio. Guardamos
+// last_run_at en bot_sessions y desde la proxima corrida consultamos TODO lo
+// ocurrido desde la corrida anterior (capped a 24h). El dedupe de
+// bot_notificaciones hace que re-consultar sea seguro.
+let lastRunPrevio = null;
+// Marca de tiempo del inicio de la corrida actual; se persiste en
+// bot_sessions para que la siguiente corrida consulte desde aca.
+let lastRunActual = null;
 
 function cargarLidsCache() {
   try {
@@ -152,8 +161,24 @@ async function loadSessionFromSupabase() {
   if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
   for (const [filename, content] of Object.entries(session)) {
+    // 'lids' y 'last_run_at' son metadatos de la corrida, no archivos de sesion
+    if (!filename.endsWith('.json')) continue;
     fs.writeFileSync(path.join(AUTH_DIR, filename), JSON.stringify(content));
   }
+
+  // Recuperar LIDs cacheados (evita la conexion descartable en cada corrida de CI)
+  if (session['lids'] && typeof session['lids'] === 'object') {
+    for (const [phone, lid] of Object.entries(session['lids'])) {
+      if (!lidCache[phone]) lidCache[phone] = lid;
+    }
+  }
+
+  // Recuperar la fecha de la ultima corrida para la ventana de deteccion
+  if (session['last_run_at']) {
+    const t = Date.parse(session['last_run_at']);
+    if (!Number.isNaN(t)) lastRunPrevio = t;
+  }
+
   console.log('Sesion cargada desde Supabase');
   return true;
 }
@@ -173,6 +198,11 @@ async function saveSessionToSupabase() {
   }
 
   if (Object.keys(session).length === 0) return;
+
+  // Persistir metadatos de la corrida junto con la sesion (misma fila id=1)
+  const entriesLids = Object.entries(lidCache);
+  if (entriesLids.length > 0) session['lids'] = lidCache;
+  if (lastRunActual) session['last_run_at'] = lastRunActual;
 
   const { error } = await supabase
     .from(SESSION_TABLE)
@@ -223,6 +253,9 @@ function conectarYNotificar() {
           try {
             await saveSessionToSupabase();
             await verificarYNotificar(sock);
+            // Guardar de nuevo: verificar setea lastRunActual, y la marca debe
+            // persistirse para que la proxima corrida consulte desde aca.
+            await saveSessionToSupabase();
           } catch (e) {
             console.error('Error en verificacion:', e.message);
           }
@@ -363,7 +396,11 @@ async function yaNotificado(tabla, registroId, phone) {
   if (phone) query = query.eq('phone', phone);
   query = query.limit(1);
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) {
+    console.error(`Error en yaNotificado (${tabla}/${registroId}):`, error.message);
+    return false;
+  }
   return data && data.length > 0;
 }
 
@@ -396,7 +433,8 @@ async function flushMarksPendientes(phone) {
 // ─── USUARIOS (mapeo user_id de la app → identidad) ──────────
 // Devuelve { facu: <uuid>, rocio: <uuid> } leyendo la tabla profiles.
 async function cargarUsuarios() {
-  const { data } = await supabase.from('profiles').select('id, name');
+  const { data, error } = await supabase.from('profiles').select('id, name');
+  if (error) console.error('Error en cargarUsuarios (profiles):', error.message);
   const map = { facu: null, rocio: null };
   for (const p of data || []) {
     const key = String(p.name || '').toLowerCase();
@@ -410,8 +448,11 @@ async function cargarUsuarios() {
 // Regla: cada quien recibe solo lo que agrega la OTRA persona.
 // Si el creador no se puede identificar, va a ambos (default).
 function destinosPara(usuarios, creatorId) {
-  if (usuarios.facu && creatorId === usuarios.facu) return [ROCIO_NUMERO].filter(Boolean);
-  if (usuarios.rocio && creatorId === usuarios.rocio) return [FACU_NUMERO].filter(Boolean);
+  // creatorId puede ser el UUID de profiles (otras tablas) o la identidad
+  // (AppState.identity) que la app guarda en schedules/class_schedules.user_id.
+  const id = String(creatorId || '').toLowerCase();
+  if (usuarios.facu && (id === String(usuarios.facu).toLowerCase() || id === 'facu')) return [ROCIO_NUMERO].filter(Boolean);
+  if (usuarios.rocio && (id === String(usuarios.rocio).toLowerCase() || id === 'rocio')) return [FACU_NUMERO].filter(Boolean);
   return [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean);
 }
 
@@ -419,6 +460,41 @@ function destinosPara(usuarios, creatorId) {
 function formatHora(hora) {
   if (!hora) return '';
   return hora.slice(0, 5);
+}
+
+// ─── ZONA HORARIA DE LA APP ────────────────────────────────────
+// La app Flutter vive en Argentina (America/Argentina/Buenos_Aires, UTC-3 sin DST).
+// GitHub Actions corre en UTC; por eso todas las fechas/horas LOCALES se calculan
+// con la zona del dispositivo (la app guarda fechas y horarios locales).
+const APP_TZ = process.env.APP_TZ || 'America/Argentina/Buenos_Aires';
+
+let _tzOffsetMs;
+function tzOffsetMs() {
+  if (_tzOffsetMs === undefined) {
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: APP_TZ, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const p = {};
+    for (const e of fmt.formatToParts(now)) p[e.type] = e.value;
+    _tzOffsetMs = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - now.getTime();
+  }
+  return _tzOffsetMs;
+}
+
+// Fecha local (YYYY-MM-DD) en la zona de la app.
+function fechaLocal(dateObj = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: APP_TZ }).format(dateObj);
+}
+
+// Hora local actual (HH) en la zona de la app.
+function horaLocal() {
+  return new Intl.DateTimeFormat('en-US', { timeZone: APP_TZ, hour12: false, hour: '2-digit', minute: '2-digit' }).format(new Date()).slice(0, 2);
+}
+
+// Convierte una hora "de pared" (dateStr 'YYYY-MM-DD' + timeStr 'HH:MM') escrita en
+// zona local de la app a un instante absoluto Date, para compararlo contra `ahora`.
+function localInstant(dateStr, timeStr) {
+  const asUtc = new Date(`${dateStr}T${timeStr || '00:00'}:00Z`);
+  return new Date(asUtc.getTime() - tzOffsetMs());
 }
 
 // Dias consecutivos hacia atras desde la primera fecha (listado desc,
@@ -439,6 +515,21 @@ function diasConsecutivos(fechas) {
   return streak;
 }
 
+// Emoji + titulo para el aviso de un logro de pareja desbloqueado.
+function descripcionLogro(code) {
+  const map = {
+    first_mood: '🌅 *Primer día* (ambos con estado de ánimo)',
+    workout_both: '💪 *Equipo activo* (ambos entrenaron)',
+    furi_first: '🃏 *Primer FURI!!* (primer match del mazo)',
+    streak_3: '🔥 *Racha en marcha* (3 días de racha de pareja)',
+    streak_7: '🔥 *Una semana completa* (7 días)',
+    best_streak_14: '🌟 *Medio mes* (mejor racha 14+)',
+    messages_100: '💬 *Conversadores* (100 mensajes)',
+    messages_1000: '💬 *No se callan nada* (1000 mensajes)',
+  };
+  return map[code];
+}
+
 // ─── VERIFICAR EVENTOS ────────────────────────────────────────
 async function verificarYNotificar(sock) {
   console.log('Verificando eventos...');
@@ -451,11 +542,20 @@ async function verificarYNotificar(sock) {
   const usuarios = await cargarUsuarios();
 
   const ahora = new Date();
+  // Ventana dinamica: desde la ultima corrida (capped a 24h por si el bot
+  // estuvo caido mas de un dia); fallback a 1h si no hay marca previa.
+  lastRunActual = ahora.toISOString();
   const haceUnaHora = new Date(ahora.getTime() - 60 * 60 * 1000).toISOString();
+  const desde = lastRunPrevio
+    ? new Date(Math.max(lastRunPrevio, ahora.getTime() - 24 * 60 * 60 * 1000)).toISOString()
+    : haceUnaHora;
+  if (lastRunPrevio) {
+    console.log(`Ventana de deteccion: desde ${desde}`);
+  }
   const enDosHoras = new Date(ahora.getTime() + 2 * 60 * 60 * 1000);
 
-  const hoy = ahora.toISOString().slice(0, 10);
-  const manana = new Date(ahora.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const hoy = fechaLocal(ahora);
+  const manana = fechaLocal(new Date(ahora.getTime() + 24 * 60 * 60 * 1000));
 
   // ── 1. SCHEDULES (clases/eventos) ──
   const { data: schedules } = await supabase
@@ -466,7 +566,7 @@ async function verificarYNotificar(sock) {
 
   if (schedules) {
     for (const s of schedules) {
-      const inicio = new Date(`${s.date}T${s.startTime}`);
+      const inicio = localInstant(s.date, s.startTime);
       if (inicio <= enDosHoras && inicio > ahora) {
         const key = `schedule-${s.id}-${s.date}-${s.startTime}`;
         const destinos = destinosPara(usuarios, s.user_id);
@@ -498,7 +598,7 @@ async function verificarYNotificar(sock) {
     const diaDeHoy = jsDia === 0 ? 7 : jsDia;
     for (const c of classSchedules) {
       if (c.day_of_week !== diaDeHoy) continue;
-      const inicio = new Date(`${hoy}T${c.start_time}`);
+      const inicio = localInstant(hoy, c.start_time);
       if (inicio <= enDosHoras && inicio > ahora) {
         const key = `class-${c.id}-${hoy}-${c.start_time}`;
         const horario = c.end_time
@@ -526,10 +626,10 @@ async function verificarYNotificar(sock) {
   if (anniversaries) {
     const destinos = [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean);
     for (const a of anniversaries) {
-      const fecha = new Date(a.date).toISOString().slice(0, 10);
+      const fecha = String(a.date).slice(0, 10);
       if (fecha === hoy) {
         const key = `anniversary-${a.id}-${hoy}`;
-        const ahoraHora = ahora.getHours();
+        const ahoraHora = horaLocal();
         if (ahoraHora >= 8 && ahoraHora <= 10) {
           for (const phone of destinos) {
             if (!(await yaNotificado('anniversaries', key, phone))) {
@@ -554,7 +654,7 @@ async function verificarYNotificar(sock) {
   const { data: moods } = await supabase
     .from('moods')
     .select('*, profiles:user_id(name)')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (moods) {
@@ -575,11 +675,13 @@ async function verificarYNotificar(sock) {
   const { data: letters } = await supabase
     .from('letters')
     .select('*, from_user:profiles!from_user(name)')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (letters) {
     for (const l of letters) {
+      // Cartas selladas (apertura futura): no se spoilean al crearse.
+      if (l.scheduled_open && new Date(l.scheduled_open).getTime() > Date.now()) continue;
       const key = `letter-${l.id}`;
       const destinos = destinosPara(usuarios, l.from_user);
       for (const phone of destinos) {
@@ -592,11 +694,35 @@ async function verificarYNotificar(sock) {
     }
   }
 
+  // ── 4b. LETTERS: ENTREGA CEREMONIAL (selladas que se abren ahora) ──
+  // Cuando el momento de apertura llega, el bot "entrega" la carta con impacto.
+  const { data: aabrirse } = await supabase
+    .from('letters')
+    .select('*, from_user:profiles!from_user(name)')
+    .gte('scheduled_open', desde)
+    .lte('scheduled_open', ahora.toISOString())
+    .order('scheduled_open', { ascending: false });
+
+  if (aabrirse) {
+    for (const l of aabrirse) {
+      const oday = (l.scheduled_open || '').slice(0, 10) || hoy;
+      const key = `letteropen-${l.id}-${oday}`;
+      const destinos = destinosPara(usuarios, l.from_user);
+      for (const phone of destinos) {
+        if (!(await yaNotificado('letters', key, phone))) {
+          const nombre = l.from_user?.name || 'Alguien';
+          encolar(phone, `💌 *${nombre}* tu carta "${l.title}" acaba de abrirse. Andá a leerla 🥹`, 'letters', key, 'apertura', l.title);
+          await marcarNotificado('letters', key, 'apertura', phone, l.title);
+        }
+      }
+    }
+  }
+
   // ── 5. CHALLENGES (retos) ──
   const { data: challenges } = await supabase
     .from('challenges')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (challenges) {
@@ -617,7 +743,7 @@ async function verificarYNotificar(sock) {
   const { data: goals } = await supabase
     .from('goals')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (goals) {
@@ -638,7 +764,7 @@ async function verificarYNotificar(sock) {
   const { data: tasks } = await supabase
     .from('tasks')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (tasks) {
@@ -658,7 +784,7 @@ async function verificarYNotificar(sock) {
   const { data: transactions } = await supabase
     .from('transactions')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (transactions) {
@@ -679,7 +805,7 @@ async function verificarYNotificar(sock) {
   const { data: favorites } = await supabase
     .from('favorites')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (favorites) {
@@ -699,7 +825,7 @@ async function verificarYNotificar(sock) {
   const { data: notes } = await supabase
     .from('notes')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (notes) {
@@ -720,7 +846,7 @@ async function verificarYNotificar(sock) {
   const { data: gallery } = await supabase
     .from('gallery')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (gallery) {
@@ -740,7 +866,7 @@ async function verificarYNotificar(sock) {
   const { data: timeline } = await supabase
     .from('timeline_events')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (timeline) {
@@ -760,7 +886,7 @@ async function verificarYNotificar(sock) {
   const { data: preguntas } = await supabase
     .from('custom_questions')
     .select('*, from_user:profiles!from_user(name)')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (preguntas) {
@@ -786,7 +912,7 @@ async function verificarYNotificar(sock) {
   const { data: deckCards } = await supabase
     .from('deck_cards')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   const deckCategorias = {
@@ -817,7 +943,7 @@ async function verificarYNotificar(sock) {
   const { data: deckMatches } = await supabase
     .from('deck_cards')
     .select('*')
-    .gte('updated_at', haceUnaHora);
+    .gte('updated_at', desde);
 
   if (deckMatches) {
     const destinos = [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean);
@@ -845,7 +971,7 @@ async function verificarYNotificar(sock) {
   const { data: workoutLogs } = await supabase
     .from('workout_logs')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (workoutLogs) {
@@ -871,7 +997,7 @@ async function verificarYNotificar(sock) {
   const { data: workoutCompletions } = await supabase
     .from('workout_completions')
     .select('*')
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
   if (workoutCompletions) {
@@ -894,7 +1020,7 @@ async function verificarYNotificar(sock) {
   const { data: workoutChallenges } = await supabase
     .from('workout_challenges')
     .select('*')
-    .gte('updated_at', haceUnaHora)
+    .gte('updated_at', desde)
     .order('updated_at', { ascending: false });
 
   if (workoutChallenges) {
@@ -916,14 +1042,21 @@ async function verificarYNotificar(sock) {
   }
 
   // ── 19. RACHA ROTA (streak >= 3 dias y no entreno hoy ni ayer) ──
-  const ayerStr = new Date(ahora.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const ayerStr = fechaLocal(new Date(ahora.getTime() - 24 * 60 * 60 * 1000));
+  // Solo interesan las sesiones de los ultimos 120 dias: cualquier racha >= 3 que
+  // se haya cortado hace mas tiempo ya fue notificada. Evita traer todo el
+  // historial por usuario (el limite de respuesta de Supabase es 1000 filas).
+  const hace120Dias = fechaLocal(new Date(ahora.getTime() - 120 * 24 * 60 * 60 * 1000));
   for (const [nombre, uuid] of Object.entries(usuarios)) {
     if (!uuid) continue;
-    const { data: userCompletions } = await supabase
+    const { data: userCompletions, error: completErr } = await supabase
       .from('workout_completions')
       .select('completed_on')
       .eq('user_id', uuid)
+      .gte('completed_on', hace120Dias)
+      .lte('completed_on', hoy)
       .order('completed_on', { ascending: false });
+    if (completErr) console.error(`Error cargando workout_completions de ${nombre}:`, completErr.message);
 
     const fechas = [...new Set((userCompletions || [])
       .map(c => String(c.completed_on).slice(0, 10)))];
@@ -946,6 +1079,47 @@ async function verificarYNotificar(sock) {
     }
   }
 
+  // ── 21. LOGRO DE PAREJA desbloqueado (a ambos) ──
+  const { data: logros } = await supabase
+    .from('couple_achievements')
+    .select('*')
+    .gte('awarded_at', desde)
+    .order('awarded_at', { ascending: false });
+
+  if (logros) {
+    for (const lg of logros) {
+      const key = `logro-${lg.achievement_code || lg.id}`;
+      // Logros de pareja: los ve la pareja entera.
+      for (const phone of [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean)) {
+        if (!(await yaNotificado('couple_achievements', key, phone))) {
+          const codigo = lg.achievement_code || '';
+          const emojiYDesc = descripcionLogro(codigo) || '';
+          encolar(phone, `🏅 *Nuevo logro de pareja!* ${emojiYDesc}`, 'couple_achievements', key, 'logro', codigo);
+          await marcarNotificado('couple_achievements', key, 'logro', phone, codigo);
+        }
+      }
+    }
+  }
+
+  // ── 22. TRIVIA: ambos respondieron hoy (resultado del día) ──
+  const { data: respuestas } = await supabase
+    .from('question_answers')
+    .select('user_id, guess, answer')
+    .eq('date', hoy);
+
+  const respondieron = new Set((respuestas || []).map(r => r.user_id));
+  const ids = usuarios;
+  const ambos = Object.entries(ids).filter(([n, uuid]) => uuid && respondieron.has(uuid)).length >= 2;
+  if (ambos) {
+    const key = `trivia-${hoy}`;
+    for (const phone of [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean)) {
+      if (!(await yaNotificado('question_answers', key, phone))) {
+        encolar(phone, `🎯 *Trivia de pareja lista!* Los dos respondieron. ¿Quién conoce más a quién? Mirá el marcador en la app`, 'question_answers', key, 'ambos', hoy);
+        await marcarNotificado('question_answers', key, 'ambos', phone, hoy);
+      }
+    }
+  }
+
   // ── ENVIAR ──
   const numerosConMensajes = Object.keys(mensajesPorNum).filter(n => mensajesPorNum[n].length > 0);
   if (numerosConMensajes.length === 0) {
@@ -953,7 +1127,7 @@ async function verificarYNotificar(sock) {
     return;
   }
 
-  const header = `*F.U.R.I. - Novedades*\n${new Date().toLocaleString('es-AR')}\n━━━━━━━━━━━━━━━\n`;
+  const header = `*F.U.R.I. - Novedades*\n${fechaLocal()} ${new Intl.DateTimeFormat('en-US', { timeZone: APP_TZ, hour12: false, hour: '2-digit', minute: '2-digit' }).format(ahora)}\n━━━━━━━━━━━━━━━\n`;
 
   for (const num of numerosConMensajes) {
     const texto = header + mensajesPorNum[num].join('\n\n');

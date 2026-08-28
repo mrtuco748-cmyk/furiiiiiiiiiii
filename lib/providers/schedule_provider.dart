@@ -52,15 +52,29 @@ class ScheduleProvider extends ChangeNotifier {
     }
   }
 
-  /// Sube a Supabase las filas locales que nunca se sincronizaron.
+  /// Sube a Supabase los cambios locales pendientes: elementos nuevos
+  /// (cloudId == null) Y ediciones de filas ya sincronizadas que quedaron
+  /// "dirty" (synced = 0) por un push offline/falldo (antes estas últimas se
+  /// perdían para siempre).
   Future<void> _pushUnsyncedToCloud() async {
     final maps = await _db.getAll('schedules');
     for (final m in maps) {
       final s = Schedule.fromMap(m);
-      if (s.cloudId != null) continue;
-      final cloudId = await _insertCloud(s);
-      if (cloudId != null) {
-        await _db.update('schedules', {'cloudId': cloudId}, s.id!);
+      if (s.cloudId == null) {
+        final cloudId = await _insertCloud(s);
+        if (cloudId != null) {
+          await _db.update('schedules', {'cloudId': cloudId}, s.id!);
+        }
+      } else if (m['synced'] == 0) {
+        try {
+          await SupabaseConfig.client
+              .from('schedules')
+              .update(s.toSupabaseMap())
+              .eq('id', s.cloudId!);
+          await _db.update('schedules', {'synced': 1}, s.id!);
+        } catch (e) {
+          developer.log('Sync: fallo re-push schedule ${s.id}: $e');
+        }
       }
     }
   }
@@ -122,20 +136,27 @@ class ScheduleProvider extends ChangeNotifier {
     final cloudId = localRow?['cloudId'] as int?;
     final updated = schedule.copyWith(updatedAt: DateTime.now());
     await _db.update('schedules', updated.toMap(), schedule.id!);
-    try {
-      if (cloudId != null) {
+    if (cloudId != null) {
+      try {
         await SupabaseConfig.client
             .from('schedules')
             .update(updated.toSupabaseMap())
             .eq('id', cloudId);
-      } else {
+        await _db.update('schedules', {'synced': 1}, schedule.id!);
+      } catch (e) {
+        developer.log('Sync: fallo al actualizar schedule en Supabase: $e');
+        // Marcar dirty para re-push en la próxima carga con internet.
+        await _db.update('schedules', {'synced': 0}, schedule.id!);
+      }
+    } else {
+      try {
         final newCloudId = await _insertCloud(updated);
         if (newCloudId != null) {
           await _db.update('schedules', {'cloudId': newCloudId}, schedule.id!);
         }
+      } catch (e) {
+        developer.log('Sync: fallo al insertar schedule en Supabase: $e');
       }
-    } catch (e) {
-      developer.log('Sync: fallo al actualizar schedule en Supabase: $e');
     }
     await _reloadFromLocal();
     notifyListeners();

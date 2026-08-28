@@ -86,6 +86,10 @@ class GalleryProvider extends ChangeNotifier {
   String? _error;
   RealtimeChannel? _channel;
 
+  /// Ids de galería cuyos comentarios ya se cargaron (para saber a quién
+  /// refrescar cuando llega un comentario por realtime).
+  final Set<int> _commentsLoaded = {};
+
   List<GalleryItem> get items => _items;
   List<GalleryComment> get comments => List.unmodifiable(_comments);
   bool get loading => _loading;
@@ -105,10 +109,22 @@ class GalleryProvider extends ChangeNotifier {
     _channel = SupabaseConfig.client.channel('gallery_changes').onPostgresChanges(
       event: PostgresChangeEvent.all, schema: 'public', table: 'gallery',
       callback: (payload) {
-        final row = payload.newRecord;
         if (payload.eventType == PostgresChangeEvent.delete) {
-          _items.removeWhere((i) => i.id == (row?['id'] as int?));
+          final deletedId = payload.oldRecord['id'] as int?;
+          _items.removeWhere((i) => i.id == deletedId);
+          notifyListeners();
         } else { load(); }
+      },
+    ).onPostgresChanges(
+      // Comentarios en vivo: si la pareja comenta una foto que ya tengo
+      // abierta/cargada, refrescar solo esos comentarios (antes no llegaban
+      // hasta cerrar y reabrir la foto).
+      event: PostgresChangeEvent.all, schema: 'public', table: 'gallery_comments',
+      callback: (payload) {
+        final row = payload.newRecord.isNotEmpty ? payload.newRecord : payload.oldRecord;
+        final gid = (row['gallery_id'] as num?)?.toInt();
+        if (gid == null || !_commentsLoaded.contains(gid)) return;
+        loadComments(gid);
       },
     ).subscribe();
   }
@@ -169,7 +185,12 @@ class GalleryProvider extends ChangeNotifier {
     _items.removeWhere((i) => i.id == id); notifyListeners();
     try {
       await SupabaseConfig.client.from('gallery').delete().eq('id', id).timeout(const Duration(seconds: 10));
-    } catch (e) { await load(); }
+    } catch (e) {
+      _error = 'No se pudo eliminar la foto';
+      debugPrint('GalleryProvider.delete error: $e');
+      await load();
+      notifyListeners();
+    }
   }
 
   Future<void> updateDescription(int id, String description) async {
@@ -205,9 +226,21 @@ class GalleryProvider extends ChangeNotifier {
     _items[idx] = next;
     notifyListeners();
     try {
-      await SupabaseConfig.client.from('gallery')
-          .update({'reactions': reactions}).eq('id', id)
+      // Merge atómico en el servidor (RPC toggle_reaction).
+      final res = await SupabaseConfig.client
+          .rpc('toggle_reaction', params: {
+            'target_table': 'gallery',
+            'target_col': 'reactions',
+            'row_id': id,
+            'reaction_key': key,
+            'user_id': AppState.myId ?? '',
+          })
           .timeout(const Duration(seconds: 10));
+      final li = _items.indexWhere((i) => i.id == id);
+      if (li >= 0) {
+        _items[li] = _items[li].copyWith(reactions: GalleryItem.parseReactions(res));
+        notifyListeners();
+      }
     } catch (e) {
       _items[idx] = current;
       debugPrint('GalleryProvider.toggleReaction error: $e');
@@ -249,6 +282,7 @@ class GalleryProvider extends ChangeNotifier {
       final existing = _comments.where((c) => c.galleryId != galleryId).toList();
       existing.addAll((res as List).map((e) => GalleryComment.fromMap(e as Map<String, dynamic>)));
       _comments = existing;
+      _commentsLoaded.add(galleryId);
       notifyListeners();
     } catch (e) {
       debugPrint('GalleryProvider.loadComments error: $e');

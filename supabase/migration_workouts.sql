@@ -43,10 +43,17 @@ CREATE TABLE IF NOT EXISTS workout_completions (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID REFERENCES profiles(id) NOT NULL,
   completed_on DATE DEFAULT CURRENT_DATE,
-  routine_id BIGINT,
+  -- NOT NULL para que la UNIQUE funcione: en Postgres NULLs se consideran
+  -- distintos en una columna UNIQUE → el mismo día sin rutina se duplicaba.
+  routine_id BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (user_id, completed_on, routine_id)
 );
+
+-- Backfill de filas existentes con routine_id NULL antes del NOT NULL.
+UPDATE workout_completions SET routine_id = 0 WHERE routine_id IS NULL;  
+ALTER TABLE workout_completions ALTER COLUMN routine_id SET NOT NULL;
+ALTER TABLE workout_completions ALTER COLUMN routine_id SET DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_workout_completions_on ON workout_completions(completed_on);
 

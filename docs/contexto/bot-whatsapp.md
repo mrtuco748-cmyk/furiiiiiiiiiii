@@ -52,14 +52,15 @@ CREATE TABLE bot_notificaciones (
 ```
 Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro_id)` ya existe.
 
-## Categorias notificadas (20)
+## Categorias notificadas (22 + 4b)
 
 | # | Tabla | Icono | Regla | Tracking key |
 |---|-------|-------|-------|-------------|
 | 1 | schedules | 📅 | Proximas 2h | `schedule-{id}-{date}-{startTime}` |
 | 2 | anniversaries | 🎉 | Hoy (8-10 AM) + mañana | `anniversary-{id}-{date}` |
 | 3 | moods | 😊 | Ultima 1h | `mood-{id}` |
-| 4 | letters | 💌 | Ultima 1h | `letter-{id}` |
+| 4 | letters | 💌 | Ultima 1h · no spoilea cartas selladas (apertura futura) | `letter-{id}` |
+| 4b | letters (apertura) | 💌 | Entrega ceremonial cuando `scheduled_open` cae en la última 1h ("tu carta acaba de abrirse") | `letteropen-{id}-{fecha}` |
 | 5 | challenges | 🚩 | Ultima 1h (creado/iniciado/completado) | `challenge-{id}` |
 | 6 | goals | 🏅 | Ultima 1h (creada/completada) | `goal-{id}` |
 | 7 | tasks | ✅ | Ultima 1h | `task-{id}` |
@@ -76,6 +77,8 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 | 18 | workout_completions | 🏋️ | Sesion de entrenamiento completada en ultima 1h | `wcompletion-{id}` |
 | 19 | workout_challenges | 🏆 | Reto de ejercicio creado/aprobado/completado en ultima 1h | `wchallenge-{id}-{tipo}` |
 | 20 | racha de entrenamiento | 🔥 | Racha individual >=3 dias y no entreno hoy ni ayer → aviso una vez por dia a la pareja | `streak-{uuid}-{date}` |
+| 21 | couple_achievements | 🏅 | Logro de pareja desbloqueado en ultima 1h → a AMBOS (emoji/titulo) | `logro-{code}` |
+| 22 | question_answers | 🎯 | Trivia: cuando AMBOS respondieron hoy → aviso "quién conoce más" (a ambos) | `trivia-{date}` |
 
 **No notifica**: messages (ya tienen push via FCM)
 
@@ -86,7 +89,7 @@ va a `ROCIO_NUMERO`, y si es Rocio va a `FACU_NUMERO`. Si no se puede identifica
 creador, se envía a ambos (default). Aplica a schedules (user_id), class_schedules
 (user_id), moods (user_id), letters (from_user), challenges (couple_id), goals
 (couple_id), tasks (created_by), transactions/gallery/notes/timeline (user_id),
-custom_questions (from_id). **Aniversarios van a ambos** (son fechas de pareja).
+custom_questions (from_id), deck_cards (created_by). **Aniversarios van a ambos** (son fechas de pareja).
 
 El tracking en `bot_notificaciones` filtra por `phone` además de `(tabla, registro_id)`,
 así cada destinatario tiene su propio registro anti-duplicado.
@@ -106,12 +109,14 @@ así cada destinatario tiene su propio registro anti-duplicado.
 6. saveSessionToSupabase() (guarda por si acaba de escanear QR)
 7. verificarYNotificar(sock)
    └── cargarUsuarios() (mapea profiles.id → facu/rocio)
-   └── Itera las 16 categorias
+   └── **Ventana dinámica (desde 2026-08-28)**: lee `last_run_at` de `bot_sessions.session_data`; consulta eventos `desde = max(last_run_previo, ahora-24h)` en vez de fija 1h (el cron de CI puede correr con 6-12h de retraso, una ventana fija de 1h pierde eventos). Persiste `last_run_at` al final (saveSessionToSupabase extra).
+   └── **LIDs persistidos en `bot_sessions.session_data.lids`** (se cargan desde Supabase, no de `lids.json` en CI efímero).
+   └── Itera las 22 categorias + 4b (apertura de cartas)
    └── Para cada registro: yaNotificado(tabla, key, phone) + destinosPara(usuarios, creatorId)
    └── Acumula mensajesPorNum{} (map phone → textos)
    └── Por la regla "cada quien ve lo que agrega la otra": cada registro se enruta
        solo al destinatario que NO lo genero (si no se identifica el creador, a ambos)
-8. Por cada numero con mensajes, une textos con header y envia
+ 8. Por cada numero con mensajes, une textos con header y envia
 9. sock.end()
 10. process.exit(0)
 ```

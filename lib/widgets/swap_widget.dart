@@ -9,6 +9,7 @@ class SwapWidget extends StatefulWidget {
   final Duration swapDuration;
   final Duration initialDelay;
   final bool? showSwap;
+  final VoidCallback? onSwapShow;
 
   const SwapWidget({
     super.key,
@@ -19,6 +20,7 @@ class SwapWidget extends StatefulWidget {
     this.swapDuration = const Duration(seconds: 7),
     this.initialDelay = const Duration(seconds: 4),
     this.showSwap,
+    this.onSwapShow,
   });
 
   @override
@@ -61,6 +63,7 @@ class _SwapWidgetState extends State<SwapWidget> {
   void _showSwapContent() {
     if (!mounted) return;
     setState(() => _showingSwap = true);
+    widget.onSwapShow?.call();
     _timer = Timer(widget.swapDuration, () {
       if (!mounted) return;
       _showIcon();

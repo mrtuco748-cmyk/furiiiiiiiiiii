@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../app_state.dart';
-import '../widgets/tap_tile.dart';
-import '../widgets/concrete_painter.dart';
-import '../widgets/responsive_wrapper.dart';
+import '../providers/location_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/loca_screen.dart';
 
 const _black = Color(0xFF000000);
 
+/// Mapa/Distancia estilo "Nosotros": botón-icono gigante de mapa que swapea a
+/// la distancia en vivo y abre un panel con el detalle; botón GPS para
+/// actualizar la propia ubicación.
 class MapaScreen extends StatefulWidget {
   final AppMode mode;
   const MapaScreen({super.key, required this.mode});
@@ -17,165 +22,186 @@ class MapaScreen extends StatefulWidget {
 }
 
 class _MapaScreenState extends State<MapaScreen> {
-  double? _distanceKm;
-  bool _loading = true;
-
   @override
   void initState() {
     super.initState();
-    _loadDistance();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<LocationProvider>().load();
+    });
   }
 
-  Future<void> _loadDistance() async {
-    await Future.delayed(const Duration(seconds: 1));
-    if (mounted) {
-      setState(() {
-        _distanceKm = 2.3;
-        _loading = false;
-      });
+  Future<void> _shareLocation() async {
+    HapticFeedback.heavyImpact();
+    final lpv = context.read<LocationProvider>();
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        _manualDialog();
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition();
+      await lpv.updateMyLocation(pos.latitude, pos.longitude);
+    } catch (e) {
+      _manualDialog();
+    }
+  }
+
+  Future<void> _manualDialog() async {
+    final lpv = context.read<LocationProvider>();
+    final mine = lpv.myLocation;
+    final latCtrl = TextEditingController(text: mine?.lat.toString() ?? '');
+    final lngCtrl = TextEditingController(text: mine?.lng.toString() ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(18))),
+        title: const Icon(Icons.my_location, color: Colors.white, size: 32),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: latCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Latitud'),
+            ),
+            TextField(
+              controller: lngCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Longitud'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Guardar', style: TextStyle(color: Color(0xFF00D4FF))),
+          ),
+        ],
+      ),
+    );
+    final lat = double.tryParse(latCtrl.text);
+    final lng = double.tryParse(lngCtrl.text);
+    if (ok == true && lat != null && lng != null) {
+      await lpv.updateMyLocation(lat, lng);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final t = getTheme(widget.mode);
+    return Consumer<LocationProvider>(
+      builder: (context, lpv, _) {
+        final hasData = lpv.myLocation != null && lpv.partnerLocation != null;
+        final distance = lpv.coupleDistanceKm;
+        final entries = [
+          LocaEntry(
+            icon: Icons.map,
+            color: t.d,
+            iconColor: t.dark,
+            label: 'Distancia',
+            panel: 0,
+            swapBuilder: hasData ? (_) => _distanceSwap(distance) : null,
+            autoPlaySwap: hasData,
+          ),
+          LocaEntry(
+            icon: Icons.my_location,
+            color: t.e,
+            label: 'Mi ubicación',
+            onTap: _shareLocation,
+            isAction: true,
+          ),
+        ];
+        return LocaScreen(
+          seed: 41,
+          theme: t,
+          entries: entries,
+          panels: [(_, close) => _mapPanel(t, close, lpv)],
+        );
+      },
+    );
+  }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A),
-      body: ResponsiveWrapper(builder: (context, w, h) {
-          return SizedBox(width: w, height: h, child: Stack(
-            children: [
-              Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-              _header(w, h, t),
-              _body(w, h, t),
-            ],
-          ));
-        },
+  Widget _distanceSwap(double distance) {
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text('${distance.toStringAsFixed(1)} km',
+          style: GoogleFonts.bangers(color: _black, fontSize: 48, fontWeight: FontWeight.w900)),
       ),
     );
   }
 
-  Widget _header(double w, double h, ThemeSet t) {
-    final barH = h * 0.07;
-    return Positioned(left: 0, top: 0, width: w, height: barH, child: ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        decoration: BoxDecoration(
-          color: t.d,
-              border: Border.all(color: t.d, width: 4),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-        ),
-        child: Row(children: [
-          TapTile(
-            onTap: () { HapticFeedback.heavyImpact(); Navigator.of(context).pop(); },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(Icons.arrow_back, color: t.dark, size: 28),
-            ),
-          ),
-          Expanded(child: Center(
-            child: Text('MAPA', style: TextStyle(color: t.dark, fontFamily: 'monospace', fontSize: 18, fontWeight: FontWeight.bold)),
-          )),
-          const SizedBox(width: 50),
-        ]),
-      ),
-    ));
-  }
-
-  Widget _body(double w, double h, ThemeSet t) {
-    final top = h * 0.07 + h * 0.02;
-    final pad = w * 0.04;
+  Widget _mapPanel(ThemeSet t, VoidCallback close, LocationProvider lpv) {
     final identity = AppState.identity ?? 'Yo';
     final partner = identity == 'Facu' ? 'Rocio' : 'Facu';
-
-    return Positioned(
-      left: pad, top: top, width: w - pad * 2, height: h - top - pad,
-      child: Column(children: [
-        Expanded(
-          flex: 3,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Container(
-              decoration: BoxDecoration(
-                color: t.mid,
-          border: Border.all(color: t.d, width: 4),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(6, 6), blurRadius: 0)],
-              ),
-              child: Stack(children: [
-                Center(
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.map, color: t.d, size: 80),
-                    const SizedBox(height: 12),
-                    Text('Mapa en desarrollo', style: TextStyle(color: t.light.withValues(alpha: 0.5), fontFamily: 'monospace', fontSize: 14)),
-                  ]),
-                ),
-                Positioned(
-                  top: 20, left: pad,
-                  child: Icon(Icons.person_pin, color: t.a, size: 36),
-                ),
-                Positioned(
-                  bottom: 20, right: pad,
-                  child: Icon(Icons.person_pin, color: t.e, size: 36),
-                ),
+    final hasData = lpv.myLocation != null && lpv.partnerLocation != null;
+    final distance = lpv.coupleDistanceKm;
+    final me = lpv.myLocation;
+    final p2 = lpv.partnerLocation;
+    return LocaScreen.panel(color: t.mid, borderColor: t.d, child: Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+        child: Row(children: [
+          Icon(Icons.map, color: t.d, size: 22),
+          const Spacer(),
+          LocaScreen.closeIcon(close, t.d, Icons.close),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(hasData ? '$identity y $partner conectados' : 'Comparti tu ubicacion para ver la distancia',
+            style: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.6), fontSize: 13)),
+        ),
+      ),
+      Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Stack(children: [
+            Center(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.map, color: t.d.withValues(alpha: 0.5), size: 90),
+                const SizedBox(height: 10),
+                Text(hasData ? '${distance.toStringAsFixed(1)} km' : '-- km',
+                  style: GoogleFonts.bangers(fontWeight: FontWeight.w900, color: t.light, fontSize: 40)),
               ]),
             ),
-          ),
+            if (me != null) Positioned(top: 12, left: 8, child: Icon(Icons.person_pin, color: t.a, size: 34)),
+            if (p2 != null) Positioned(bottom: 12, right: 8, child: Icon(Icons.person_pin, color: t.e, size: 34)),
+          ]),
         ),
-        const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: t.d,
-              border: Border.all(color: _black, width: 4),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-            ),
-            child: Column(children: [
-              Text('Distancia entre $identity y $partner', style: TextStyle(color: t.dark, fontFamily: 'monospace', fontSize: 12)),
-              const SizedBox(height: 8),
-              if (_loading)
-                CircularProgressIndicator(color: t.dark)
-              else ...[
-                Text('${_distanceKm?.toStringAsFixed(1) ?? '--'} km', style: TextStyle(color: t.dark, fontFamily: 'monospace', fontSize: 42, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.location_on, color: t.e, size: 20),
-                  const SizedBox(width: 4),
-                  Text(identity, style: TextStyle(color: t.dark, fontFamily: 'monospace', fontSize: 13)),
-                  const SizedBox(width: 20),
-                  Container(width: 60, height: 3, color: t.dark),
-                  const SizedBox(width: 20),
-                  Icon(Icons.location_on, color: t.a, size: 20),
-                  const SizedBox(width: 4),
-                  Text(partner, style: TextStyle(color: t.dark, fontFamily: 'monospace', fontSize: 13)),
-                ]),
-              ],
-            ]),
-          ),
+      ),
+      Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.location_on, color: t.e, size: 20),
+          const SizedBox(width: 4),
+          Text(identity, style: GoogleFonts.bangers(color: t.light, fontSize: 14)),
+          const SizedBox(width: 20),
+          Container(width: 60, height: 3, color: t.d),
+          const SizedBox(width: 20),
+          Icon(Icons.location_on, color: t.a, size: 20),
+          const SizedBox(width: 4),
+          Text(partner, style: GoogleFonts.bangers(color: t.light, fontSize: 14)),
+        ]),
+      ),
+      if (!hasData)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            me == null ? 'Tu ubicacion no esta compartida' : 'La pareja aun no compartio ubicacion',
+            style: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.6), fontSize: 11)),
         ),
-        const SizedBox(height: 12),
-        TapTile(
-          onTap: () { HapticFeedback.heavyImpact(); _loadDistance(); },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Container(
-              width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: t.e,
-                border: Border.all(color: t.e, width: 4),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-              ),
-              child: Center(child: Text('Actualizar ubicacion', style: TextStyle(color: t.light, fontFamily: 'monospace', fontSize: 14, fontWeight: FontWeight.bold))),
-            ),
-          ),
-        ),
-      ]),
-    );
+    ]));
   }
 }

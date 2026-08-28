@@ -4,34 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/schedule_provider.dart';
 import '../../providers/event_type_provider.dart';
 import '../../providers/class_schedule_provider.dart';
 import '../../models/schedule.dart';
+import '../../router.dart';
 import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../../database/database_helper.dart';
-import 'schedule_form_screen.dart';
-import 'class_setup_wizard.dart';
-import 'class_board_screen.dart';
-import 'daily_events_screen.dart';
 
 bool isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-const _green = Color(0xFF00FF66);
-const _darkGreen = Color(0xFF0D2A0D);
-const _brightBlue = Color(0xFF00BFFF);
+const _c = Color(0xFF00D4FF);
+const _dark = Color(0xFF1A1A1A);
+const _cDeep = Color(0xFF003344);
 const _white = Color(0xFFFFFFFF);
-const _black = Color(0xFF000000);
-
-final _dayColors = [
-  const Color(0xFF7B2D8E), const Color(0xFF2D7B8E), const Color(0xFF8E7B2D),
-  const Color(0xFF2D8E7B), const Color(0xFF8E2D7B), const Color(0xFF4A90D9),
-  const Color(0xFFD94A90), const Color(0xFF90D94A), const Color(0xFF00BFFF),
-  const Color(0xFFFF6B35), const Color(0xFF9D00FF), const Color(0xFFFFDE59),
-];
 
 class CalendarHomeScreen extends StatefulWidget {
   const CalendarHomeScreen({super.key});
@@ -58,9 +48,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
     try {
       final res = await DatabaseHelper().getAll('class_schedules');
       if (res.isEmpty && mounted) {
-        final result = await Navigator.of(context).push<bool>(
-          MaterialPageRoute(builder: (_) => const ClassSetupWizard()),
-        );
+        final result = await context.push<bool>(RouterRoutes.classSetup);
         if (result == true) {
           final pv = context.read<ClassScheduleProvider>();
           if (mounted) pv.loadSchedules();
@@ -105,46 +93,34 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
 
   void _openForm() {
     HapticFeedback.mediumImpact();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ScheduleFormScreen(initialDate: _selectedDay)),
-    ).then((_) => _loadData());
+    context.push(RouterRoutes.scheduleForm, extra: _selectedDay)
+        .then((_) => _loadData());
   }
 
   void _openDayEvents() {
     HapticFeedback.mediumImpact();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => DailyEventsScreen(initialDate: _selectedDay)),
-    ).then((_) => _loadData());
+    context.push(RouterRoutes.dailyEvents, extra: _selectedDay)
+        .then((_) => _loadData());
   }
 
   void _openClasses() {
     HapticFeedback.mediumImpact();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ClassBoardScreen()),
-    ).then((_) => _loadData());
+    context.push(RouterRoutes.classBoard).then((_) => _loadData());
   }
 
   void _editSchedule(Schedule s) {
     HapticFeedback.mediumImpact();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ScheduleFormScreen(schedule: s)),
-    ).then((_) => _loadData());
-  }
-
-  Color _cellBg(DateTime day) {
-    if (day.month != _focusedDay.month) return _green.withValues(alpha: 0.1);
-    final idx = (day.day + day.month * 7) % _dayColors.length;
-    return _dayColors[idx];
+    context.push(RouterRoutes.scheduleForm, extra: s).then((_) => _loadData());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _darkGreen,
+      backgroundColor: _dark,
       body: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
         ResponsiveWrapper(builder: (context, w, h) {
-            if (!_initialized) return Center(child: CircularProgressIndicator(color: _brightBlue, strokeWidth: 3));
+            if (!_initialized) return Center(child: CircularProgressIndicator(color: _c, strokeWidth: 3));
             return SizedBox(width: w, height: h, child: Stack(children: [
               _monthNav(w, h),
               _calendarBlock(w, h),
@@ -153,44 +129,21 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
             ]));
            },
          ),
-       ]),
+      ]),
     );
   }
 
   Widget _monthNav(double w, double h) {
     final months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-    return Positioned(      left: w * 0.03, top: h * 0.005, width: w * 0.94, height: h * 0.04,
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)); }, child: Icon(Icons.chevron_left, color: _brightBlue, size: 22)),
-        Text('${months[_focusedDay.month - 1]} ${_focusedDay.year}', style: GoogleFonts.bangers(color: _green, fontWeight: FontWeight.bold, fontSize: 15)),
-        Row(children: [
-          _navBtn(w, h, Icons.view_day, _brightBlue, 'Día', _openDayEvents),
-          SizedBox(width: w * 0.015),
-          _navBtn(w, h, Icons.school, _green, 'Clases', _openClasses),
-          SizedBox(width: w * 0.015),
-          TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)); }, child: Icon(Icons.chevron_right, color: _brightBlue, size: 22)),
-        ]),
+    return Positioned(left: w * 0.03, top: h * 0.005, width: w * 0.94, height: h * 0.05,
+      child: Row(children: [
+        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.chevron_left, color: _c, size: 26))),
+        Expanded(child: Center(child: Text('${months[_focusedDay.month - 1]} ${_focusedDay.year}', style: GoogleFonts.bangers(color: _c, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1)))),
+        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime.now()); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.center_focus_strong, color: _c, size: 22))),
+        TapTile(onTap: _openDayEvents, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.view_day, color: _c, size: 22))),
+        TapTile(onTap: _openClasses, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.school, color: _c, size: 22))),
+        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.chevron_right, color: _c, size: 26))),
       ]),
-    );
-  }
-
-  Widget _navBtn(double w, double h, IconData icon, Color color, String label, VoidCallback onTap) {
-    return TapTile(
-      onTap: onTap,
-      child: Container(
-        height: h * 0.032,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _black, width: 2),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: _black, size: 13),
-          const SizedBox(width: 4),
-          Text(label, style: GoogleFonts.bangers(color: _black, fontSize: 10)),
-        ]),
-      ),
     );
   }
 
@@ -207,7 +160,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       left: w * 0.01, top: calTop, width: w * 0.98, height: calH,
       child: Column(children: [
         _dayNameRow(w, calH * 0.05),
-        Expanded(child: _daysGrid(daysInMonth, firstWeekday, totalCells, w)),
+        Expanded(child: _daysGrid(firstWeekday, totalCells, w)),
       ]),
     );
   }
@@ -215,58 +168,82 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   Widget _dayNameRow(double w, double dh) {
     final days = ['L','M','M','J','V','S','D'];
     return SizedBox(width: w, height: dh,
-      child: Row(children: days.map((d) => SizedBox(width: w / 7, child: Center(child: Text(d, style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.5), fontSize: 9))))).toList()),
+      child: Row(children: days.map((d) => SizedBox(width: w / 7, child: Center(child: Text(d, style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.35), fontSize: 9, letterSpacing: 1))))).toList()),
     );
   }
 
-  Widget _daysGrid(int daysInMonth, int firstWeekday, int totalCells, double w) {
-
-    return GridView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7,
-        childAspectRatio: 0.9,
-        crossAxisSpacing: 2,
-        mainAxisSpacing: 2,
-      ),
-      itemCount: totalCells,
-      itemBuilder: (context, index) {
-        final dayNum = index - firstWeekday + 2;
-        if (dayNum < 1 || dayNum > daysInMonth) {
-          if (dayNum < 1) {
-            final prevMonthDay = DateTime(_focusedDay.year, _focusedDay.month, 0).day + dayNum;
-            return _dayCell(prevMonthDay, _green.withValues(alpha: 0.08), isOutside: true, num: prevMonthDay);
-          }
-          return _dayCell(0, Colors.transparent, isOutside: true, num: 0);
-        }
-        final color = _cellBg(DateTime(_focusedDay.year, _focusedDay.month, dayNum));
-        final events = _getEventsForDay(DateTime(_focusedDay.year, _focusedDay.month, dayNum));
-        final isToday = dayNum == DateTime.now().day && _focusedDay.month == DateTime.now().month && _focusedDay.year == DateTime.now().year;
-        final isSelected = _selectedDay != null && dayNum == _selectedDay!.day && _focusedDay.month == _selectedDay!.month && _focusedDay.year == _selectedDay!.year;
-        return _dayCell(dayNum, color, events: events, isToday: isToday, isSelected: isSelected);
-      },
+  Widget _daysGrid(int firstWeekday, int totalCells, double w) {
+    final weeks = totalCells ~/ 7;
+    // Grilla fija: cada semana ocupa 1/N de la altura disponible. Así el mes
+    // completo (incluso con 6 semanas) se ve SIEMPRE entero, sin recortar abajo.
+    return Column(
+      children: List.generate(weeks, (wi) {
+        return Expanded(
+          child: Row(
+            children: List.generate(7, (ci) {
+              final index = wi * 7 + ci;
+              final dayNum = index - firstWeekday + 2;
+              return Expanded(child: _cellFor(dayNum));
+            }),
+          ),
+        );
+      }),
     );
   }
+
+  Widget _cellFor(int dayNum) {
+    if (dayNum < 1 || dayNum > _daysInSelectedMonth) {
+      if (dayNum < 1) {
+        final prevMonthDay =
+            DateTime(_focusedDay.year, _focusedDay.month, 0).day + dayNum;
+        return _dayCell(prevMonthDay, _cDeep, isOutside: true, num: prevMonthDay);
+      }
+      return _dayCell(0, Colors.transparent, isOutside: true, num: 0);
+    }
+    final color = const Color(0xFF122433);
+    final events =
+        _getEventsForDay(DateTime(_focusedDay.year, _focusedDay.month, dayNum));
+    final isToday = dayNum == DateTime.now().day &&
+        _focusedDay.month == DateTime.now().month &&
+        _focusedDay.year == DateTime.now().year;
+    final isSelected = _selectedDay != null &&
+        dayNum == _selectedDay!.day &&
+        _focusedDay.month == _selectedDay!.month &&
+        _focusedDay.year == _selectedDay!.year;
+    return _dayCell(dayNum, color,
+        events: events, isToday: isToday, isSelected: isSelected);
+  }
+
+  int get _daysInSelectedMonth =>
+      DateTime(_focusedDay.year, _focusedDay.month + 1, 0).day;
 
   Widget _dayCell(int day, Color bg, {List<Schedule>? events, bool isToday = false, bool isSelected = false, bool isOutside = false, int num = 0}) {
     if (day == 0) return const SizedBox.shrink();
     final hasEvents = events != null && events.isNotEmpty;
     final hasClasses = events?.any((e) => e.type == 'Clase') ?? false;
-    final classForFacu = events?.any((e) => e.type == 'Clase' && e.userId == 'Facu') ?? false;
-    final classForRocio = events?.any((e) => e.type == 'Clase' && e.userId == 'Rocio') ?? false;
-    
-    Color cellBg;
-    if (isOutside) { cellBg = _green.withValues(alpha: 0.05); }
-    else if (classForFacu) { cellBg = const Color(0xFF0088FF); }
-    else if (classForRocio) { cellBg = const Color(0xFF9D00FF); }
-    else if (hasEvents) { cellBg = bg; }
-    else { cellBg = _green.withValues(alpha: 0.08); }
 
-    Color textColor;
-    if (isOutside) { textColor = _white.withValues(alpha: 0.15); }
-    else if (hasClasses) { textColor = _white; }
-    else if (hasEvents) { textColor = _white; }
-    else { textColor = _white.withValues(alpha: 0.25); }
+    // Minimalista: celda neutra; hoy = borde acento; seleccionado = acento lleno.
+    final Color cellBg;
+    if (isOutside) {
+      cellBg = const Color(0xFF0B1620);
+    } else if (isSelected) {
+      cellBg = _c;
+    } else if (isToday) {
+      cellBg = const Color(0xFF0E2A38);
+    } else {
+      cellBg = const Color(0xFF122433);
+    }
+
+    final Color textColor;
+    if (isSelected) {
+      textColor = _dark;
+    } else if (isToday) {
+      textColor = _c;
+    } else if (isOutside) {
+      textColor = _white.withValues(alpha: 0.25);
+    } else {
+      textColor = _white.withValues(alpha: 0.75);
+    }
 
     return GestureDetector(
       onTap: () {
@@ -276,17 +253,23 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
         }
       },
       child: Container(
-        margin: const EdgeInsets.all(1),
+        margin: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: cellBg,
-          borderRadius: BorderRadius.circular(6),
-          border: isSelected ? Border.all(color: _white, width: 2) : (isToday ? Border.all(color: _brightBlue, width: 2) : null),
+          borderRadius: BorderRadius.circular(10),
+          border: isSelected
+              ? Border.all(color: _c, width: 2)
+              : (isToday ? Border.all(color: _c, width: 1.6) : null),
         ),
         child: Stack(children: [
           Center(child: Text('$day', style: GoogleFonts.bangers(color: textColor, fontSize: 13))),
-          if (hasEvents && !hasClasses)
-            Positioned(bottom: 2, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min,
-              children: events.where((e) => e.type != 'Clase').take(3).map((e) => Container(width: 3, height: 3, margin: const EdgeInsets.symmetric(horizontal: 0.5), decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle))).toList(),
+          if (hasEvents || hasClasses)
+            Positioned(bottom: 3, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasClasses)
+                  Container(width: 4, height: 4, margin: const EdgeInsets.symmetric(horizontal: 1), decoration: const BoxDecoration(color: _c, shape: BoxShape.circle)),
+                ...events!.where((e) => e.type != 'Clase').take(3).map((e) => Container(width: 4, height: 4, margin: const EdgeInsets.symmetric(horizontal: 1), decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle))),
+              ],
             )),
         ]),
       ),
@@ -301,7 +284,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
     return Positioned(
       left: w * 0.03, top: h * 0.54, width: w * 0.94, height: h * 0.40,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(' Proximos', style: GoogleFonts.bangers(color: _green, fontSize: 14)),
+        Text(' Proximos', style: GoogleFonts.bangers(color: _c, fontSize: 14)),
         const SizedBox(height: 4),
         Expanded(
           child: upcoming.isEmpty
@@ -316,29 +299,26 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
                       child: GestureDetector(
                         onTap: () => _editSchedule(e),
                         onLongPress: () => _deleteSchedule(e),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: _brightBlue.withValues(alpha: 0.15),
-                              border: Border.all(color: _brightBlue, width: 2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(color: Color(e.color).withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(e.color), width: 2)),
-                                child: Text(dateStr, style: GoogleFonts.bangers(color: Color(e.color), fontWeight: FontWeight.bold, fontSize: 10)),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text(e.title, style: GoogleFonts.bangers(color: _white, fontSize: 11, fontWeight: FontWeight.bold)),
-                                Text('${e.startTime}-${e.endTime} ${e.location}', style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.4), fontSize: 8)),
-                              ])),
-                              Icon(Icons.chevron_right, color: _white.withValues(alpha: 0.3), size: 16),
-                            ]),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: _cDeep,
+                            border: Border.all(color: _cDeep, width: 2),
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          child: Row(children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(color: Color(e.color), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(e.color), width: 2)),
+                              child: Text(dateStr, style: GoogleFonts.bangers(color: _dark, fontWeight: FontWeight.bold, fontSize: 10)),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(e.title, style: GoogleFonts.bangers(color: _white, fontSize: 11, fontWeight: FontWeight.bold)),
+                              Text('${e.startTime}-${e.endTime} ${e.location}', style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.4), fontSize: 8)),
+                            ])),
+                            Icon(Icons.chevron_right, color: _white.withValues(alpha: 0.3), size: 16),
+                          ]),
                         ),
                       ),
                     );
@@ -361,12 +341,9 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       right: w * 0.05, bottom: h * 0.03, width: w * 0.13, height: w * 0.13,
       child: TapTile(
         onTap: _openForm,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            decoration: BoxDecoration(color: _brightBlue, border: Border.all(color: _black, width: 4), borderRadius: BorderRadius.circular(16), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)]),
-            child: const Center(child: Icon(Icons.add, color: Color(0xFF000000), size: 28)),
-          ),
+        child: Container(
+          decoration: BoxDecoration(color: _c, border: Border.all(color: _c, width: 4), borderRadius: BorderRadius.circular(16)),
+          child: const Center(child: Icon(Icons.add, color: _dark, size: 28)),
         ),
       ),
     );

@@ -10,13 +10,16 @@ import '../../models/workout_routine.dart';
 import '../../models/workout_social.dart';
 import '../../models/workout_stats.dart';
 import '../../providers/workout_provider.dart';
+import '../../providers/rewards_provider.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../../widgets/tap_tile.dart';
+import '../../widgets/brutal_style.dart';
 import '../../theme/app_theme.dart';
 
 class EjerciciosScreen extends StatefulWidget {
   final AppMode mode;
-  const EjerciciosScreen({super.key, required this.mode});
+  final int initialTab;
+  const EjerciciosScreen({super.key, required this.mode, this.initialTab = 0});
 
   @override
   State<EjerciciosScreen> createState() => _EjerciciosScreenState();
@@ -41,6 +44,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
   @override
   void initState() {
     super.initState();
+    _tab = widget.initialTab.clamp(0, 3);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<WorkoutProvider>().load();
     });
@@ -57,6 +61,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             height: h,
             child: Stack(
               children: [
+                BrutalStyle.bg(_bg),
                 Positioned.fill(
                   child: Column(
                     children: [
@@ -85,6 +90,9 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         color: _lima,
         border: Border.all(color: _lima, width: 4),
         borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -296,6 +304,9 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         color: color ?? _panel,
         border: Border.all(color: borderColor ?? color ?? _panel, width: 3),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0),
+        ],
       );
 
   Widget _dayCard(double w, DateTime day, WorkoutProvider pv) {
@@ -436,7 +447,13 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     return TapTile(
       onTap: () async {
         HapticFeedback.lightImpact();
+        final rewards = context.read<RewardsProvider>();
+        final wasDone = pv.completedByUser(day, pv.myId);
         await pv.toggleCompletion(userId: pv.myId, date: day);
+        if (!wasDone) {
+          final ds = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+          rewards.awardOnce(pv.myId, 'workout-$ds', 2);
+        }
       },
       child: Container(
         width: 30,
@@ -852,29 +869,36 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
 
   // ─── DIALOGS ─────────────────────────────────────────────────
 
-  Future<void> _dialogNewLog({RoutineItem? prefill, DateTime? day}) async {
-    final nameCtrl = TextEditingController(text: prefill?.exerciseName ?? '');
-    final groupCtrl = TextEditingController();
-    final seriesCtrl =
-        TextEditingController(text: prefill?.series?.toString() ?? '');
-    final repsCtrl =
-        TextEditingController(text: prefill?.reps?.toString() ?? '');
+  Future<void> _dialogNewLog({RoutineItem? prefill, WorkoutLog? existing, DateTime? day}) async {
+    final pv = context.read<WorkoutProvider>();
+    final nameCtrl = TextEditingController(
+        text: existing?.exerciseName ?? prefill?.exerciseName ?? '');
+    final groupCtrl = TextEditingController(
+        text: existing?.muscleGroup ?? '');
+    final seriesCtrl = TextEditingController(
+        text: (existing?.series ?? prefill?.series)?.toString() ?? '');
+    final repsCtrl = TextEditingController(
+        text: (existing?.reps ?? prefill?.reps)?.toString() ?? '');
+    final baseW = existing?.weight ?? prefill?.weight;
     final weightCtrl = TextEditingController(
-      text: prefill?.weight == null
+      text: baseW == null
           ? ''
-          : (prefill!.weight == prefill.weight!.roundToDouble()
-              ? prefill.weight!.round().toString()
-              : '${prefill.weight}'),
+          : (baseW == baseW.roundToDouble()
+              ? baseW.round().toString()
+              : '$baseW'),
     );
-    final restCtrl =
-        TextEditingController(text: prefill?.restSeconds?.toString() ?? '');
-    final notesCtrl = TextEditingController(text: prefill?.notes ?? '');
+    final restCtrl = TextEditingController(
+        text: (existing?.restSeconds ?? prefill?.restSeconds)?.toString() ?? '');
+    final notesCtrl =
+        TextEditingController(text: existing?.notes ?? prefill?.notes ?? '');
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => _formDialog(
-        title: 'Nuevo ejercicio',
+        title: existing != null ? 'Editar ejercicio' : 'Nuevo ejercicio',
         fields: [
+          _libraryChips(pv, nameCtrl),
+          const SizedBox(height: 6),
           _field(nameCtrl, 'Nombre *', autofocus: true),
           _field(groupCtrl, 'Grupo muscular'),
           _numField(seriesCtrl, 'Series'),
@@ -888,7 +912,18 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     );
     if (saved != true) return;
     if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
+    if (existing != null && existing.id != null) {
+      await pv.updateLog(existing.copyWith(
+        exerciseName: nameCtrl.text.trim(),
+        muscleGroup: _orNull(groupCtrl.text.trim()),
+        series: _parseInt(seriesCtrl.text),
+        reps: _parseInt(repsCtrl.text),
+        weight: _parseDouble(weightCtrl.text),
+        restSeconds: _parseInt(restCtrl.text),
+        notes: _orNull(notesCtrl.text.trim()),
+      ));
+      return;
+    }
     await pv.addLog(WorkoutLog(
       exerciseName: nameCtrl.text.trim(),
       muscleGroup: _orNull(groupCtrl.text.trim()),
@@ -902,23 +937,206 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     ));
   }
 
+  /// Chips de la biblioteca de ejercicios (nombres ya registrados): un toque
+  /// completa el campo de nombre.
+  Widget _libraryChips(WorkoutProvider pv, TextEditingController ctrl) {
+    final names = WorkoutStats.distinctExerciseNames(pv.logs);
+    if (names.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: names.take(12).map((n) {
+        final active = ctrl.text.trim() == n;
+        return TapTile(
+          onTap: () { HapticFeedback.selectionClick(); ctrl.text = n; },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: active ? _lima : _panelLight,
+              border: Border.all(color: _lima, width: 1.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(n, style: GoogleFonts.bangers(color: _white, fontSize: 11)),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Future<void> _dialogNewRoutine({int? dayOfWeek}) async {
+    final pv = context.read<WorkoutProvider>();
     final nameCtrl = TextEditingController();
-    final saved = await showDialog<bool>(
+    final items = <RoutineItem>[];
+    final result = await showDialog<({String name, List<RoutineItem> items})>(
       context: context,
-      builder: (ctx) => _formDialog(
-        title: dayOfWeek != null ? 'Rutina del ${_dayNames[dayOfWeek - 1]}' : 'Nueva rutina',
-        fields: [_field(nameCtrl, 'Nombre *', autofocus: true)],
-        onOk: () => nameCtrl.text.trim().isNotEmpty,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          RoutineItem fromLibrary(String n) {
+            WorkoutLog? last;
+            for (final l in pv.logs) {
+              if (l.exerciseName != n) continue;
+              if (last == null || l.loggedOn.isAfter(last.loggedOn)) last = l;
+            }
+            return RoutineItem(
+              exerciseName: n,
+              series: last?.series,
+              reps: last?.reps,
+              weight: last?.weight,
+              restSeconds: last?.restSeconds,
+            );
+          }
+
+          final names = WorkoutStats.distinctExerciseNames(pv.logs);
+          return AlertDialog(
+            backgroundColor: _panel,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: _lima, width: 4),
+            ),
+            title: const Icon(Icons.fitness_center, color: _lima, size: 30),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _field(nameCtrl,
+                      dayOfWeek != null
+                          ? 'Rutina del ${_dayNames[dayOfWeek - 1]} *'
+                          : 'Nombre de la rutina *',
+                      autofocus: true),
+                  if (names.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text('Biblioteca (toca para agregar)',
+                        style: GoogleFonts.bangers(
+                            color: _white.withValues(alpha: 0.6), fontSize: 11)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: names.take(12).map((n) => TapTile(
+                            onTap: () => setLocal(() => items.add(fromLibrary(n))),
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _panelLight,
+                                border: Border.all(color: _lima, width: 1.5),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(n,
+                                  style: GoogleFonts.bangers(
+                                      color: _white, fontSize: 11)),
+                            ),
+                          )).toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  for (final it in items)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _panelLight,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(children: [
+                          Expanded(
+                            child: Text(it.exerciseName,
+                                style: GoogleFonts.bangers(
+                                    color: _white, fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                          Text(_itemSummary(it),
+                              style: GoogleFonts.bangers(
+                                  color: _lima, fontSize: 11)),
+                          TapTile(
+                            onTap: () => setLocal(() => items.remove(it)),
+                            child: const Padding(
+                              padding: EdgeInsets.only(left: 6),
+                              child: Icon(Icons.close, color: _red, size: 16),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  TapTile(
+                    onTap: () async {
+                      final item = await _promptItem();
+                      if (item != null && mounted) {
+                        setLocal(() => items.add(item));
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _panelLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _lima, width: 1.5),
+                      ),
+                      child: const Center(
+                          child: Icon(Icons.add, color: _lima, size: 20)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TapTile(
+                onTap: () => Navigator.pop(ctx),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _panelLight,
+                    border: Border.all(color: _panelLight, width: 2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.close, color: _white, size: 20),
+                ),
+              ),
+              TapTile(
+                onTap: () {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  Navigator.pop(
+                      ctx,
+                      (name: nameCtrl.text.trim(),
+                          items: List<RoutineItem>.of(items)));
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _lima,
+                    border: Border.all(color: _lima, width: 2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.check, color: _darkText, size: 20),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (saved != true) return;
+    if (result == null) return;
     if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
     await pv.addRoutine(WorkoutRoutine(
-      name: nameCtrl.text.trim(),
+      name: result.name,
       dayOfWeek: dayOfWeek,
+      items: result.items,
     ));
+  }
+
+  String _itemSummary(RoutineItem it) {
+    final seriesTxt =
+        it.series != null && it.reps != null ? '${it.series}x${it.reps}' : '';
+    final w = it.weight;
+    final weightTxt = w == null
+        ? ''
+        : (w == w.roundToDouble() ? '${w.round()}kg' : '${w}kg');
+    return [seriesTxt, weightTxt].where((s) => s.isNotEmpty).join(' @ ');
   }
 
   Future<void> _dialogNewChallenge() async {
@@ -1184,8 +1402,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     );
   }
 
-  Future<void> _dialogRoutineItem(
-      WorkoutRoutine routine, void Function() refresh) async {
+  Future<RoutineItem?> _promptItem() async {
+    final pv = context.read<WorkoutProvider>();
     final nameCtrl = TextEditingController();
     final seriesCtrl = TextEditingController();
     final repsCtrl = TextEditingController();
@@ -1196,6 +1414,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       builder: (ctx) => _formDialog(
         title: 'Agregar ejercicio',
         fields: [
+          _libraryChips(pv, nameCtrl),
+          const SizedBox(height: 6),
           _field(nameCtrl, 'Nombre *', autofocus: true),
           _numField(seriesCtrl, 'Series'),
           _numField(repsCtrl, 'Reps'),
@@ -1205,20 +1425,30 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         onOk: () => nameCtrl.text.trim().isNotEmpty,
       ),
     );
-    if (saved != true) return;
+    if (saved != true) return null;
+    if (!mounted) return null;
+    final name = nameCtrl.text.trim();
+    if (name.isEmpty) return null;
+    return RoutineItem(
+      exerciseName: name,
+      series: _parseInt(seriesCtrl.text),
+      reps: _parseInt(repsCtrl.text),
+      weight: _parseDouble(weightCtrl.text),
+      restSeconds: _parseInt(restCtrl.text),
+    );
+  }
+
+  Future<void> _dialogRoutineItem(
+      WorkoutRoutine routine, void Function() refresh) async {
+    final item = await _promptItem();
+    if (item == null) return;
     if (!mounted) return;
     final pv = context.read<WorkoutProvider>();
     final live = pv.routines.firstWhere(
       (r) => r.id == routine.id,
       orElse: () => routine,
     );
-    await pv.updateRoutine(live.addItem(RoutineItem(
-      exerciseName: nameCtrl.text.trim(),
-      series: _parseInt(seriesCtrl.text),
-      reps: _parseInt(repsCtrl.text),
-      weight: _parseDouble(weightCtrl.text),
-      restSeconds: _parseInt(restCtrl.text),
-    )));
+    await pv.updateRoutine(live.addItem(item));
     refresh();
   }
 
@@ -1287,8 +1517,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               (l) => l.id == log.id,
               orElse: () => log,
             );
-            final history =
-                WorkoutStats.weightHistoryFor(pv.logs, live.exerciseName);
             return Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -1306,7 +1534,36 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                           ),
                         ),
                       ),
-                      if (live.id != null)
+                      TapTile(
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _dialogNewLog(
+                            prefill: RoutineItem(
+                              exerciseName: live.exerciseName,
+                              series: live.series,
+                              reps: live.reps,
+                              weight: live.weight,
+                              restSeconds: live.restSeconds,
+                              notes: live.notes,
+                            ),
+                          );
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Icon(Icons.trending_up, color: _lima, size: 20),
+                        ),
+                      ),
+                      if (live.id != null) ...[
+                        const SizedBox(width: 8),
+                        TapTile(
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _dialogNewLog(existing: live);
+                          },
+                          child: const Icon(Icons.edit,
+                              color: Color(0xFF00D4FF), size: 20),
+                        ),
+                        const SizedBox(width: 8),
                         TapTile(
                           onTap: () {
                             Navigator.pop(ctx);
@@ -1315,6 +1572,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                           child: const Icon(Icons.delete_outline,
                               color: _red, size: 20),
                         ),
+                      ],
                       const SizedBox(width: 8),
                       TapTile(
                         onTap: () => Navigator.pop(ctx),
@@ -1353,26 +1611,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (history.isNotEmpty) ...[
-                            Text(
-                              'Evolución de peso',
-                              style: GoogleFonts.bangers(
-                                color: _lima,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            for (final e in history.reversed)
-                              _weightRow(e),
-                          ] else
-                            Text(
-                              'Sin historial de pesos todavía',
-                              style: GoogleFonts.bangers(
-                                color: _white.withValues(alpha: 0.5),
-                                fontSize: 12,
-                              ),
-                            ),
+                          _improvementBlock(live, pv),
                           const SizedBox(height: 12),
                           _commentsBlock(
                             live.social.comments,
@@ -1401,27 +1640,78 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     );
   }
 
-  Widget _weightRow(WeightEntry e) {
-    final w = e.weight;
-    final txt = w == w.roundToDouble() ? '${w.round()} kg' : '$w kg';
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        children: [
-          Text(
-            '${e.date.day}/${e.date.month}/${e.date.year}',
-            style: GoogleFonts.bangers(
-              color: _white.withValues(alpha: 0.6),
-              fontSize: 12,
-            ),
-          ),
-          const Spacer(),
-          Text(
-            txt,
-            style: GoogleFonts.bangers(color: _lima, fontSize: 13),
-          ),
-        ],
+  /// Stats de avance + historial de mejora del ejercicio (todos sus registros).
+  Widget _improvementBlock(WorkoutLog live, WorkoutProvider pv) {
+    final all = pv.logs.where((l) => l.exerciseName == live.exerciseName).toList()
+      ..sort((a, b) => a.loggedOn.compareTo(b.loggedOn));
+    if (all.isEmpty) {
+      return Text('Sin historial todavía',
+          style: GoogleFonts.bangers(
+              color: _white.withValues(alpha: 0.5), fontSize: 12));
+    }
+    final first = all.first;
+    final last = all.last;
+    final fw = first.weight;
+    final lw = last.weight;
+    final delta = (fw != null && lw != null) ? lw - fw : 0.0;
+    String fmt(double? v) => v == null
+        ? '—'
+        : (v == v.roundToDouble() ? '${v.round()}kg' : '${v}kg');
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: _panelLight,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _stat('PRIMERO', fmt(fw)),
+          _stat('ÚLTIMO', fmt(lw)),
+          _stat('AVANCE', '${delta >= 0 ? '+' : ''}${fmt(delta)}',
+              color: delta >= 0 ? _lima : _red),
+        ]),
       ),
+      const SizedBox(height: 8),
+      Text('Historial de mejora',
+          style: GoogleFonts.bangers(
+              color: _lima, fontSize: 12, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 4),
+      for (final l in all.reversed) _improveRow(l),
+    ]);
+  }
+
+  Widget _stat(String label, String value, {Color? color}) {
+    return Column(children: [
+      Text(value,
+          style: GoogleFonts.bangers(
+              color: color ?? _lima, fontSize: 16, fontWeight: FontWeight.w900)),
+      Text(label,
+          style: GoogleFonts.bangers(
+              color: _white.withValues(alpha: 0.55), fontSize: 9)),
+    ]);
+  }
+
+  Widget _improveRow(WorkoutLog l) {
+    final w = l.weight;
+    final weightTxt = w == null
+        ? ''
+        : (w == w.roundToDouble() ? '${w.round()}kg' : '${w}kg');
+    final seriesTxt =
+        l.series != null && l.reps != null ? '${l.series}x${l.reps}' : '';
+    final date = l.loggedOn;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(children: [
+        Text('${date.day}/${date.month}/${date.year}',
+            style: GoogleFonts.bangers(
+                color: _white.withValues(alpha: 0.6), fontSize: 11)),
+        const Spacer(),
+        if (seriesTxt.isNotEmpty)
+          Text(seriesTxt,
+              style: GoogleFonts.bangers(color: _white, fontSize: 12)),
+        const SizedBox(width: 8),
+        Text(weightTxt, style: GoogleFonts.bangers(color: _lima, fontSize: 13)),
+      ]),
     );
   }
 

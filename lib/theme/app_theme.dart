@@ -18,6 +18,12 @@ ThemeSet getTheme(AppMode mode) {
   return t;
 }
 
+/// Devuelve el tema "apagado" cuando inicia como Rocio: así TODAS las
+/// secciones (mosaicos, menús, submenús) lucen consistentes, sin bloques
+/// brillantes que quedaron con el color lleno.
+ThemeSet identityTheme(ThemeSet t) =>
+    AppState.identity == 'Rocio' ? _mutedTheme(t) : t;
+
 ThemeSet _mutedTheme(ThemeSet t) {
   Color dim(Color c) {
     final hsl = HSLColor.fromColor(c);

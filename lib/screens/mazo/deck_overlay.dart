@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../app_state.dart';
 import '../../models/deck_card.dart';
@@ -9,7 +10,8 @@ import 'deck_style.dart';
 
 class DeckOverlay extends StatefulWidget {
   final VoidCallback onClose;
-  const DeckOverlay({super.key, required this.onClose});
+  final String? category;
+  const DeckOverlay({super.key, required this.onClose, this.category});
 
   @override
   State<DeckOverlay> createState() => _DeckOverlayState();
@@ -95,7 +97,11 @@ class _DeckOverlayState extends State<DeckOverlay>
       color: _bg,
       child: Consumer<DeckProvider>(
         builder: (context, pv, _) {
-          final pending = pv.pendingFor(AppState.myId);
+          var pending = pv.pendingFor(AppState.myId);
+          if (widget.category != null) {
+            final filtered = pending.where((c) => c.category == widget.category).toList();
+            if (filtered.isNotEmpty) pending = filtered;
+          }
           final current = _current(pending);
           return Stack(children: [
             Positioned.fill(child: Container(color: _bg)),
@@ -117,65 +123,55 @@ class _DeckOverlayState extends State<DeckOverlay>
             else
               _cardsArea(pv, current, pending),
             if (!_swiping)
-              _minimalHeader(pv),
+              (current != null ? _historyBtn() : _closeBtn()),
           ]);
         },
       ),
     );
   }
 
-  Widget _minimalHeader(DeckProvider pv) {
+  /// Botón de HISTORIAL (reemplaza la X): abre el historial de deslizadas.
+  Widget _historyBtn() {
     return Positioned(
       top: 12,
-      left: 12,
       right: 12,
-      child: Row(children: [
-        GestureDetector(
-          onTap: () => showDeckHistorySheet(context,
-              onReswipe: (card) => setState(() => _reswipeCard = card)),
-          child: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFF9D00FF),
-              border: Border.all(color: const Color(0xFF9D00FF), width: 2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.history,
-                color: Color(0xFF1A1A1A), size: 18),
+      child: GestureDetector(
+        onTap: () {
+          showDeckHistorySheet(context,
+              onReswipe: (card) => setState(() => _reswipeCard = card));
+        },
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xFF9D00FF),
+            border: Border.all(color: const Color(0xFF9D00FF), width: 2),
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: const Icon(Icons.history, color: Color(0xFF1A1A1A), size: 20),
         ),
-        const Spacer(),
-        GestureDetector(
-          onTap: () => showCreateDeckCardModal(context),
-          child: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFF39FF14),
-              border: Border.all(color: const Color(0xFF39FF14), width: 2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.add,
-                color: Color(0xFF1A1A1A), size: 20),
+      ),
+    );
+  }
+
+  Widget _closeBtn() {
+    return Positioned(
+      top: 12,
+      right: 12,
+      child: GestureDetector(
+        onTap: widget.onClose,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF0000),
+            border: Border.all(color: const Color(0xFFFF0000), width: 2),
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: const Icon(Icons.close,
+              color: Color(0xFF1A1A1A), size: 20),
         ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: widget.onClose,
-          child: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF0000),
-              border: Border.all(color: const Color(0xFFFF0000), width: 2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.close,
-                color: Color(0xFF1A1A1A), size: 18),
-          ),
-        ),
-      ]),
+      ),
     );
   }
 
@@ -185,8 +181,16 @@ class _DeckOverlayState extends State<DeckOverlay>
       child: LayoutBuilder(builder: (context, c) {
         final w = c.maxWidth;
         final h = c.maxHeight;
-        final cardW = (w * 0.92).clamp(280.0, 600.0);
-        final cardH = (h * 0.82).clamp(360.0, 800.0);
+        // Medidas de una carta de naipes normal (2.5" x 3.5", ratio ~0.714)
+        const cardRatio = 0.714;
+        final maxW = w * 0.78;
+        final maxH = h * 0.9;
+        double cardW = maxW;
+        double cardH = cardW / cardRatio;
+        if (cardH > maxH) {
+          cardH = maxH;
+          cardW = cardH * cardRatio;
+        }
         final stack = <Widget>[];
 
         if (_reswipeCard != null) {
@@ -259,6 +263,7 @@ class _DeckOverlayState extends State<DeckOverlay>
 
   Widget _dragCard(DeckProvider pv, DeckCard card, double w, double h) {
     final rotate = (_drag.dx / w).clamp(-1.0, 1.0) * 0.18;
+    final reactionStyle = _reactionStyle(_drag);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (_) => _exitCtrl.stop(),
@@ -279,15 +284,29 @@ class _DeckOverlayState extends State<DeckOverlay>
             child: Transform.rotate(angle: rot, child: child),
           );
         },
-        child: _cardBody(card, w, h, scale: 1, offsetY: 0, opacity: 1),
+        child: _cardBody(card, w, h, scale: 1, offsetY: 0, opacity: 1,
+            reactionStyle: reactionStyle),
       ),
     );
+  }
+
+  DeckReactionStyle? _reactionStyle(Offset drag) {
+    final dx = drag.dx.abs();
+    final dy = drag.dy.abs();
+    if (dx < 26 && dy < 26) return null;
+    if (dx > dy) {
+      return DeckReactionStyle
+          .of(drag.dx > 0 ? DeckReaction.encanta : DeckReaction.noMeGusta);
+    }
+    return DeckReactionStyle
+        .of(drag.dy > 0 ? DeckReaction.meGusta : DeckReaction.meh);
   }
 
   Widget _cardBody(DeckCard card, double w, double h,
       {required double scale,
       required double offsetY,
-      required double opacity}) {
+      required double opacity,
+      DeckReactionStyle? reactionStyle}) {
     final style = DeckCategoryStyle.of(card.category);
     return Transform.translate(
       offset: Offset(0, offsetY),
@@ -295,29 +314,74 @@ class _DeckOverlayState extends State<DeckOverlay>
         scale: scale,
         child: Opacity(
           opacity: opacity,
-          child: Container(
-            width: w,
-            height: h,
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              color: style.color,
-              border: Border.all(color: style.color, width: 5),
-              borderRadius: BorderRadius.circular(32),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
-                child: Text(card.content,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF1A1A1A),
-                      fontSize: 22,
-                      height: 1.5,
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.bold,
-                    )),
+          child: Stack(children: [
+            Container(
+              width: w,
+              height: h,
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: style.gradient,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(32),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(style.label,
+                      style: GoogleFonts.bangers(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 3,
+                      )),
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        child: Text(card.content,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.bangers(
+                              color: Colors.white,
+                              fontSize: 28,
+                              height: 1.4,
+                              fontWeight: FontWeight.bold,
+                            )),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
+            if (reactionStyle != null)
+              Positioned(
+                top: 36,
+                right: 36,
+                child: Transform.rotate(
+                  angle: -0.18,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: reactionStyle.gradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(reactionStyle.label,
+                        style: GoogleFonts.bangers(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2)),
+                  ),
+                ),
+              ),
+          ]),
         ),
       ),
     );

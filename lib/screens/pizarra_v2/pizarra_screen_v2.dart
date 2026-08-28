@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -17,7 +18,6 @@ import 'widgets/board_timeline_view.dart';
 import 'widgets/board_archived_view.dart';
 import 'widgets/board_search_panel.dart';
 import 'widgets/board_activity_panel.dart';
-import 'widgets/board_tag_manager.dart';
 import 'widgets/board_element_options.dart';
 import 'renderers/board_checklist_renderer.dart';
 import 'renderers/board_drawing_renderer.dart';
@@ -66,7 +66,6 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
   bool _searchOpen = false;
   String _searchText = '';
   bool _activityOpen = false;
-  bool _tagManagerOpen = false;
 
   @override
   void initState() {
@@ -537,8 +536,6 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
                 _connectorFromId = null;
                 _searchOpen = false;
               }),
-              onToggleTagManager: () =>
-                  setState(() => _tagManagerOpen = !_tagManagerOpen),
               currentViewMode: _viewMode,
             ),
             if (_viewMode == BoardViewMode.canvas && pv.parentBoardId != null)
@@ -605,11 +602,6 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
               BoardActivityPanel(
                 activity: pv.activity,
                 onClose: () => setState(() => _activityOpen = false),
-              ),
-            if (_tagManagerOpen)
-              BoardTagManager(
-                provider: pv,
-                onClose: () => setState(() => _tagManagerOpen = false),
               ),
             if (_showVideoDialog)
               BoardVideoSearchDialog(
@@ -999,14 +991,46 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
     final color = _parseColor(el.color) ?? const Color(0xFF5C2D91);
     final shape = (el.data['shape'] as String?) ?? 'Rectángulo';
     final preview =
-        el.content.length > 80 ? '${el.content.substring(0, 80)}...' : el.content;
+        el.content.length > 120 ? '${el.content.substring(0, 120)}...' : el.content;
     final title = el.title.isNotEmpty ? el.title : 'Sin título';
     final bgState = el.data['bgState'] as Map? ?? {};
     final borderState = el.data['borderState'] as Map? ?? {};
     final gradientType = (bgState['gradientType'] as String?) ?? 'Liso';
+
+    // Patrón (misma configuración que en el editor de fondo del modal).
+    final patternEnabled = (bgState['patternEnabled'] as bool?) ?? false;
+    final selectedPattern = (bgState['selectedPattern'] as String?) ?? 'Puntos';
+    final patternThickness = (bgState['patternThickness'] as num?)?.toDouble() ?? 1.5;
+    final patternAngle = (bgState['patternAngle'] as num?)?.toDouble() ?? 0.0;
+    final patternSize = (bgState['patternSize'] as num?)?.toDouble() ?? 40.0;
+    final patternOpacity = (bgState['patternOpacity'] as num?)?.toDouble() ?? 0.25;
+    final patternSpacing = (bgState['patternSpacing'] as num?)?.toDouble() ?? 24.0;
+    final patternSaturation = (bgState['patternSaturation'] as num?)?.toDouble() ?? 1.0;
+    final customPattern = bgState['customPattern'] as String?;
+
+    // Borde (misma configuración que en el editor de borde del modal).
     final borderOn = (borderState['borderEnabled'] as bool?) ?? false;
-    final borderColor = _parseDynamicColor(borderState['borderColor']);
+    final borderColor = _parseDynamicColor(borderState['borderColor']) ?? color;
     final borderW = (borderState['borderWidth'] as num?)?.toDouble() ?? 2.0;
+    final borderType = (borderState['borderType'] as String?)?.toLowerCase() ?? 'sólido';
+    final borderSpacing = (borderState['borderSpacing'] as num?)?.toDouble() ?? 4.0;
+
+    // Aplicar el estilo real de la nota (fuente, tamaño, color, alineación),
+    // como en el modal de edición.
+    final fontFamily = el.fontFamily ?? 'monospace';
+    final Color textColor;
+    if (el.textColor is int) {
+      textColor = Color(el.textColor as int);
+    } else {
+      textColor = _textColorForBg(color);
+    }
+    final fontScale = (el.fontSize ?? 14) / 14.0;
+    final titleSize = (12 * fontScale).clamp(11.0, 26.0);
+    final bodySize = (10 * fontScale).clamp(9.0, 20.0);
+    final align = el.textAlign is TextAlign
+        ? el.textAlign as TextAlign
+        : TextAlign.left;
+    final imagePath = el.data['imagePath'] as String?;
 
     BoxDecoration decoration = BoxDecoration(
         color: color, borderRadius: _noteCardRadius(shape));
@@ -1030,42 +1054,97 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
             center: Alignment.center, radius: 1.0, colors: [gs, gm, ge]),
       );
     }
-    if (borderOn) {
-      decoration = decoration.copyWith(
-          border: Border.all(color: borderColor ?? color, width: borderW));
-    }
+
+    final card = Container(
+      width: (el.width ?? 200),
+      constraints: const BoxConstraints(minHeight: 110),
+      padding: const EdgeInsets.all(10),
+      decoration: decoration,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (imagePath != null && imagePath.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(
+                File(imagePath),
+                width: double.infinity,
+                height: 60,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+          Text(title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: align,
+              style: TextStyle(
+                  color: textColor,
+                  fontFamily: fontFamily,
+                  fontSize: titleSize,
+                  height: 1.1,
+                  fontWeight: el.isBold ? FontWeight.bold : FontWeight.normal,
+                  fontStyle: el.isItalic ? FontStyle.italic : FontStyle.normal,
+                  decoration:
+                      el.isUnderline ? TextDecoration.underline : null)),
+          if (preview.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(preview,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+                textAlign: align,
+                style: TextStyle(
+                    color: textColor.withValues(alpha: 0.85),
+                    fontFamily: fontFamily,
+                    fontSize: bodySize,
+                    height: 1.25)),
+          ],
+        ],
+      ),
+    );
 
     return ClipPath(
       clipper: _MiniShapeClipper(shape, _noteCardRadius(shape)),
-      child: Container(
-        width: 180,
-        padding: const EdgeInsets.all(10),
-        decoration: decoration,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: _textColorForBg(color),
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold)),
-            if (preview.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(preview,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: _textColorForBg(color).withValues(alpha: 0.7),
-                      fontFamily: 'monospace',
-                      fontSize: 10,
-                      height: 1.3)),
-            ],
-          ],
-        ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          card,
+          if (patternEnabled)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _BoardPatternPainter(
+                    pattern: selectedPattern,
+                    thickness: patternThickness,
+                    angle: patternAngle,
+                    dotSize: patternSize,
+                    opacity: patternOpacity,
+                    spacing: patternSpacing,
+                    saturation: patternSaturation,
+                    customText: customPattern,
+                  ),
+                ),
+              ),
+            ),
+          if (borderOn)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _BoardCardBorderPainter(
+                    color: borderColor,
+                    width: borderW,
+                    type: borderType,
+                    spacing: borderSpacing,
+                    shape: shape,
+                    radius: _noteCardRadius(shape),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1344,4 +1423,417 @@ class _MiniShapeClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant _MiniShapeClipper old) =>
       old.shape != shape || old.radius != radius;
+}
+
+class _BoardPatternPainter extends CustomPainter {
+  final String pattern;
+  final double thickness;
+  final double angle;
+  final double dotSize;
+  final double opacity;
+  final double spacing;
+  final double saturation;
+  final String? customText;
+
+  _BoardPatternPainter({
+    required this.pattern,
+    this.thickness = 1.5,
+    this.angle = 0,
+    this.dotSize = 40,
+    this.opacity = 0.25,
+    this.spacing = 24,
+    this.saturation = 1.0,
+    this.customText,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: opacity)
+      ..strokeWidth = thickness
+      ..style = PaintingStyle.stroke;
+
+    final spacingUse = spacing > 0 ? spacing : dotSize;
+
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(angle * math.pi / 180);
+
+    switch (pattern) {
+      case 'Puntos':
+        _drawDots(canvas, size, paint, spacingUse);
+      case 'Líneas H':
+        _drawHLines(canvas, size, paint, spacingUse);
+      case 'Líneas V':
+        _drawVLines(canvas, size, paint, spacingUse);
+      case 'Cuadrícula':
+        _drawHLines(canvas, size, paint, spacingUse);
+        _drawVLines(canvas, size, paint, spacingUse);
+      case 'Diagonales':
+        _drawHLines(canvas, size, paint, spacingUse);
+        _drawDiagonals(canvas, size, paint, spacingUse);
+      case 'Zigzag':
+        _drawZigzag(canvas, size, paint, spacingUse);
+      case 'Diamantes':
+        _drawDiamonds(canvas, size, paint, spacingUse);
+      case 'Ondas':
+        _drawWaves(canvas, size, paint, spacingUse);
+      case 'Círculos':
+        _drawCircles(canvas, size, paint, spacingUse);
+      case 'Triángulos':
+        _drawTriangles(canvas, size, paint, spacingUse);
+      case 'Rayas':
+        _drawHLines(canvas, size, paint, spacingUse * 2);
+      case 'Panal':
+        _drawHexagons(canvas, size, paint, spacingUse);
+      default:
+        if (customText != null && customText!.isNotEmpty) {
+          _drawCustom(canvas, size, customText!, opacity);
+        }
+    }
+    canvas.restore();
+  }
+
+  void _drawDots(Canvas canvas, Size size, Paint paint, double sp) {
+    final w = size.width + size.height;
+    final h = size.width + size.height;
+    for (double x = -w / 2; x < w / 2; x += sp) {
+      for (double y = -h / 2; y < h / 2; y += sp) {
+        canvas.drawCircle(Offset(x, y), dotSize / 8,
+            Paint()..color = paint.color..style = PaintingStyle.fill);
+      }
+    }
+  }
+
+  void _drawHLines(Canvas canvas, Size size, Paint paint, double sp) {
+    final w = size.width + size.height;
+    for (double y = -w / 2; y < w / 2; y += sp) {
+      canvas.drawLine(Offset(-w / 2, y), Offset(w / 2, y), paint);
+    }
+  }
+
+  void _drawVLines(Canvas canvas, Size size, Paint paint, double sp) {
+    final h = size.width + size.height;
+    for (double x = -h / 2; x < h / 2; x += sp) {
+      canvas.drawLine(Offset(x, -h / 2), Offset(x, h / 2), paint);
+    }
+  }
+
+  void _drawZigzag(Canvas canvas, Size size, Paint paint, double sp) {
+    final w = size.width + size.height;
+    for (double y = -w / 2; y < w / 2; y += sp * 2) {
+      final path = Path();
+      path.moveTo(-w / 2, y);
+      for (double x = -w / 2; x < w / 2; x += sp) {
+        final dy = (x / sp).floor().isEven ? sp / 2 : -sp / 2;
+        path.lineTo(x, y + dy);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  void _drawDiamonds(Canvas canvas, Size size, Paint paint, double sp) {
+    final w = size.width + size.height;
+    final fillPaint = Paint()..color = paint.color..style = PaintingStyle.fill;
+    for (double x = -w / 2; x < w / 2; x += sp) {
+      for (double y = -w / 2; y < w / 2; y += sp) {
+        final path = Path()
+          ..moveTo(x, y - dotSize / 4)
+          ..lineTo(x + dotSize / 4, y)
+          ..lineTo(x, y + dotSize / 4)
+          ..lineTo(x - dotSize / 4, y)
+          ..close();
+        canvas.drawPath(path, fillPaint);
+      }
+    }
+  }
+
+  void _drawWaves(Canvas canvas, Size size, Paint paint, double sp) {
+    final w = size.width + size.height;
+    for (double y = -w / 2; y < w / 2; y += sp * 1.5) {
+      final path = Path();
+      path.moveTo(-w / 2, y);
+      for (double x = -w / 2; x <= w / 2; x += 2) {
+        path.lineTo(x, y + math.sin(x / sp) * sp / 3);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  void _drawCustom(Canvas canvas, Size size, String text, double op) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+            color: Colors.white.withValues(alpha: op), fontSize: dotSize),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    tp.layout(maxWidth: size.width + size.height);
+    final w = size.width + size.height;
+    final h = size.width + size.height;
+    for (double x = -w / 2; x < w / 2; x += spacing * 2) {
+      for (double y = -h / 2; y < h / 2; y += spacing * 2) {
+        tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
+      }
+    }
+  }
+
+  void _drawDiagonals(Canvas canvas, Size size, Paint paint, double sp) {
+    final d = size.width + size.height;
+    for (double off = -d; off < d * 2; off += sp * 2) {
+      canvas.drawLine(Offset(off, -d), Offset(off + d, d), paint);
+    }
+  }
+
+  void _drawCircles(Canvas canvas, Size size, Paint paint, double sp) {
+    final d = size.width + size.height;
+    for (double x = -d / 2; x < d / 2; x += sp * 2) {
+      for (double y = -d / 2; y < d / 2; y += sp * 2) {
+        canvas.drawCircle(Offset(x, y), dotSize / 3, paint);
+      }
+    }
+  }
+
+  void _drawTriangles(Canvas canvas, Size size, Paint paint, double sp) {
+    final fillPaint = Paint()..color = paint.color..style = PaintingStyle.fill;
+    final d = size.width + size.height;
+    for (double x = -d / 2; x < d / 2; x += sp * 1.5) {
+      for (double y = -d / 2; y < d / 2; y += sp * 1.5) {
+        final path = Path()
+          ..moveTo(x, y - dotSize / 3)
+          ..lineTo(x + dotSize / 3, y + dotSize / 4)
+          ..lineTo(x - dotSize / 3, y + dotSize / 4)
+          ..close();
+        canvas.drawPath(path, fillPaint);
+      }
+    }
+  }
+
+  void _drawHexagons(Canvas canvas, Size size, Paint paint, double sp) {
+    final strokePaint = Paint()
+      ..color = paint.color
+      ..style = PaintingStyle.stroke;
+    final d = size.width + size.height;
+    for (double cx = -d / 2; cx < d / 2; cx += sp * 1.8) {
+      for (double cy = -d / 2; cy < d / 2; cy += sp * 1.6) {
+        final path = Path();
+        for (int i = 0; i < 6; i++) {
+          final a = (i * 60 - 30) * math.pi / 180;
+          final px = cx + dotSize / 3 * math.cos(a);
+          final py = cy + dotSize / 3 * math.sin(a);
+          if (i == 0) {
+            path.moveTo(px, py);
+          } else {
+            path.lineTo(px, py);
+          }
+        }
+        path.close();
+        canvas.drawPath(path, strokePaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoardPatternPainter old) =>
+      pattern != old.pattern ||
+      thickness != old.thickness ||
+      angle != old.angle ||
+      dotSize != old.dotSize ||
+      opacity != old.opacity ||
+      spacing != old.spacing ||
+      saturation != old.saturation ||
+      customText != old.customText;
+}
+
+class _BoardCardBorderPainter extends CustomPainter {
+  final Color color;
+  final double width;
+  final String type;
+  final double spacing;
+  final String shape;
+  final BorderRadius radius;
+
+  _BoardCardBorderPainter({
+    required this.color,
+    required this.width,
+    required this.type,
+    required this.spacing,
+    required this.shape,
+    required this.radius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = width;
+
+    final rect = RRect.fromRectAndRadius(Offset.zero & size, radius.topLeft);
+
+    switch (type) {
+      case 'punteado':
+        _drawDotted(canvas, rect, paint);
+        break;
+      case 'dashed':
+        _drawDashed(canvas, rect, paint);
+        break;
+      case 'doble':
+        _drawDouble(canvas, rect, paint);
+        break;
+      case 'ondulado':
+        _drawWavyBorder(canvas, rect, paint);
+        break;
+      case 'relieve':
+        _drawRelief(canvas, rect, paint);
+        break;
+      default:
+        _drawSolid(canvas, rect, paint);
+    }
+  }
+
+  void _drawSolid(Canvas canvas, RRect rect, Paint paint) {
+    canvas.drawRRect(rect, paint);
+  }
+
+  void _drawDotted(Canvas canvas, RRect rect, Paint paint) {
+    final dotPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final perim = _perimeter(rect);
+    final dotCount = (perim / spacing).round().clamp(8, 200);
+    for (int i = 0; i < dotCount; i++) {
+      final p = _pointOnRRect(rect, i / dotCount);
+      canvas.drawCircle(p, width * 0.6, dotPaint);
+    }
+  }
+
+  void _drawDashed(Canvas canvas, RRect rect, Paint paint) {
+    final perim = _perimeter(rect);
+    final dashLen = spacing * 2;
+    final segCount = (perim / (dashLen + spacing)).round().clamp(4, 100);
+    for (int i = 0; i < segCount; i++) {
+      final tStart = i / segCount;
+      final tEnd = i / segCount + dashLen / perim;
+      for (double t = tStart; t < tEnd && t <= 1.0; t += 0.002) {
+        final p = _pointOnRRect(rect, t);
+        canvas.drawCircle(p, width * 0.3,
+            Paint()..color = color..style = PaintingStyle.fill);
+      }
+    }
+  }
+
+  void _drawDouble(Canvas canvas, RRect rect, Paint paint) {
+    final inner = rect.deflate(width);
+    canvas.drawRRect(rect, paint);
+    canvas.drawRRect(
+        inner,
+        Paint()
+          ..color = color.withValues(alpha: 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width * 0.5);
+  }
+
+  void _drawWavyBorder(Canvas canvas, RRect rect, Paint paint) {
+    final path = Path();
+    for (double t = 0; t <= 1.0; t += 0.001) {
+      final p = _pointOnRRect(rect, t);
+      final n = _normalAt(rect, t);
+      final offset = math.sin(t * 20 * math.pi) * width;
+      final wp = Offset(p.dx + n.dx * offset, p.dy + n.dy * offset);
+      if (t == 0) {
+        path.moveTo(wp.dx, wp.dy);
+      } else {
+        path.lineTo(wp.dx, wp.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawRelief(Canvas canvas, RRect rect, Paint paint) {
+    final inner = rect.deflate(width * 1.5);
+    canvas.drawRRect(rect, paint);
+    canvas.drawRRect(
+        inner,
+        Paint()
+          ..color = color.withValues(alpha: 0.3)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width * 0.6);
+  }
+
+  double _perimeter(RRect rect) {
+    final w = rect.width, h = rect.height, r = rect.tlRadius.x;
+    return 2 * (w + h) - (8 - 2 * math.pi) * r;
+  }
+
+  Offset _pointOnRRect(RRect rect, double t) {
+    t = t % 1.0;
+    final w = rect.width, h = rect.height, r = rect.tlRadius.x;
+    final cornerArc = (math.pi / 2) * r;
+    final sideL = w - 2 * r, sideR = h - 2 * r;
+    final perim = 2 * sideL + 2 * sideR + 4 * cornerArc;
+    double dist = t * perim;
+    double cx, cy, startAngle;
+
+    if (dist < sideL) {
+      return Offset(r + dist, 0);
+    }
+    dist -= sideL;
+    if (dist < cornerArc) {
+      cx = w - r;
+      cy = r;
+      startAngle = -math.pi / 2;
+      final angle = startAngle + dist / r;
+      return Offset(cx + r * math.cos(angle), cy + r * math.sin(angle));
+    }
+    dist -= cornerArc;
+    if (dist < sideR) {
+      return Offset(w, r + dist);
+    }
+    dist -= sideR;
+    if (dist < cornerArc) {
+      cx = w - r;
+      cy = h - r;
+      startAngle = 0;
+      final angle = startAngle + dist / r;
+      return Offset(cx + r * math.cos(angle), cy + r * math.sin(angle));
+    }
+    dist -= cornerArc;
+    if (dist < sideL) {
+      return Offset(w - r - dist, h);
+    }
+    dist -= sideL;
+    if (dist < cornerArc) {
+      cx = r;
+      cy = h - r;
+      startAngle = math.pi / 2;
+      final angle = startAngle + dist / r;
+      return Offset(cx + r * math.cos(angle), cy + r * math.sin(angle));
+    }
+    dist -= cornerArc;
+    cx = r;
+    cy = r;
+    startAngle = math.pi;
+    final angle = startAngle + dist / r;
+    return Offset(cx + r * math.cos(angle), cy + r * math.sin(angle));
+  }
+
+  Offset _normalAt(RRect rect, double t) {
+    const epsilon = 0.001;
+    final p1 = _pointOnRRect(rect, t);
+    final p2 = _pointOnRRect(rect, t + epsilon);
+    final tangent = Offset(p2.dx - p1.dx, p2.dy - p1.dy);
+    return Offset(-tangent.dy, tangent.dx);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoardCardBorderPainter old) =>
+      color != old.color ||
+      width != old.width ||
+      type != old.type ||
+      spacing != old.spacing ||
+      shape != old.shape;
 }

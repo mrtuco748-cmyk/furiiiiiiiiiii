@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../app_state.dart';
 import '../../models/deck_card.dart';
+import '../../models/deck_memory.dart';
 import '../../providers/deck_provider.dart';
 import 'deck_style.dart';
 
@@ -63,6 +64,7 @@ class DeckHistorySheet extends StatelessWidget {
                 ),
               ]),
             ),
+            _memoryBanner(pv),
             if (history.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(30),
@@ -84,6 +86,62 @@ class DeckHistorySheet extends StatelessWidget {
           ]),
         );
       },
+    );
+  }
+
+  Widget _memoryBanner(DeckProvider pv) {
+    final latest = DeckMemory.latestMatch(pv.cards);
+    if (latest == null) return const SizedBox.shrink();
+    final cat = DeckCategoryStyle.of(latest.category);
+    final thisMonth =
+        DeckMemory.matchesInMonth(pv.cards, DateTime.now());
+    final first = DeckMemory.firstMatch(pv.cards);
+    final firstDate = first == null
+        ? ''
+        : '${first.updatedAt.day}/${first.updatedAt.month}/${first.updatedAt.year}';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cat.color,
+        border: Border.all(color: cat.color, width: 3),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('🃏', style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 8),
+          Text('FURI del mes',
+              style: GoogleFonts.bangers(
+                  color: const Color(0xFF1A1A1A),
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold)),
+          const Spacer(),
+          if (thisMonth > 0)
+            Text('$thisMonth este mes',
+                style: const TextStyle(
+                    color: Color(0xFF1A1A1A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'monospace')),
+        ]),
+        const SizedBox(height: 6),
+        Text(DeckMemory.summary(latest),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: Color(0xFF1A1A1A),
+                fontSize: 13,
+                fontFamily: 'monospace')),
+        if (firstDate.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Primer FURI: $firstDate',
+              style: const TextStyle(
+                  color: Color(0x991A1A1A),
+                  fontSize: 11,
+                  fontFamily: 'monospace')),
+        ],
+      ]),
     );
   }
 

@@ -336,10 +336,52 @@ class WorkoutProvider extends ChangeNotifier {
 
   Future<bool> toggleLogReaction(int id, String key) async {
     final idx = _logs.indexWhere((l) => l.id == id);
-    if (idx == -1) return false;
-    final next = _logs[idx].toggleReaction(userId: myId, key: key);
-    if (identical(next, _logs[idx])) return false;
-    return _saveLog(next, idx);
+    if (idx == -1 || _logs[idx].id == null) return false;
+    final prev = _logs[idx];
+    final next = prev.toggleReaction(userId: myId, key: key);
+    if (identical(next, prev)) return false;
+    _logs[idx] = next;
+    notifyListeners();
+    final authoritative =
+        await _reactViaRpc(table: _logsTable, id: id, key: key);
+    if (authoritative == null) {
+      _logs[idx] = prev;
+      _error = 'No se pudo guardar la reacción';
+      notifyListeners();
+      return false;
+    }
+    _logs[idx] = next.copyWith(
+      social: WorkoutSocial(
+        reactions: authoritative,
+        comments: next.social.comments,
+      ),
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// Llama a la RPC de merge atómico de reacciones (social) y devuelve el mapa
+  /// autoritativo de reacciones que devuelve el servidor, o null si falló.
+  Future<Map<String, List<String>>?> _reactViaRpc({
+    required String table,
+    required int id,
+    required String key,
+  }) async {
+    try {
+      final res = await SupabaseConfig.client
+          .rpc('toggle_reaction', params: {
+            'target_table': table,
+            'target_col': 'social',
+            'row_id': id,
+            'reaction_key': key,
+            'user_id': myId,
+          })
+          .timeout(const Duration(seconds: 10));
+      return WorkoutSocial.fromMap({'reactions': res}).reactions;
+    } catch (e) {
+      developer.log('WorkoutProvider._reactViaRpc error: $e');
+      return null;
+    }
   }
 
   Future<bool> _saveLog(WorkoutLog next, int idx) async {
@@ -437,26 +479,28 @@ class WorkoutProvider extends ChangeNotifier {
 
   Future<bool> toggleRoutineReaction(int id, String key) async {
     final idx = _routines.indexWhere((r) => r.id == id);
-    if (idx == -1) return false;
-    final next = _routines[idx].toggleReaction(userId: myId, key: key);
-    if (identical(next, _routines[idx])) return false;
+    if (idx == -1 || _routines[idx].id == null) return false;
     final prev = _routines[idx];
+    final next = prev.toggleReaction(userId: myId, key: key);
+    if (identical(next, prev)) return false;
     _routines[idx] = next;
     notifyListeners();
-    try {
-      await SupabaseConfig.client
-          .from(_routinesTable)
-          .update(next.toMap())
-          .eq('id', next.id!)
-          .timeout(const Duration(seconds: 10));
-      return true;
-    } catch (e) {
+    final authoritative =
+        await _reactViaRpc(table: _routinesTable, id: id, key: key);
+    if (authoritative == null) {
       _routines[idx] = prev;
       _error = 'No se pudo guardar la reacción';
-      developer.log('WorkoutProvider.toggleRoutineReaction error: $e');
       notifyListeners();
       return false;
     }
+    _routines[idx] = next.copyWith(
+      social: WorkoutSocial(
+        reactions: authoritative,
+        comments: next.social.comments,
+      ),
+    );
+    notifyListeners();
+    return true;
   }
 
   Future<void> addRoutineComment(int id, String text) async {
@@ -535,9 +579,12 @@ class WorkoutProvider extends ChangeNotifier {
         routineId: routineId,
       );
       try {
+        // Upsert idempotente sobre la restricción única (user, día, rutina):
+        // si dos dispositivos marcan el mismo día a la vez, el que pierde la
+        // carrera no falla (no se muestra "No se pudo marcar el día").
         await SupabaseConfig.client
             .from(_completionsTable)
-            .insert(c.toMap())
+            .upsert(c.toMap(), onConflict: 'user_id,completed_on,routine_id')
             .timeout(const Duration(seconds: 10));
         await _loadCompletions();
         notifyListeners();
@@ -601,10 +648,28 @@ class WorkoutProvider extends ChangeNotifier {
 
   Future<bool> toggleChallengeReaction(int id, String key) async {
     final idx = _challenges.indexWhere((c) => c.id == id);
-    if (idx == -1) return false;
-    final next = _challenges[idx].toggleReaction(userId: myId, key: key);
-    if (identical(next, _challenges[idx])) return false;
-    return _saveChallenge(next, idx, rollback: true);
+    if (idx == -1 || _challenges[idx].id == null) return false;
+    final prev = _challenges[idx];
+    final next = prev.toggleReaction(userId: myId, key: key);
+    if (identical(next, prev)) return false;
+    _challenges[idx] = next;
+    notifyListeners();
+    final authoritative =
+        await _reactViaRpc(table: _challengesTable, id: id, key: key);
+    if (authoritative == null) {
+      _challenges[idx] = prev;
+      _error = 'No se pudo guardar la reacción';
+      notifyListeners();
+      return false;
+    }
+    _challenges[idx] = next.copyWith(
+      social: WorkoutSocial(
+        reactions: authoritative,
+        comments: next.social.comments,
+      ),
+    );
+    notifyListeners();
+    return true;
   }
 
   Future<void> addChallengeComment(int id, String text) async {

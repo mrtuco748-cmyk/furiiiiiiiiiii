@@ -15,21 +15,52 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 8, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 9, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 8) {
-      await db.execute("ALTER TABLE schedules ADD COLUMN cloudId INTEGER");
+    // ORDEN DE MIGRACIÓN: los bloques corren en orden ASCENDENTE de versión
+    // para que columnas/tablas existan cuando las referencian. (Antes el bloque
+    // <8 creaba el índice de class_schedules.cloudId ANTES de agregar la
+    // columna en <6 → excepción en upgrades v2..v5.)
+    if (oldVersion < 2) {
       await db.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_cloudId
-        ON schedules(cloudId) WHERE cloudId IS NOT NULL
+        CREATE TABLE IF NOT EXISTS menu_plans (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          date TEXT NOT NULL,
+          mealType TEXT NOT NULL,
+          recipeId INTEGER,
+          recipeName TEXT,
+          notes TEXT DEFAULT '',
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        )
       ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute("ALTER TABLE schedules ADD COLUMN userId TEXT DEFAULT ''");
+    }
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN endTime TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN professor TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN userId TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN color INTEGER DEFAULT 0xFF7B2D8E");
+    }
+    if (oldVersion < 5) {
       await db.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_class_schedules_cloudId
-        ON class_schedules(cloudId) WHERE cloudId IS NOT NULL
+        CREATE TABLE IF NOT EXISTS chat_media_local (
+          message_id INTEGER PRIMARY KEY,
+          local_path TEXT NOT NULL,
+          file_name TEXT,
+          mime_type TEXT
+        )
       ''');
-    }    if (oldVersion < 7) {
+    }
+    if (oldVersion < 6) {
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN cloudId INTEGER");
+    }
+    if (oldVersion < 7) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS board_elements_v2 (
           id INTEGER PRIMARY KEY,
@@ -87,42 +118,28 @@ class DatabaseHelper {
         )
       ''');
     }
-    if (oldVersion < 6) {
-      await db.execute("ALTER TABLE class_schedules ADD COLUMN cloudId INTEGER");
-    }
-    if (oldVersion < 2) {
+    if (oldVersion < 8) {
+      await db.execute("ALTER TABLE schedules ADD COLUMN cloudId INTEGER");
       await db.execute('''
-        CREATE TABLE IF NOT EXISTS menu_plans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          date TEXT NOT NULL,
-          mealType TEXT NOT NULL,
-          recipeId INTEGER,
-          recipeName TEXT,
-          notes TEXT DEFAULT '',
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
-        )
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_cloudId
+        ON schedules(cloudId) WHERE cloudId IS NOT NULL
+      ''');
+      await db.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_class_schedules_cloudId
+        ON class_schedules(cloudId) WHERE cloudId IS NOT NULL
       ''');
     }
-    if (oldVersion < 3) {
-      await db.execute("ALTER TABLE schedules ADD COLUMN userId TEXT DEFAULT ''");
-    }
-    if (oldVersion < 4) {
-      await db.execute("ALTER TABLE class_schedules ADD COLUMN endTime TEXT DEFAULT ''");
-      await db.execute("ALTER TABLE class_schedules ADD COLUMN professor TEXT DEFAULT ''");
-      await db.execute("ALTER TABLE class_schedules ADD COLUMN userId TEXT DEFAULT ''");
-      await db.execute("ALTER TABLE class_schedules ADD COLUMN color INTEGER DEFAULT 0xFF7B2D8E");
-    }
-    if (oldVersion < 5) {
+    if (oldVersion < 9) {
+      // Debe ir al final: board_elements_v2 pudo crearse recién en <7.
+      await db.execute("ALTER TABLE board_elements_v2 ADD COLUMN cloud_id INTEGER");
       await db.execute('''
-        CREATE TABLE IF NOT EXISTS chat_media_local (
-          message_id INTEGER PRIMARY KEY,
-          local_path TEXT NOT NULL,
-          file_name TEXT,
-          mime_type TEXT
-        )
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_board_elements_v2_cloudId
+        ON board_elements_v2(cloud_id) WHERE cloud_id IS NOT NULL
       ''');
+      // Dirty flag para re-push de ediciones offline en calendario (mismo
+      // patrón que board_elements_v2.synced).
+      await db.execute("ALTER TABLE schedules ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
     }
   }
 
@@ -141,6 +158,7 @@ class DatabaseHelper {
         color INTEGER DEFAULT 0xFF7B2D8E,
         userId TEXT DEFAULT '',
         cloudId INTEGER,
+        synced INTEGER NOT NULL DEFAULT 1,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -164,7 +182,8 @@ class DatabaseHelper {
         professor TEXT DEFAULT '',
         userId TEXT DEFAULT '',
         color INTEGER DEFAULT 0xFF7B2D8E,
-        cloudId INTEGER
+        cloudId INTEGER,
+        synced INTEGER NOT NULL DEFAULT 1
       )
     ''');
     await db.execute('''
@@ -234,7 +253,8 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           is_new INTEGER NOT NULL DEFAULT 1,
-          synced INTEGER NOT NULL DEFAULT 0
+          synced INTEGER NOT NULL DEFAULT 0,
+          cloud_id INTEGER
         )
     ''');
     await db.execute('''
@@ -255,6 +275,10 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
         color TEXT NOT NULL,
         created_at TEXT NOT NULL
       )
+    ''');
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_board_elements_v2_cloudId
+      ON board_elements_v2(cloud_id) WHERE cloud_id IS NOT NULL
     ''');
     await db.execute('''
       CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_cloudId

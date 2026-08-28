@@ -96,3 +96,20 @@
 - **Alternativas descartadas**: critica por usuario (Facu y Rocio con su texto propio, mas rico pero mas complejo; descartado por ahora), un solo rating promediado (pierdela opinion individual), solo estrellas sin texto.
 - **Impacto**: Schema `favorites` con 3 campos nuevos y `subtitle`/`rating` eliminados. Migracion `supabase/migration_favorites_dual_rating.sql`. UI rediseñada con mini filas de rating F/R, modal de detalle con edicion de critica + calificacion de ambos. Cualquiera puede calificarle al otro (ambos pueden editar todo). Promedio disponible cuando ambos calificaron.
 - **Revisable**: Sí — si en el futuro se quiere critica por usuario, agregar `critica_facu`/`critica_rocio` y migrar
+
+### D-13: Merge atómico de reacciones en Postgres (RPC server-side, Fase 0)
+- **Fecha**: 2026-08-26
+- **Qué se decidió**: Las escrituras de reacciones dejan de enviar el mapa `reactions` completo y pasan a llamar a **2 RPC de Postgres** que hacen el merge DENTRO del servidor con row-level lock (`SELECT ... FOR UPDATE`): `toggle_reaction` (forma `{key:[uid]}`, cubre `messages.reactions`, `gallery.reactions`, `workout_*.social` y `board_elements_v2.data`, con whitelist estricta de tablas/columnas y max 5 keys) y `react_deck_card` (forma `{uid:emoji}` del mazo). Los providers hacen optimistic en memoria + reconciliación con la respuesta autoritativa de la RPC.
+- **Por qué**: El update con mapa completo causaba race de "último write gana": dos reacciones simultáneas (Facu + Rocio) al mismo ítem se pisaban (BUG 2 CRÍTICO de la auditoría del pizarrón). El merge client-side en realtime era un parche; la RPC es la defensa real en el origen y garantiza consistencia en el servidor.
+- **Alternativas descartadas**: mantener solo el merge client-side en realtime (no garantiza consistencia en el origen), triggers SQL por tabla (más tablas a mantener, no devuelve el estado para reconciliar), lock por UPDATE con retry en cliente (complejo y frágil).
+- **Impacto**: 2 RPC + GRANT (`supabase/migration_reaction_rpc.sql`, **pendiente ejecutar en SQL Editor**), 5 providers rewireados (chat, gallery, workout, board, deck), método dedicado `BoardProviderV2.react()` (evita el push de documento completo), test-contrato en lógica pura. Suite 218 verdes.
+- **Revisable**: Sí — la RPC con whitelist limita las tablas a las conocidas; si se agrega una tabla de reacciones nueva, hay que sumarla a la whitelist. Si se quiere migrar la feature entera a RLS + auth real, revisar.
+
+### D-14: GoRouter (Navigator 2.0) como navegación centralizada
+- **Fecha**: 2026-08-26
+- **Qué se decidió**: Adoptar **GoRouter** con route table centralizado (`lib/router.dart`) y `MaterialApp.router`. ~30 sitios de `Navigator.push(MaterialPageRoute)` pasaron a `context.push`/`context.go` por `RouterRoutes`. El arranque login/home se resuelve con `redirect` basado en sesión (no `home:`).
+- **Por qué**: Elimina el "push/pop chamuyado" disperso (convención prohibida), da un único lugar para declarar rutas, habilita `pushAndRemoveUntil`/`pushReplacement` como `go` y testing de navegación.
+- **Alternativas descartadas**: mantener `Navigator` crudo (sin centralizar, contradice convenciones), un mini-router propio (reinventa la rueda). El enfoque híbrido (GoRouter solo para full-screens + Navigator para flujos con retorno) se descartó por mezcla sucia: `context.push<T>` ya propaga el `pop`, así no hace falta.
+- **Impacto**: `go_router ^17.5.0`, `lib/router.dart` (22 rutas + `RouterRoutes` + `navigatorKey`), `main.dart` con `MaterialApp.router`, 8 screens rewired. Los objetos tipados (AppMode, Schedule, DateTime) viajan por `state.extra`. Flujo especial: `context.push<bool>` para el wizard de clases.
+- **Nota Flutter 3.44**: `routerConfig` solo existe en **`MaterialApp.router`**; el constructor base ya NO lo acepta (por eso el error `undefined_named_parameter` intermitente engañaba — el analyzer lo cacheaba).
+- **Revisable**: Sí — si la app gana deep-links/auth, migrar el `redirect` a autenticación real; si se agregan pantallas, sumarlas a `RouterRoutes` + tabla.

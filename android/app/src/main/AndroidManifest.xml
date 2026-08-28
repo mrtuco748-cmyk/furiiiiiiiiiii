@@ -46,6 +46,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Desactivar Impeller: workaround de pantallas en blanco / render
+             corrupto en Android con Flutter 3.44 (issues de engine Impeller
+             que no presentan el frame en ciertos GPU). Vuelve al backend Skia. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

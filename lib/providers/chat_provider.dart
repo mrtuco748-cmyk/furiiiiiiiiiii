@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
@@ -26,9 +27,14 @@ class ChatProvider extends ChangeNotifier {
   String _partnerName = '';
   Message? _replyTo;
   bool _sending = false;
+  bool _hasMore = true;
+  bool _loadingOlder = false;
   final Set<int> _downloading = {};
   RealtimeChannel? _channel;
   Map<int, String> _localPaths = {};
+  bool _partnerTyping = false;
+  Timer? _typingDebounce;
+  RealtimeChannel? _typingChannel;
 
   List<Message> get messages => List.unmodifiable(_messages);
   ChatLoadState get state => _state;
@@ -36,6 +42,9 @@ class ChatProvider extends ChangeNotifier {
   String get partnerName => _partnerName;
   Message? get replyTo => _replyTo;
   bool get sending => _sending;
+  bool get hasMore => _hasMore;
+  bool get loadingOlder => _loadingOlder;
+  bool get partnerTyping => _partnerTyping;
   bool isDownloading(int id) => _downloading.contains(id);
 
   @visibleForTesting
@@ -50,6 +59,7 @@ class ChatProvider extends ChangeNotifier {
     _localPaths = await media.loadLocalIndex();
     await Future.wait([loadMessages(), loadPartnerName()]);
     subscribeRealtime();
+    subscribeTyping();
   }
 
   Future<void> loadPartnerName() async {
@@ -71,6 +81,7 @@ class ChatProvider extends ChangeNotifier {
   Future<void> loadMessages() async {
     _state = ChatLoadState.loading;
     _error = null;
+    _hasMore = true;
     notifyListeners();
     try {
       final data = await SupabaseConfig.client
@@ -95,6 +106,42 @@ class ChatProvider extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       _state = ChatLoadState.error;
+      notifyListeners();
+    }
+  }
+
+  /// Carga más mensajes antiguos (antes del más viejo cargado), para el
+  /// scroll infinito hacia arriba. Los inserta al inicio (los más viejos).
+  Future<void> loadOlderMessages() async {
+    if (_loadingOlder || !_hasMore || _messages.isEmpty) return;
+    final oldest = _messages.first.createdAt;
+    if (oldest == null) return;
+    _loadingOlder = true;
+    notifyListeners();
+    try {
+      final data = await SupabaseConfig.client
+          .from('messages')
+          .select('*')
+          .or('from_user.eq.$myId,to_user.eq.$myId')
+          .lt('created_at', oldest.toUtc().toIso8601String())
+          .order('created_at', ascending: false)
+          .limit(100);
+      final rows = List<Map<String, dynamic>>.from(data as List);
+      if (rows.isEmpty) {
+        _hasMore = false;
+      } else {
+        final older = rows.reversed.map((row) {
+          final m = Message.fromMap(row);
+          return m.copyWith(localPath: _localPaths[m.id]);
+        }).toList();
+        _messages.insertAll(0, older);
+        _state = ChatLoadState.data;
+      }
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+    } finally {
+      _loadingOlder = false;
       notifyListeners();
     }
   }
@@ -273,9 +320,24 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      await SupabaseConfig.client.from('messages').update({
-        'reactions': next.reactions,
-      }).eq('id', msg.id);
+      // Merge atómico en el servidor (RPC toggle_reaction): evita que dos
+      // reacciones simultáneas se pisen (race de "último write gana").
+      final res = await SupabaseConfig.client.rpc(
+        'toggle_reaction',
+        params: {
+          'target_table': 'messages',
+          'target_col': 'reactions',
+          'row_id': msg.id,
+          'reaction_key': key,
+          'user_id': myId,
+        },
+      );
+      final authoritative = Message.parseReactions(res);
+      final li = _messages.indexWhere((m) => m.id == msg.id);
+      if (li >= 0) {
+        _messages[li] = _messages[li].copyWith(reactions: authoritative);
+        notifyListeners();
+      }
     } catch (e) {
       if (idx >= 0) {
         _messages[idx] = msg;
@@ -384,8 +446,61 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Indicador "escribiendo...": escucha la fila de la pareja en `chat_typing`.
+  void subscribeTyping() {
+    if (partnerId.isEmpty) return;
+    _typingChannel?.unsubscribe();
+    _typingChannel = SupabaseConfig.client
+        .channel('typing-$myId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_typing',
+          callback: (payload) {
+            final row = payload.newRecord as Map<String, dynamic>? ?? const {};
+            if (row['user_id'] != partnerId) return;
+            final active = row['is_typing'] == true;
+            if (active != _partnerTyping) {
+              _partnerTyping = active;
+              notifyListeners();
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  /// Publica mi estado de escritura. Con auto-clear tras 1.5s sin escribir.
+  void notifyTyping(bool typing) {
+    if (partnerId.isEmpty) return;
+    _typingDebounce?.cancel();
+    if (typing) {
+      _typingDebounce = Timer(const Duration(milliseconds: 1500), _clearTyping);
+    } else {
+      _typingDebounce?.cancel();
+    }
+    _upsertTyping(typing);
+  }
+
+  Future<void> _upsertTyping(bool typing) async {
+    try {
+      await SupabaseConfig.client.from('chat_typing').upsert({
+        'user_id': myId,
+        'is_typing': typing,
+      }, onConflict: 'user_id');
+    } catch (e) {
+      developer.log('notifyTyping fallo: $e');
+    }
+  }
+
+  void _clearTyping() {
+    _typingDebounce?.cancel();
+    _upsertTyping(false);
+  }
+
   @override
   void dispose() {
+    _typingDebounce?.cancel();
+    _typingChannel?.unsubscribe();
     _channel?.unsubscribe();
     super.dispose();
   }

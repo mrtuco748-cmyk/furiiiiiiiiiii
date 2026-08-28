@@ -21,7 +21,10 @@ class WorkoutCompletion {
   Map<String, dynamic> toMap() => {
         'user_id': userId,
         'completed_on': _dateOnly(completedOn),
-        if (routineId != null) 'routine_id': routineId,
+        // routine_id siempre presente (0 = sin rutina): la UNIQUE
+        // (user_id, completed_on, routine_id) requiere un valor no-null para
+        // no permitir duplicados del mismo día sin rutina.
+        'routine_id': routineId ?? 0,
       };
 
   factory WorkoutCompletion.fromMap(Map<String, dynamic> m) =>

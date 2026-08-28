@@ -203,7 +203,7 @@ Future<void> showElementOptionsSheet(
               HapticFeedback.heavyImpact();
               return;
             }
-            pv.update(live.copyWith(data: newData));
+            pv.react(live, newData, key);
             setSheetState(() {});
             HapticFeedback.selectionClick();
           }

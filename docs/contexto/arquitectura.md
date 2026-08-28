@@ -20,7 +20,7 @@
 | Iconos | font_awesome_flutter, phosphor_flutter, material_design_icons | varias |
 | Fuentes | google_fonts | ^8.2.0 |
 | Almacenamiento local | shared_preferences | ^2.5.0 |
-| Navegación | Navigator nativo (push/pop) | - |
+| Navegación | GoRouter (route table centralizado, `MaterialApp.router`) | ^17.5.0 |
 
 ## Mapa de Carpetas
 
@@ -35,7 +35,7 @@ lib/
 ├── theme/
 │   └── app_theme.dart           # 5 modos de color + clay theme
 ├── models/                      # 21 modelos Dart (message, mood, letter, deck_card, workout_log, etc.)
-├── providers/                   # 15 providers registrados
+├── providers/                   # 20 providers registrados
 ├── screens/                     # 19 pantallas + subcarpetas
 │   ├── calendar/               # Calendario (port Gastronomia-App)
 │   │   ├── calendar_home_screen.dart    # Mes + próximos + botones Clases/Día
@@ -66,7 +66,13 @@ lib/
 │           ├── note_common_color_wheel.dart # Color wheel compartido
 │           └── note_gradient_color_picker.dart # Picker de color para degradado
 ├── services/                    # 7 servicios (notifications, event/class notification, ai, settings, sound)
-└── widgets/                     # 6 widgets compartidos
+└── widgets/                     # 8 widgets compartidos
+    ├── brutal_style.dart        # Estilo Nosotros compartido (bg, block, card, fillIcon, iconAction)
+    ├── loca_arranger.dart       # Mosaico "loca" determinístico (dividir lienzo en N bloques)
+    ├── loca_screen.dart         # LocaScreen: pantalla icono+swink estilo Nosotros (LocaEntry, panels, swap)
+    ├── swap_widget.dart         # Swap automático icono↔contenido + LineScrollText/PhraseScrollText
+    ├── tap_tile.dart            # Botón tappable con animación de escala + sonido
+    └── ...
 
 Assets/
 └── icons/                       # SVGs para botones, paneles, boards
@@ -187,6 +193,8 @@ App inicia → HomeScreen.initState()
   → Si ambos "encanta" (transicion local no-match → match) → DeckMatchOverlay "FURI!!"
   → Historial (sheet) → re-deslizar una tarjeta (cambia la reaccion)
   → Bloque ▶/🖼️/▶ del Home → abre el mazo (crear con +)
+
+Tarjetas: **sin bordes** (degradado puro, borderRadius 32), **mÃ¡s delgadas y altas** (75% ancho × 92% alto), fuente **Bangers blanco** tamaño 28. Etiquetas de reaccion al deslizar **sin borde** (solo degradado + Bangers blanco). Solo botÃ³n X cerrar en header (sin botones de accion abajo). CategorÃ­a POEMAS: degradado rojo-rosa-rojo.
 ```
 
 ### Ejercicios (boton pesa del Home)
@@ -204,6 +212,46 @@ Home → boton pesa (verde lima #39FF14, sin confeti) → EjerciciosScreen
           aprobar/completar) → sheet de acciones
      Stats: WorkoutStats (streakFor individual, sessionsThisWeek,
           distinctExerciseNames, muscleGroupCounts)
+```
+
+### Racha de pareja 🔥 (días en que ambos están activos)
+```
+Home abre → HomeScreen.initState() (post frame) → CoupleProvider.load()
+  → load moods (user_id, date) + workout_completions (user_id, completed_on)
+  → CoupleStats.activeByDay() → Map<día, Set<usuarios activos>>
+  → CoupleStats.bothActiveDays(members: {myId, partnerId}) → días con ambos
+  → coupleStreak / bestCoupleStreak / todayActive
+Realtime: moods + workout_completions → _reload() (recalcula racha)
+UI: chip 🔥 con GoogleFonts.bangers en el Home (Consumer<CoupleProvider>),
+    posicionado en esquina superior derecha sin tocar la grilla. (Tap → Logros)
+Sin tabla propia: la racha se deriva de señales con user_id + fecha.
+```
+
+### Logros de pareja 🏅 (colección de insignias)
+```
+Home → tap chip 🔥 → LogrosScreen abierta → CoupleAchievementsProvider.load()
+  → carga couple_achievements (los ya otorgados)
+  → construye AchievementSnapshot: moods + workout_completions (ambos),
+    messages.count(), deck_cards (algún match) → coupleStreak/bestStreak
+  → CoupleAchievements.earnedCodes(snapshot) → códigos alcanzados
+  → inserta los nuevos (UNIQUE + diferencia de sets) → idempotente
+Realtime: couple_achievements → el otro dispositivo ve logros al instante
+UI: álbum en grilla (desbloqueados a color, pendientes desvanecidos con 🔒)
+Reglas = datos estáticos (CoupleAchievement), evaluación = lógica pura.
+```
+
+### Trivia de pareja 🎯 (pregunta del día: respondés + predecís)
+```
+Home → botón Icons.school → TriviaScreen (TriviaProvider.load())
+  → siembra TriviaQuestionBank en daily_questions si está vacío (options JSONB)
+  → TriviaStats.questionForDay(bank, hoy) → pregunta del día (índice por día del año)
+  → Cada uno elige Tu respuesta + Predicción (chips) → submit() a question_answers
+    (delete-then-insert del día propio: permite re-responder)
+  → cuando ambos contestan → marcador: TriviaStats.scoreFor(userId) =
+     un punto por cada predicción que acierta la respuesta real de la pareja
+  → scoreboard "X - Y" en header + score view (quién conoce más a quién)
+Realtime: question_answers → _reloadAnswers()
+UI: pregunta en chip brutalista, opciones seleccionables, estados loading/empty/error/data
 ```
 
 ### Notificaciones Push
@@ -264,7 +312,6 @@ Toda pantalla debe manejar: **LOADING** | **EMPTY** | **ERROR** | **DATA**
 ## Lo que NO existe (features esperables faltantes)
 
 - **Tests**: No hay tests unitarios ni de integración (solo 1 widget test)
-- **Router**: No hay sistema de rutas nombradas (GoRouter, Navigator 2.0)
 - **Inyección de dependencias**: No hay DI (get_it, provider con factory)
 - **Logging**: No hay sistema de logging (ni siquiera print statements)
 - **Error handling global**: No hay error boundary, Zone, o handler global
@@ -279,5 +326,5 @@ Toda pantalla debe manejar: **LOADING** | **EMPTY** | **ERROR** | **DATA**
 - **Provider** funciona para 2 usuarios, escalaría mal a más
 - **Sin abstracción de datos**: providers llaman directo a Supabase/SQLite
 - **Código muerto**: 8 providers sin registrar, 7+ tablas SQLite sin crear
-- **Cuello de botella**: chat_screen.dart (699 líneas), sin separación de concerns
+- **Cuello de botella**: chat estaba en un solo archivo (1359 líneas) → separado en widgets (Fase 0, 2026-08-26): `chat_screen.dart` solo lógica+layout, `screens/chat/chat_style.dart` + `screens/chat/widgets/*` para los presentacionales.
 - **Sin tests**: cualquier cambio puede romper sin que se sepa

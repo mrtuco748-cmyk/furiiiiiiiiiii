@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../providers/class_schedule_provider.dart';
 import '../../models/class_schedule.dart';
 import '../../app_state.dart';
+import '../../widgets/tap_tile.dart';
+import '../../widgets/concrete_painter.dart';
 
 class ClassSetupWizard extends StatefulWidget {
   const ClassSetupWizard({super.key});
@@ -88,25 +90,86 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
 
   @override
   Widget build(BuildContext context) {
-    final green = const Color(0xFF00FF66);
+    final green = const Color(0xFF00D4FF);
     final dark = const Color(0xFF1A1A1A);
 
-    return Material(color: dark, child: SafeArea(child: Column(children: [
-      Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: green, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18))), child: Center(child: Text(_step == 0 ? 'CONFIGURACION INICIAL' : 'Clase $_step de $_classCount', style: GoogleFonts.bangers(color: dark, fontSize: 20, fontWeight: FontWeight.bold)))),
-      Expanded(child: _step == 0 ? _askCount(green, dark) : _classForms(green, dark)),
-      if (_step == 0)
-        Padding(padding: const EdgeInsets.all(16), child: GestureDetector(onTap: _next, child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: green, borderRadius: BorderRadius.circular(14), border: Border.all(color: dark, width: 4), boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)]), child: Center(child: Text('Siguiente ->', style: GoogleFonts.bangers(color: dark, fontSize: 18, fontWeight: FontWeight.bold)))))),
-      if (_step > 0)
-        Padding(padding: const EdgeInsets.all(16), child: Row(children: [
-          if (_step > 1) GestureDetector(onTap: () { setState(() => _step--); _pageCtrl.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12), decoration: BoxDecoration(color: const Color(0xFF333333), borderRadius: BorderRadius.circular(14), border: Border.all(color: green, width: 3)), child: Text('<-', style: GoogleFonts.bangers(color: green, fontSize: 18)))),
-          const Spacer(),
-          GestureDetector(onTap: () {
-            if (_saving) return;
-            if (_step >= _classCount) { _save(context.read<ClassScheduleProvider>()); }
-            else { setState(() => _step++); _next(); }
-          }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12), decoration: BoxDecoration(color: _saving ? const Color(0xFF666666) : green, borderRadius: BorderRadius.circular(14), border: Border.all(color: dark, width: 3)), child: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(_step >= _classCount ? 'Guardar' : 'Siguiente ->', style: GoogleFonts.bangers(color: dark, fontSize: 18, fontWeight: FontWeight.bold)))),
-        ])),
-    ])));
+    return Scaffold(
+      backgroundColor: dark,
+      body: Stack(children: [
+        Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
+        SafeArea(
+          child: Column(children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: green,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+                border: Border.all(color: green, width: 3),
+                boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
+              ),
+              child: Center(child: Text(_step == 0 ? 'CONFIGURACION INICIAL' : 'Clase $_step de $_classCount', style: GoogleFonts.bangers(color: dark, fontSize: 20, fontWeight: FontWeight.w900))),
+            ),
+            Expanded(child: _step == 0 ? _askCount(green, dark) : _classForms(green, dark)),
+            if (_step == 0)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: TapTile(
+                  onTap: () { HapticFeedback.heavyImpact(); _next(); },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: green,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: green, width: 4),
+                      boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
+                    ),
+                    child: Center(child: Text('Siguiente ->', style: GoogleFonts.bangers(color: dark, fontSize: 18, fontWeight: FontWeight.w900))),
+                  ),
+                ),
+              ),
+            if (_step > 0)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  if (_step > 1)
+                    TapTile(
+                      onTap: () { setState(() => _step--); _pageCtrl.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut); },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF333333),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: green, width: 3),
+                          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
+                        ),
+                        child: Text('<-', style: GoogleFonts.bangers(color: green, fontSize: 18)),
+                      ),
+                    ),
+                  const Spacer(),
+                  TapTile(
+                    onTap: () {
+                      if (_saving) return;
+                      if (_step >= _classCount) { _save(context.read<ClassScheduleProvider>()); }
+                      else { setState(() => _step++); _next(); }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _saving ? const Color(0xFF666666) : green,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _saving ? const Color(0xFF666666) : green, width: 3),
+                        boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
+                      ),
+                      child: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(_step >= _classCount ? 'Guardar' : 'Siguiente ->', style: GoogleFonts.bangers(color: dark, fontSize: 18, fontWeight: FontWeight.w900)),
+                    ),
+                  ),
+                ]),
+              ),
+          ]),
+        ),
+      ]),
+    );
   }
 
   Widget _askCount(Color green, Color dark) {
@@ -126,7 +189,19 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
   }
 
   Widget _countBtn(VoidCallback tap, IconData icon) {
-    return GestureDetector(onTap: () { HapticFeedback.selectionClick(); tap(); }, child: Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFF333333), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF00FF66), width: 3)), child: Icon(icon, color: const Color(0xFF00FF66), size: 28)));
+    return TapTile(
+      onTap: () { HapticFeedback.selectionClick(); tap(); },
+      child: Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFF333333),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF00D4FF), width: 3),
+          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)],
+        ),
+        child: Icon(icon, color: const Color(0xFF00D4FF), size: 28),
+      ),
+    );
   }
 
   Widget _classForms(Color green, Color dark) {
@@ -150,7 +225,7 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
           const SizedBox(height: 8),
           Wrap(spacing: 6, runSpacing: 6, children: List.generate(7, (i) {
             final selected = c.selectedDays.contains(_dayIds[i]);
-            return GestureDetector(
+            return TapTile(
               onTap: () {
                 HapticFeedback.selectionClick();
                 setState(() {
@@ -163,7 +238,8 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
                 decoration: BoxDecoration(
                   color: selected ? green : const Color(0xFF333333),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: selected ? dark : green, width: 2),
+                  border: Border.all(color: selected ? green : green, width: 2),
+                  boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(2, 2), blurRadius: 0)],
                 ),
                 child: Text(_days[i], style: GoogleFonts.bangers(color: selected ? dark : green, fontSize: 14)),
               ),

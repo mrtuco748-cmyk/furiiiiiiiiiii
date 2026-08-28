@@ -154,9 +154,49 @@ class FavoritesProvider extends ChangeNotifier {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'favorites',
-          callback: (_) => load(),
+          callback: _onRealtime,
         )
         .subscribe();
+  }
+
+  void _onRealtime(PostgresChangePayload payload) {
+    applyRealtimeRow(
+      payload.newRecord as Map<String, dynamic>?,
+      payload.oldRecord as Map<String, dynamic>?,
+      payload.eventType,
+    );
+  }
+
+  /// Aplica UN solo cambio de realtime al listado local SIN reemplazar toda
+  /// la lista. Así un cambio de la pareja (o el echo de mi propio write) no
+  /// pisa los edits optimistas que tengo en OTRAS filas (bug de Tanda 2:
+  /// el callback hacia `load()` entero y borraba el estado optimista local).
+  @visibleForTesting
+  void applyRealtimeRow(
+    Map<String, dynamic>? newRecord,
+    Map<String, dynamic>? oldRecord,
+    PostgresChangeEvent event,
+  ) {
+    if (event == PostgresChangeEvent.delete) {
+      final id = oldRecord?['id'];
+      if (id != null) {
+        _items.removeWhere((i) => i.id == id);
+        notifyListeners();
+      }
+      return;
+    }
+    if (newRecord == null) return;
+    _mergeOne(FavoriteItem.fromMap(newRecord));
+  }
+
+  void _mergeOne(FavoriteItem item) {
+    final idx = _items.indexWhere((i) => i.id == item.id);
+    if (idx == -1) {
+      _items = [item, ..._items];
+    } else {
+      _items[idx] = item;
+    }
+    notifyListeners();
   }
 
   Future<void> load() async {
@@ -187,17 +227,19 @@ class FavoritesProvider extends ChangeNotifier {
   Future<void> add(FavoriteItem item) async {
     _error = null;
     try {
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from('favorites')
           .insert(item.toMap())
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      _mergeOne(FavoriteItem.fromMap(data));
     } catch (e) {
       _error = 'No se pudo guardar el favorito';
       debugPrint('FavoritesProvider.add error: $e');
       notifyListeners();
       return;
     }
-    await load();
   }
 
   Future<void> update(int id, FavoriteItem item) async {
@@ -207,18 +249,20 @@ class FavoritesProvider extends ChangeNotifier {
       map.remove('id');
       map.remove('user_id');
       map.remove('created_at');
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from('favorites')
           .update(map)
           .eq('id', id)
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      _mergeOne(FavoriteItem.fromMap(data));
     } catch (e) {
       _error = 'No se pudo actualizar el favorito';
       debugPrint('FavoritesProvider.update error: $e');
       notifyListeners();
       return;
     }
-    await load();
   }
 
   Future<void> toggleFav(int id, bool fav) async {
@@ -227,11 +271,14 @@ class FavoritesProvider extends ChangeNotifier {
     _items[idx] = _items[idx].copyWith(favorited: fav);
     notifyListeners();
     try {
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from('favorites')
           .update({'favorited': fav})
           .eq('id', id)
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      _mergeOne(FavoriteItem.fromMap(data));
     } catch (e) {
       _error = 'No se pudo actualizar el favorito';
       debugPrint('FavoritesProvider.toggleFav error: $e');
@@ -252,11 +299,14 @@ class FavoritesProvider extends ChangeNotifier {
       final patch = identity == 'Facu'
           ? {'rating_facu': rating}
           : {'rating_rocio': rating};
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from('favorites')
           .update(patch)
           .eq('id', id)
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      _mergeOne(FavoriteItem.fromMap(data));
     } catch (e) {
       _error = 'No se pudo guardar el rating';
       debugPrint('FavoritesProvider.setRating error: $e');
@@ -270,11 +320,14 @@ class FavoritesProvider extends ChangeNotifier {
     _items[idx] = _items[idx].copyWith(critica: critica);
     notifyListeners();
     try {
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from('favorites')
           .update({'critica': critica})
           .eq('id', id)
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      _mergeOne(FavoriteItem.fromMap(data));
     } catch (e) {
       _error = 'No se pudo guardar la critica';
       debugPrint('FavoritesProvider.setCritica error: $e');

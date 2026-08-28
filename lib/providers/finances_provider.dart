@@ -1,14 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
-import '../app_state.dart';
 import '../models/transaction.dart';
-import 'sync_provider.dart';
 
 class FinancesProvider extends ChangeNotifier {
   List<Transaction> _transactions = [];
   bool _loading = false;
   String _period = 'month';
   String? _error;
+  RealtimeChannel? _channel;
+  bool _realtimeUp = false;
 
   List<Transaction> get transactions => _transactions;
   bool get loading => _loading;
@@ -54,7 +55,6 @@ class FinancesProvider extends ChangeNotifier {
           .from('transactions')
           .select()
           .order('date', ascending: false)
-          .limit(100)
           .timeout(const Duration(seconds: 10));
       _transactions = (res as List).map((e) => Transaction.fromMap(e as Map<String, dynamic>)).toList();
       _error = null;
@@ -64,6 +64,46 @@ class FinancesProvider extends ChangeNotifier {
       debugPrint('FinancesProvider.load error: $e');
     }
     _loading = false; notifyListeners();
+    _subscribeRealtime();
+  }
+
+  // ─── REALTIME ─────────────────────────────────────────────────
+
+  void _subscribeRealtime() {
+    if (_realtimeUp) return;
+    _realtimeUp = true;
+    _channel = SupabaseConfig.client
+        .channel('finances_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'transactions',
+          callback: (_) => _reload(),
+        )
+        .subscribe();
+  }
+
+  /// Recarga silenciosa por realtime (sin estado de loading para no
+  /// parpadear la UI): transacciones nuevas/editadas de la pareja.
+  Future<void> _reload() async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('transactions')
+          .select()
+          .order('date', ascending: false)
+          .timeout(const Duration(seconds: 10));
+      _transactions = (res as List).map((e) => Transaction.fromMap(e as Map<String, dynamic>)).toList();
+      _error = null;
+    } catch (e) {
+      debugPrint('FinancesProvider._reload error: $e');
+    }
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
   }
 
   Future<void> add(Transaction t) async {

@@ -145,6 +145,44 @@ Cada pantalla con sync tiene su **Provider** que:
 5. Expone métodos de comentarios (`loadComments()`, `addComment()`, `deleteComment()`)
 6. Expone métodos de reacciones (`toggleReaction()`)
 
+### 10. Sistema "Loca" (estilo Nosotros) para pantallas
+Toda pantalla navegable (excepto Home y Mazo) debe construirse con el patrón "loca":
+la entrada es un **mosaico de bloques-icono gigantes** que ocupa TODO el lienzo, con
+**cero texto a simple vista** (solo iconos). El contenido real se abre al tocar.
+
+- **Kit compartido**: `lib/widgets/loca_screen.dart` (`LocaEntry`, `LocaScreen`,
+  `LocaScreen.panel`, `LocaScreen.closeIcon`) + `lib/widgets/loca_arranger.dart`
+  (mosaico determinístico con seed por pantalla → cada pantalla distribuye distinto).
+- **Un bloque por ítem**: cada reto/meta/carta/etc es SU propio tile-icono en el
+  mosaico, con icono de estado "visto/no visto" (check=hecho/leída,
+  círculo=pendiente, candado=cartas selladas). NO se usa "un botón que lista todo".
+- **Tiles legibles**: cada bloque muestra el icono de estado (✓/○/🔒/leída) +
+  el TÍTULO del ítem debajo en Bangers (2 líneas con ellipsis). El mosaico
+  reparte MÁS superficie a los ítems con más texto (`LocaEntry.label` →
+  pesos): los bloques varían en tamaño según su contenido, desordenados pero
+  entendibles.
+- **Acciones camufladas en el mosaico**: los botones de acción (+, escribir, subir,
+  gps) son UN BLOQUE MÁS del MISMO mosaico: el arranger los reparte junto con los
+  ítems (mismo tamaño/forma/colores que les toque). Sin celda reservada ni esquina
+  fija: se integran y camuflan de forma natural entre los demás.
+- **Espacio entre bloques**: cada tile tiene un pequeño gap (4–12px); el mosaico
+  es de bloques cuadrados/rectángulos equilibrados (aspect 0.4–2.0), rectos (sin
+  rotación), nunca tiras delgadas.
+- **Pantallas con input/canvas** (chat, calendario, pizarra, ejercicios): se
+  envuelven en capas de entrada mosaico (`mosaico_wrappers.dart`); el contenido
+  funcional original queda detrás, intacto.
+- **LocaEntry**: un bloque → `panel` (índice que abre el swink de ESE ítem), u
+  `onTap` (acción directa, ej. crear) + `childBuilder` opcional para el tile
+  custom (ícono de estado + badge) o `swapBuilder` (swap automático, ej. distancia).
+- **Panel swink 1:1**: `LocaScreen.panels` = función `(context, close)` que devuelve
+  el contenido de UN item (título/leer/acciones) envuelto en `LocaScreen.panel`.
+  Dentro del panel SÍ se puede mostrar texto (listas/cartas/mensajes).
+- **Header**: barra con botón volver (icono) + 3 corazones — sin título de texto.
+- **Regla de oro**: a simple vista SOLO iconos y bloques grandes; todo lo que se
+  lee (listas, texto) queda detrás del tap. Sin `monospace`/labels en botones.
+- **Estados** loading/empty/error/data siguen vigentes como tiles visibles en el
+  mosaico (hourglass / cloud_off con tap=reintentar / íconos de ítem).
+
 ---
 
 ## Fichas por Pantalla
@@ -447,7 +485,7 @@ Cada pantalla con sync tiene su **Provider** que:
 - **LOADING**: Spinner centrado con color dorado `#FFDE59`
 - **EMPTY**: Icono 🃏 + "No hay tarjetas para deslizar" + botón crear
 - **ERROR**: Banner rojo "No se pudieron cargar las tarjetas" + botón reintentar
-- **DATA**: Stack de tarjetas (la actual + 2 detrás con escala descendente) + 4 botones de acción
+- **DATA**: Stack de tarjetas (la actual + 2 detrás con escala descendente), **tarjetas sin borde** (degradado puro, borderRadius 32), **mÃ¡s delgadas y altas** (75% ancho × 92% alto), fuente **Bangers blanco** tamaño 28, etiquetas de reacciÃ³n al deslizar **sin borde** (solo degradado + Bangers blanco). **Solo botÃ³n X cerrar en header** (sin botones de acciÃ³n abajo). CategorÃ­a POEMAS: degradado rojo-rosa-rojo.
 
 ### Ejercicios 🏋️
 
@@ -634,7 +672,7 @@ C) Otro
 
 ---
 
-**Versión**: 9.1 (mazo swipe tipo Tinder)
+**Versión**: 10 (sistema "Loca" estilo Nosotros)
 **Creado**: 2026-08-07
-**Actualizado**: 2026-08-17
+**Actualizado**: 2026-08-27
 **Prioridad**: ALTA (regla obligatoria)

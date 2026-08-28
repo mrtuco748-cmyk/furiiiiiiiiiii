@@ -2,17 +2,14 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
-import 'package:video_player/video_player.dart';
 
 import '../models/message.dart';
 import '../providers/chat_provider.dart';
@@ -20,13 +17,19 @@ import '../services/chat_media_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/responsive_wrapper.dart';
+import '../widgets/tap_tile.dart';
+import 'chat/chat_style.dart';
+import 'chat/widgets/chat_react_chip.dart';
+import 'chat/widgets/chat_swipe_to_reply.dart';
+import 'chat/widgets/chat_message_tile.dart';
 
-const _c = Color(0xFFFF6B00);
-const _bg = Color(0xFF1A0F08);
-const _panel = Color(0xFF2A1810);
-const _inputBg = Color(0xFFFF6B00);
-const _darkText = Color(0xFF1A0F08);
-const _errorBg = Color(0xFF5A1010);
+/// Aliases de la paleta compartida del chat (ChatStyle).
+const _c = ChatStyle.primary;
+const _bg = ChatStyle.bg;
+const _panel = ChatStyle.panel;
+const _inputBg = ChatStyle.inputBg;
+const _darkText = ChatStyle.darkText;
+const _errorBg = ChatStyle.errorBg;
 
 class ChatScreen extends StatelessWidget {
   final String myId;
@@ -71,6 +74,23 @@ class _ChatViewState extends State<_ChatView> {
   int _lastMsgCount = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // Scroll infinito hacia arriba: al llegar al tope (mensajes más viejos),
+    // cargamos una página anterior. La lista es reverse:true (nuevo abajo),
+    // así el paginado ancla la vista sin saltar.
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final pos = _scrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 40) {
+      context.read<ChatProvider>().loadOlderMessages();
+    }
+  }
+
+  @override
   void dispose() {
     _recordTicker?.cancel();
     _recorder.dispose();
@@ -84,7 +104,7 @@ class _ChatViewState extends State<_ChatView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollCtrl.hasClients) return;
       _scrollCtrl.animateTo(
-        _scrollCtrl.position.maxScrollExtent,
+        0,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
       );
@@ -97,6 +117,7 @@ class _ChatViewState extends State<_ChatView> {
     HapticFeedback.heavyImpact();
     final chat = context.read<ChatProvider>();
     _msgCtrl.clear();
+    chat.notifyTyping(false);
     try {
       await chat.sendText(text);
       _scrollToBottom();
@@ -212,18 +233,12 @@ class _ChatViewState extends State<_ChatView> {
         _recordStarted = null;
       });
       if (path == null || !mounted) return;
-      final secs = _recordStarted == null
-          ? 0
-          : DateTime.now().difference(_recordStarted!).inSeconds;
       await _sendPicked(
         path: path,
         name: 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a',
         mime: 'audio/mp4',
         type: 'voice',
       );
-      if (mounted && secs > 0) {
-        // caption opcional con duración ya va en content=filename
-      }
       return;
     }
 
@@ -256,7 +271,7 @@ class _ChatViewState extends State<_ChatView> {
       ),
       builder: (ctx) {
         Widget item(IconData icon, String label, VoidCallback onTap) {
-          return GestureDetector(
+          return TapTile(
             onTap: () {
               Navigator.pop(ctx);
               onTap();
@@ -276,7 +291,11 @@ class _ChatViewState extends State<_ChatView> {
                   const SizedBox(height: 4),
                   Text(
                     label,
-                    style: GoogleFonts.bangers(fontSize: 11, color: _darkText),
+                    style: GoogleFonts.bangers(
+                      fontSize: 11,
+                      color: _darkText,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ],
               ),
@@ -341,7 +360,7 @@ class _ChatViewState extends State<_ChatView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (final e in Message.defaultReactionEmojis)
-                    _ReactChip(
+                    ChatReactChip(
                       label: e,
                       selected: msg.myReactionKey(chat.myId) == e,
                       onTap: () async {
@@ -349,7 +368,7 @@ class _ChatViewState extends State<_ChatView> {
                         await chat.toggleReaction(msg, e);
                       },
                     ),
-                  _ReactChip(
+                  ChatReactChip(
                     label: '+',
                     selected: false,
                     onTap: () async {
@@ -403,7 +422,7 @@ class _ChatViewState extends State<_ChatView> {
             ),
           ),
           actions: [
-            GestureDetector(
+            TapTile(
               onTap: () => Navigator.pop(ctx),
               child: Container(
                 padding: const EdgeInsets.all(8),
@@ -415,7 +434,7 @@ class _ChatViewState extends State<_ChatView> {
                 child: const Icon(Icons.close, color: Colors.white70, size: 22),
               ),
             ),
-            GestureDetector(
+            TapTile(
               onTap: () => Navigator.pop(ctx, ctrl.text.trim()),
               child: Container(
                 padding: const EdgeInsets.all(8),
@@ -462,6 +481,7 @@ class _ChatViewState extends State<_ChatView> {
                   if (chat.error != null) _errorBanner(w, h, chat),
                   if (chat.replyTo != null) _replyBanner(w, h, chat),
                   _inputArea(w, h, chat),
+                  if (chat.partnerTyping) _typingBanner(w, h),
                 ],
               ),
             );
@@ -483,22 +503,17 @@ class _ChatViewState extends State<_ChatView> {
           color: _c,
           border: Border.all(color: _c, width: 3),
           borderRadius: BorderRadius.circular(16),
+          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
         ),
         child: Row(
           children: [
-            GestureDetector(
-              onTap: () => Navigator.of(context).maybePop(),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Icon(Icons.arrow_back, color: _darkText, size: 22),
-              ),
-            ),
+            const SizedBox(width: 4),
             Expanded(
               child: Center(
                 child: Text(
                   chat.partnerName.isNotEmpty ? chat.partnerName : 'CHAT',
                   style: GoogleFonts.bangers(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w900,
                     fontSize: 18,
                     color: _darkText,
                   ),
@@ -523,6 +538,7 @@ class _ChatViewState extends State<_ChatView> {
           color: _errorBg,
           border: Border.all(color: _errorBg, width: 2),
           borderRadius: BorderRadius.circular(10),
+          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
         ),
         child: Row(
           children: [
@@ -531,10 +547,14 @@ class _ChatViewState extends State<_ChatView> {
                 chat.error ?? '',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.bangers(color: Colors.white, fontSize: 12),
+                style: GoogleFonts.bangers(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-            GestureDetector(
+            TapTile(
               onTap: chat.clearError,
               child: const Icon(Icons.close, color: Colors.white70, size: 18),
             ),
@@ -557,13 +577,14 @@ class _ChatViewState extends State<_ChatView> {
           color: _panel,
           border: Border.all(color: _panel, width: 3),
           borderRadius: BorderRadius.circular(16),
+          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
         ),
         child: switch (chat.state) {
           ChatLoadState.loading => const Center(
               child: CircularProgressIndicator(color: _c, strokeWidth: 3),
             ),
           ChatLoadState.error => Center(
-              child: GestureDetector(
+              child: TapTile(
                 onTap: () {
                   HapticFeedback.heavyImpact();
                   chat.loadMessages();
@@ -586,33 +607,39 @@ class _ChatViewState extends State<_ChatView> {
                 size: 60,
               ),
             ),
-          ChatLoadState.data => ListView.builder(
-              controller: _scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-              itemCount: chat.messages.length,
-              itemBuilder: (ctx, i) {
-                final m = chat.messages[i];
-                final isMine = m.fromUser == chat.myId;
-                return _SwipeToReply(
-                  onReply: () {
-                    HapticFeedback.mediumImpact();
-                    chat.setReplyTo(m);
-                    _focusNode.requestFocus();
-                  },
-                  child: _MessageTile(
-                    message: m,
-                    isMine: isMine,
-                    theme: t,
-                    downloading: chat.isDownloading(m.id),
-                    onLongPress: () => _showReactionBar(m),
-                    onReactionTap: (key) => chat.toggleReaction(m, key),
-                    onDownload: () => chat.downloadMedia(m),
-                  ),
-                );
-              },
-            ),
+          ChatLoadState.data => _chatList(chat, t),
         },
       ),
+    );
+  }
+
+  Widget _chatList(ChatProvider chat, ThemeSet t) {
+    final items = chat.messages.reversed.toList();
+    return ListView.builder(
+      controller: _scrollCtrl,
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+      itemCount: items.length,
+      itemBuilder: (ctx, i) {
+        final m = items[i];
+        final isMine = m.fromUser == chat.myId;
+        return ChatSwipeToReply(
+          onReply: () {
+            HapticFeedback.mediumImpact();
+            chat.setReplyTo(m);
+            _focusNode.requestFocus();
+          },
+          child: ChatMessageTile(
+            message: m,
+            isMine: isMine,
+            theme: t,
+            downloading: chat.isDownloading(m.id),
+            onLongPress: () => _showReactionBar(m),
+            onReactionTap: (key) => chat.toggleReaction(m, key),
+            onDownload: () => chat.downloadMedia(m),
+          ),
+        );
+      },
     );
   }
 
@@ -632,12 +659,15 @@ class _ChatViewState extends State<_ChatView> {
           color: _inputBg,
           border: Border.all(color: _inputBg, width: 3),
           borderRadius: BorderRadius.circular(14),
+          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
         ),
         child: Row(
           children: [
             const SizedBox(width: 6),
-            GestureDetector(
-              onTap: chat.sending ? null : _showAttachSheet,
+            TapTile(
+              onTap: () {
+                if (!chat.sending) _showAttachSheet();
+              },
               child: Container(
                 width: 36,
                 height: 36,
@@ -657,6 +687,7 @@ class _ChatViewState extends State<_ChatView> {
                       style: GoogleFonts.bangers(
                         color: _darkText,
                         fontSize: 14,
+                        fontWeight: FontWeight.w900,
                       ),
                     )
                   : TextField(
@@ -665,6 +696,7 @@ class _ChatViewState extends State<_ChatView> {
                       style: GoogleFonts.bangers(
                         color: _darkText,
                         fontSize: 14,
+                        fontWeight: FontWeight.w900,
                       ),
                       decoration: const InputDecoration(
                         hintText: 'Mensaje...',
@@ -673,10 +705,13 @@ class _ChatViewState extends State<_ChatView> {
                         isDense: true,
                       ),
                       onSubmitted: (_) => _sendText(),
+                      onChanged: (v) => chat.notifyTyping(v.trim().isNotEmpty),
                     ),
             ),
-            GestureDetector(
-              onTap: chat.sending ? null : _toggleRecord,
+            TapTile(
+              onTap: () {
+                if (!chat.sending) _toggleRecord();
+              },
               child: Container(
                 width: 36,
                 height: 36,
@@ -696,8 +731,10 @@ class _ChatViewState extends State<_ChatView> {
                 ),
               ),
             ),
-            GestureDetector(
-              onTap: chat.sending ? null : _sendText,
+            TapTile(
+              onTap: () {
+                if (!chat.sending) _sendText();
+              },
               child: Container(
                 width: 40,
                 height: 40,
@@ -724,6 +761,35 @@ class _ChatViewState extends State<_ChatView> {
     );
   }
 
+  Widget _typingBanner(double w, double h) {
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
+    return Positioned(
+      right: w * 0.04,
+      bottom: keyboard + 8 + h * 0.09 + 6,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: _c,
+          border: Border.all(color: _c, width: 2),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0),
+          ],
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          ),
+          const SizedBox(width: 8),
+          Text('escribiendo…',
+              style: GoogleFonts.bangers(color: Colors.white, fontSize: 13)),
+        ]),
+      ),
+    );
+  }
+
   Widget _replyBanner(double w, double h, ChatProvider chat) {
     final keyboard = MediaQuery.of(context).viewInsets.bottom;
     return Positioned(
@@ -736,6 +802,7 @@ class _ChatViewState extends State<_ChatView> {
           color: _c,
           border: Border.all(color: _c, width: 2),
           borderRadius: BorderRadius.circular(12),
+          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
         ),
         child: Row(
           children: [
@@ -744,615 +811,21 @@ class _ChatViewState extends State<_ChatView> {
             Expanded(
               child: Text(
                 chat.replyTo!.previewText,
-                style: GoogleFonts.bangers(color: _darkText, fontSize: 12),
+                style: GoogleFonts.bangers(
+                  color: _darkText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            GestureDetector(
+            TapTile(
               onTap: chat.clearReply,
               child: const Icon(Icons.close, color: _darkText, size: 18),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ReactChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _ReactChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = selected ? _c : _bg;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            border: Border.all(color: bg, width: 2),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: label == '+' ? 22 : 18,
-              fontWeight: FontWeight.bold,
-              color: selected ? _darkText : Colors.white,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Swipe horizontal acumulado (WhatsApp-like) en CUALQUIER mensaje.
-class _SwipeToReply extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onReply;
-  const _SwipeToReply({required this.child, required this.onReply});
-
-  @override
-  State<_SwipeToReply> createState() => _SwipeToReplyState();
-}
-
-class _SwipeToReplyState extends State<_SwipeToReply>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  double _dx = 0;
-  static const _max = 72.0;
-  static const _threshold = 42.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 180),
-    )..addListener(() {
-      if (_ctrl.isAnimating) {
-        setState(() => _dx = _ctrl.value * _max);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _snapBack() {
-    final from = _dx;
-    if (from <= 0) return;
-    _ctrl.value = from / _max;
-    _ctrl.reverse();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = (_dx / _threshold).clamp(0.0, 1.0);
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragStart: (_) {
-        _ctrl.stop();
-        setState(() => _dx = 0);
-      },
-      onHorizontalDragUpdate: (d) {
-        setState(() {
-          _dx = (_dx + d.delta.dx).clamp(0.0, _max);
-        });
-      },
-      onHorizontalDragEnd: (_) {
-        final trigger = _dx >= _threshold;
-        _snapBack();
-        if (trigger) widget.onReply();
-      },
-      onHorizontalDragCancel: _snapBack,
-      child: Stack(
-        alignment: Alignment.centerLeft,
-        children: [
-          Opacity(
-            opacity: progress,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Icon(Icons.reply, color: _c.withValues(alpha: progress), size: 22),
-            ),
-          ),
-          Transform.translate(
-            offset: Offset(_dx, 0),
-            child: widget.child,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MessageTile extends StatelessWidget {
-  final Message message;
-  final bool isMine;
-  final ThemeSet theme;
-  final bool downloading;
-  final VoidCallback onLongPress;
-  final void Function(String key) onReactionTap;
-  final VoidCallback onDownload;
-
-  const _MessageTile({
-    required this.message,
-    required this.isMine,
-    required this.theme,
-    required this.downloading,
-    required this.onLongPress,
-    required this.onReactionTap,
-    required this.onDownload,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final blockColor = isMine ? theme.a : theme.e;
-    final textColor = isMine ? theme.dark : theme.light;
-    final subColor = isMine ? theme.dark.withValues(alpha: 0.6) : Colors.white38;
-    final raw = message.createdAt;
-    final timeStr = raw != null
-        ? '${raw.hour.toString().padLeft(2, '0')}:${raw.minute.toString().padLeft(2, '0')}'
-        : '';
-
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: message.reactions.isEmpty ? 8 : 14,
-        left: isMine ? 48 : 4,
-        right: isMine ? 4 : 48,
-      ),
-      child: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-        child: GestureDetector(
-          onLongPress: onLongPress,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.72,
-                ),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: blockColor,
-                  border: Border.all(color: blockColor, width: 3),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (message.replyContent != null &&
-                        message.replyContent!.isNotEmpty)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _panel,
-                          border: Border.all(
-                            color: _panel,
-                            width: 2,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          message.replyContent!,
-                          style: GoogleFonts.bangers(
-                            fontSize: 11,
-                            color: _c,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    _MediaBody(
-                      message: message,
-                      textColor: textColor,
-                      downloading: downloading,
-                      onDownload: onDownload,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          timeStr,
-                          style: GoogleFonts.bangers(fontSize: 10, color: subColor),
-                        ),
-                        if (isMine) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            switch (message.tickState) {
-                              MessageTick.read => Icons.done_all,
-                              MessageTick.delivered => Icons.done_all,
-                              MessageTick.sent => Icons.done,
-                            },
-                            size: 14,
-                            color: message.tickState == MessageTick.read
-                                ? const Color(0xFF4FC3FF)
-                                : subColor,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (message.reactions.isNotEmpty)
-                Positioned(
-                  bottom: -12,
-                  right: isMine ? 8 : null,
-                  left: isMine ? null : 8,
-                  child: _ReactionsRow(
-                    reactions: message.reactions,
-                    onTap: onReactionTap,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ReactionsRow extends StatelessWidget {
-  final Map<String, List<String>> reactions;
-  final void Function(String key) onTap;
-  const _ReactionsRow({required this.reactions, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: _panel,
-        border: Border.all(color: _panel, width: 2),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final e in reactions.entries)
-            GestureDetector(
-              onTap: () => onTap(e.key),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Text(
-                  e.value.length > 1 ? '${e.key}${e.value.length}' : e.key,
-                  style: const TextStyle(fontSize: 13, color: Colors.white),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MediaBody extends StatelessWidget {
-  final Message message;
-  final Color textColor;
-  final bool downloading;
-  final VoidCallback onDownload;
-
-  const _MediaBody({
-    required this.message,
-    required this.textColor,
-    required this.downloading,
-    required this.onDownload,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (!message.isMedia) {
-      return Text(
-        message.content,
-        style: GoogleFonts.bangers(
-          fontWeight: FontWeight.bold,
-          fontSize: 15,
-          color: textColor,
-        ),
-      );
-    }
-
-    if (message.hasLocalMedia) {
-      return _LocalMediaView(message: message, textColor: textColor);
-    }
-
-    if (message.needsCloudDownload || downloading) {
-      return GestureDetector(
-        onTap: downloading ? null : onDownload,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF3A2418),
-            border: Border.all(color: const Color(0xFF3A2418), width: 2),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (downloading)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _c),
-                )
-              else
-                Icon(_iconFor(message.messageType), color: textColor, size: 22),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  downloading
-                      ? 'Descargando...'
-                      : (message.attachmentName ?? message.previewText),
-                  style: GoogleFonts.bangers(fontSize: 13, color: textColor),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (!downloading) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.download, color: textColor, size: 18),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-
-    // cloud borrado y sin local
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.cloud_off, color: textColor.withValues(alpha: 0.7), size: 18),
-        const SizedBox(width: 6),
-        Text(
-          message.attachmentName ?? message.previewText,
-          style: GoogleFonts.bangers(fontSize: 13, color: textColor),
-        ),
-      ],
-    );
-  }
-
-  IconData _iconFor(String type) {
-    switch (type) {
-      case 'image':
-      case 'gif':
-        return Icons.image;
-      case 'video':
-        return Icons.videocam;
-      case 'voice':
-        return Icons.mic;
-      default:
-        return Icons.insert_drive_file;
-    }
-  }
-}
-
-class _LocalMediaView extends StatelessWidget {
-  final Message message;
-  final Color textColor;
-  const _LocalMediaView({required this.message, required this.textColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final path = message.localPath!;
-    switch (message.messageType) {
-      case 'image':
-      case 'gif':
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(
-                File(path),
-                width: 220,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.broken_image,
-                  color: textColor,
-                  size: 40,
-                ),
-              ),
-            ),
-            if (message.content.isNotEmpty &&
-                message.content != message.attachmentName) ...[
-              const SizedBox(height: 6),
-              Text(
-                message.content,
-                style: GoogleFonts.bangers(fontSize: 14, color: textColor),
-              ),
-            ],
-          ],
-        );
-      case 'video':
-        return _VideoThumb(path: path, textColor: textColor);
-      case 'voice':
-        return _AudioPlayerTile(path: path, textColor: textColor);
-      default:
-        return GestureDetector(
-          onTap: () => OpenFilex.open(path),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.insert_drive_file, color: textColor, size: 22),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  message.attachmentName ?? message.content,
-                  style: GoogleFonts.bangers(fontSize: 13, color: textColor),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Icon(Icons.open_in_new, color: textColor, size: 16),
-            ],
-          ),
-        );
-    }
-  }
-}
-
-class _VideoThumb extends StatefulWidget {
-  final String path;
-  final Color textColor;
-  const _VideoThumb({required this.path, required this.textColor});
-
-  @override
-  State<_VideoThumb> createState() => _VideoThumbState();
-}
-
-class _VideoThumbState extends State<_VideoThumb> {
-  VideoPlayerController? _ctrl;
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = VideoPlayerController.file(File(widget.path))
-      ..initialize().then((_) {
-        if (mounted) setState(() => _ready = true);
-      });
-  }
-
-  @override
-  void dispose() {
-    _ctrl?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_ready || _ctrl == null) {
-      return SizedBox(
-        width: 200,
-        height: 120,
-        child: Center(
-          child: CircularProgressIndicator(color: widget.textColor, strokeWidth: 2),
-        ),
-      );
-    }
-    return GestureDetector(
-      onTap: () {
-        final c = _ctrl!;
-        setState(() {
-          c.value.isPlaying ? c.pause() : c.play();
-        });
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 220,
-          child: AspectRatio(
-            aspectRatio: _ctrl!.value.aspectRatio == 0
-                ? 16 / 9
-                : _ctrl!.value.aspectRatio,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                VideoPlayer(_ctrl!),
-                if (!_ctrl!.value.isPlaying)
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _bg,
-                      border: Border.all(color: _bg, width: 2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(Icons.play_arrow, color: _c, size: 28),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AudioPlayerTile extends StatefulWidget {
-  final String path;
-  final Color textColor;
-  const _AudioPlayerTile({required this.path, required this.textColor});
-
-  @override
-  State<_AudioPlayerTile> createState() => _AudioPlayerTileState();
-}
-
-class _AudioPlayerTileState extends State<_AudioPlayerTile> {
-  final _player = AudioPlayer();
-  bool _playing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _playing = false);
-    });
-  }
-
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-
-  Future<void> _toggle() async {
-    if (_playing) {
-      await _player.stop();
-      setState(() => _playing = false);
-      return;
-    }
-    await _player.play(DeviceFileSource(widget.path));
-    setState(() => _playing = true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: _toggle,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _playing ? Icons.stop : Icons.play_arrow,
-            color: widget.textColor,
-            size: 26,
-          ),
-          const SizedBox(width: 6),
-          Icon(Icons.graphic_eq, color: widget.textColor, size: 20),
-          const SizedBox(width: 6),
-          Text(
-            'Audio',
-            style: GoogleFonts.bangers(fontSize: 13, color: widget.textColor),
-          ),
-        ],
       ),
     );
   }

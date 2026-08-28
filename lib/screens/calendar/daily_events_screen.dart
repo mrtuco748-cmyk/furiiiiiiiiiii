@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/class_schedule.dart';
@@ -10,14 +11,13 @@ import '../../models/schedule.dart';
 import '../../providers/class_schedule_provider.dart';
 import '../../providers/event_type_provider.dart';
 import '../../providers/schedule_provider.dart';
+import '../../router.dart';
 import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../../widgets/tap_tile.dart';
-import 'class_board_screen.dart';
-import 'schedule_form_screen.dart';
 
 const _c = Color(0xFF00D4FF);
-const _dark = Color(0xFF000000);
+const _dark = Color(0xFF0D0D0D);
 const _near = Color(0xFF1A1A1A);
 const _cDeep = Color(0xFF003344);
 const _cBright = Color(0xFF0088AA);
@@ -112,16 +112,15 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
 
   Future<void> _openForm() async {
     HapticFeedback.mediumImpact();
-    await Navigator.of(context)
-        .push(MaterialPageRoute(
-            builder: (_) => ScheduleFormScreen(initialDate: _selectedDate)))
+    await context
+        .push(RouterRoutes.scheduleForm, extra: _selectedDate)
         .then((_) => _loadData());
   }
 
   Future<void> _editEvent(Schedule s) async {
     HapticFeedback.mediumImpact();
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => ScheduleFormScreen(schedule: s)))
+    await context
+        .push(RouterRoutes.scheduleForm, extra: s)
         .then((_) => _loadData());
   }
 
@@ -149,8 +148,8 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _dark,
-                  border: Border.all(color: _c, width: 3),
+                  color: _near,
+                  border: Border.all(color: _near, width: 3),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [
                     BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)
@@ -169,13 +168,13 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.red,
-                  border: Border.all(color: _dark, width: 3),
+                  border: Border.all(color: Colors.red, width: 3),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [
                     BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)
                   ],
                 ),
-                child: const Icon(Icons.check, color: Color(0xFF000000), size: 24),
+                child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 24),
               ),
             ),
           ),
@@ -190,9 +189,7 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
 
   void _openClasses() {
     HapticFeedback.mediumImpact();
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ClassBoardScreen()))
-        .then((_) => _loadData());
+    context.push(RouterRoutes.classBoard).then((_) => _loadData());
   }
 
   @override
@@ -235,14 +232,14 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: _c,
-              border: Border.all(color: _dark, width: 4),
+              border: Border.all(color: _c, width: 4),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
                 BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
               ],
             ),
             child: const Center(
-                child: Icon(Icons.arrow_back, color: Color(0xFF000000), size: 26)),
+                child: Icon(Icons.arrow_back, color: Color(0xFF0D0D0D), size: 26)),
           ),
         ),
       ),
@@ -261,7 +258,7 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
         child: Container(
           decoration: BoxDecoration(
             color: _cDeep,
-            border: Border.all(color: _c, width: 3),
+            border: Border.all(color: _cDeep, width: 3),
             borderRadius: BorderRadius.circular(18),
             boxShadow: const [
               BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
@@ -317,7 +314,7 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: _near,
-              border: Border.all(color: _cBright, width: 3),
+              border: Border.all(color: _near, width: 3),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
                 BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
@@ -338,13 +335,13 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: _c,
-                      border: Border.all(color: _dark, width: 4),
+                      border: Border.all(color: _c, width: 4),
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: const [
                         BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
                       ],
                     ),
-                    child: const Icon(Icons.add, color: Color(0xFF000000), size: 30),
+                    child: const Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30),
                   ),
                 ),
               ),
@@ -388,8 +385,8 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _dark,
-              border: Border.all(color: _c, width: 3),
+              color: _near,
+              border: Border.all(color: _near, width: 3),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
                 BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
@@ -442,8 +439,8 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _dark,
-              border: Border.all(color: color, width: 3),
+              color: _near,
+              border: Border.all(color: _near, width: 3),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
                 BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
@@ -453,11 +450,11 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.2),
+                  color: color,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: color, width: 2),
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: _dark, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -499,14 +496,14 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: _c,
-              border: Border.all(color: _dark, width: 5),
+              border: Border.all(color: _c, width: 5),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
                 BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
               ],
             ),
             child: const Center(
-                child: Icon(Icons.add, color: Color(0xFF000000), size: 30)),
+                child: Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30)),
           ),
         ),
       ),
@@ -568,8 +565,8 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: _dark,
-                          border: Border.all(color: Colors.red, width: 3),
+                          color: _near,
+                          border: Border.all(color: _near, width: 3),
                           borderRadius: BorderRadius.circular(18),
                           boxShadow: const [
                             BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)

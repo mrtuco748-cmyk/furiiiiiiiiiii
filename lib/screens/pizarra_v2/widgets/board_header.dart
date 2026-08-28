@@ -13,7 +13,6 @@ class BoardHeader extends StatelessWidget {
   final VoidCallback onToggleSearch;
   final VoidCallback onToggleActivity;
   final Function(BoardViewMode) onViewModeChanged;
-  final VoidCallback onToggleTagManager;
   final BoardViewMode currentViewMode;
 
   const BoardHeader({
@@ -23,7 +22,6 @@ class BoardHeader extends StatelessWidget {
     required this.onToggleSearch,
     required this.onToggleActivity,
     required this.onViewModeChanged,
-    required this.onToggleTagManager,
     required this.currentViewMode,
   });
 
@@ -83,25 +81,6 @@ class BoardHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
           ),
-          // Tags
-          GestureDetector(
-            onTap: onToggleTagManager,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF1A1A1A), width: 2),
-              ),
-              child: Icon(
-                Icons.label,
-                color: _userColor(),
-                size: 20,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           // Actividad
           GestureDetector(
             onTap: () {
