@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [bot-trigger]
+
+concurrency:
+  group: bot-furi
+  cancel-in-progress: false
 
 jobs:
   bot:
