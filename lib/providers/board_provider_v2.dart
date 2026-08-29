@@ -17,6 +17,7 @@ class BoardProviderV2 extends ChangeNotifier {
   int _boardId = 1;
   RealtimeChannel? _channel;
   final Map<int, Timer> _debounceTimers = {};
+  final Set<int> _dirtyElements = {};
   bool _isOnline = true;
 
   // Getters
@@ -199,21 +200,52 @@ class BoardProviderV2 extends ChangeNotifier {
           .map((e) => BoardElementV2.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      // Merge: cloud gana en campos que no fueron modificados localmente.
-      // BUG 10: Si el local tiene synced=0 (modificado offline), preservar
-      // x/y del local y tomar el resto del cloud (que puede traer cambios
-      // de la pareja en color, título, etc.).
+      // Merge parcial: preservar cambios locales y aplicar los del cloud.
+      // Si el local está marcado como dirty (modificado offline), preservar
+      // x/y y otros campos localmente; aplicar del cloud solo lo que venga
+      // actualizado (title, color, priority, etc.) y usar updatedAt del más nuevo.
       for (final cloudEl in cloudElements) {
         final localIdx = _elements.indexWhere((e) => e.id == cloudEl.id);
         if (localIdx >= 0) {
-          if (cloudEl.updatedAt.isAfter(_elements[localIdx].updatedAt)) {
-            final local = _elements[localIdx];
-            // Si el local tiene cambios pendientes (dirty), preservar x/y.
-            final isLocalDirty = local.id != null && dirtyIds.contains(local.id);
-            _elements[localIdx] = isLocalDirty
-                ? cloudEl.copyWith(x: local.x, y: local.y)
-                : cloudEl;
-          }
+          final local = _elements[localIdx];
+
+          // Determinar si preservar coordenadas locales (elemento modificado offline)
+          final preserveLocalXY =
+              local.id != null && dirtyIds.contains(local.id);
+
+          // Merge parcial: preservar x/y locales si está dirty, sino usar del cloud
+          final resultX = preserveLocalXY || cloudEl.x == null ? local.x : cloudEl.x;
+          final resultY = preserveLocalXY || cloudEl.y == null ? local.y : cloudEl.y;
+
+          // Merge de otros campos: usar del cloud si vienen actualizados y son distintos
+          final resultTitle =
+              cloudEl.title != null && cloudEl.title.isNotEmpty &&
+                      (local.title == null || local.title != cloudEl.title)
+                  ? cloudEl.title
+                  : local.title;
+          final resultColor =
+              cloudEl.color != null && cloudEl.color != local.color
+                  ? cloudEl.color
+                  : local.color;
+          final resultPriority = cloudEl.priority ?? local.priority;
+          final resultZ = cloudEl.z ?? local.z;
+
+          // Usar updatedAt del más nuevo
+          final resultUpdatedAt =
+              cloudEl.updatedAt.isAfter(local.updatedAt)
+                  ? cloudEl.updatedAt
+                  : local.updatedAt;
+
+          final merged = local.copyWith(
+            x: resultX,
+            y: resultY,
+            title: resultTitle,
+            color: resultColor,
+            priority: resultPriority,
+            z: resultZ,
+            updatedAt: resultUpdatedAt,
+          );
+          _elements[localIdx] = merged;
         } else {
           _elements.add(cloudEl);
         }
@@ -320,8 +352,15 @@ class BoardProviderV2 extends ChangeNotifier {
 
             final idx = _elements.indexWhere((e) => e.id == el.id);
             if (idx >= 0) {
-              // No pisar cambios locales pendientes
-              if (el.updatedAt.isAfter(_elements[idx].updatedAt)) {
+              // No pisar un cambio local pendiente (p. ej. un move en curso,
+              // o un update que aún no subió a la nube): preservamos la
+              // posición local y dejamos que el propio debounce retrase el
+              // valor autoritativo. Así el realtime no "rompe" el drag.
+              if (_dirtyElements.contains(el.id)) {
+                final local = _elements[idx];
+                _elements[idx] = el.copyWith(x: local.x, y: local.y);
+                _saveToLocal(_elements[idx]);
+              } else if (el.updatedAt.isAfter(_elements[idx].updatedAt)) {
                 // BUG 2: Merge reactions del cloud con las locales (evita race condition).
                 final localReactions = _reactionsOf(_elements[idx].data);
                 final cloudReactions = _reactionsOf(el.data);
@@ -441,7 +480,6 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
     }
     if (idx == -1) return;
 
-    // BUG 5: No mover elementos bloqueados.
     if (_elements[idx].isLocked) return;
 
     final previous = _elements[idx];
@@ -457,6 +495,7 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
 
     final id = updated.id;
     if (id == null) return;
+    _dirtyElements.add(id);
 
     _debounceTimers[id]?.cancel();
     _debounceTimers[id] = Timer(const Duration(milliseconds: 300), () async {
@@ -472,6 +511,7 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
             .update(updated.toMap())
             .eq('id', id)
             .timeout(const Duration(seconds: 5));
+        _dirtyElements.remove(id);
       } catch (e) {
         debugPrint('BoardProviderV2.moveLocal error: $e');
         await _markUnsynced(id);
@@ -489,7 +529,6 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
     }
     if (idx == -1) return;
 
-    // BUG 5: No actualizar elementos bloqueados.
     if (_elements[idx].isLocked) return;
 
     _elements[idx] = el.copyWith(updatedAt: DateTime.now());
@@ -500,6 +539,7 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
 
     final id = _elements[idx].id;
     if (id == null) return;
+    _dirtyElements.add(id);
 
     // Debounce para cloud (300ms)
     _debounceTimers[id]?.cancel();
@@ -523,6 +563,7 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
           where: 'id = ?',
           whereArgs: [id],
         );
+        _dirtyElements.remove(id);
       } catch (e) {
         debugPrint('BoardProviderV2.update error: $e');
         await _markUnsynced(id);
@@ -616,8 +657,34 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
       }
     }
 
+    // BUG 7: Limpiar comentarios que reply a este elemento (cascade).
+    final orphanReplies = _findCommentsRepliedTo(id);
+    for (final replyId in orphanReplies) {
+      if (replyId == id) continue;
+      final replyEl = _elements.firstWhere((e) => e.id == replyId, orElse: () => throw Exception('Not found'));
+      _elements.removeWhere((e) => e.id == replyId);
+      await _deleteLocal(replyId);
+      if (_isOnline) {
+        try {
+          await SupabaseConfig.client
+              .from('board_elements_v2')
+              .delete()
+              .eq('id', replyId)
+              .timeout(const Duration(seconds: 5));
+        } catch (e) {
+          debugPrint('BoardProviderV2.delete reply cascade error: $e');
+        }
+      }
+    }
+
     _elements.removeWhere((e) => e.id == id);
     notifyListeners();
+
+    // Cancelar cualquier debounce pendiente de move/update de este elemento
+    // (evita que un write a la nube llegue DESPUÉS del borrado y recree la fila).
+    _debounceTimers[id]?.cancel();
+    _debounceTimers.remove(id);
+    _dirtyElements.remove(id);
 
     // Borrar local
     await _deleteLocal(id);
@@ -630,13 +697,18 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
       description: '${AppState.identity ?? 'Alguien'} eliminó ${_typeName(el.type)}',
     );
 
-    // Borrar cloud
-    if (_isOnline) {
+    // No borrar elementos bloqueados.
+    if (_elements.firstWhere((e) => e.id == id, orElse: () => throw Exception('Not found')).isLocked) return;
+
+    // Borrar cloud (solo si alguna vez se sincronizó; un elemento puramente
+    // local/optimista no tiene id cloud que borrar).
+    final cloudId = el.cloudId;
+    if (_isOnline && cloudId != null) {
       try {
         await SupabaseConfig.client
             .from('board_elements_v2')
             .delete()
-            .eq('id', id)
+            .eq('id', cloudId)
             .timeout(const Duration(seconds: 5));
       } catch (e) {
         debugPrint('BoardProviderV2.delete error: $e');
@@ -836,9 +908,45 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
         where: 'id = ?',
         whereArgs: [id],
       );
-    } catch (e) {
-      debugPrint('BoardProviderV2._markUnsynced error: $e');
+} catch (e) {
+      debugPrint('BoardProviderV2._deleteLocal error: $e');
     }
+  }
+
+  /// Encuentra IDs de comentarios que reply (tienen replyToId = id).
+  /// Busca recursivamente: si A responde a B, y borramos B, también borramos A.
+  List<int> _findCommentsRepliedTo(int id) {
+    final result = <int>[];
+    // Buscar en todos los elementos del tablero
+    for (final e in _elements) {
+      if (e.type != BoardElementType.note) continue; // Solo notas tienen comentarios
+      final comments = _commentsOf(e.data);
+      for (final c in comments) {
+        if (c['replyToId']?.toString() == id.toString()) {
+          result.add(e.id!);
+          // Agregar recursivamente los comentarios que reply a este comentario
+          final repliedIds = _findCommentsRepliedToHelper(e.id!, id);
+          result.addAll(repliedIds);
+        }
+      }
+    }
+    return result;
+  }
+
+  /// Helper recursivo: encuentra comentarios que reply a `parentId` dentro del elemento `el`
+  List<int> _findCommentsRepliedToHelper(int elId, int parentId) {
+    final result = <int>[];
+    final el = _elements.firstWhere((e) => e.id == elId, orElse: () => throw Exception('Not found'));
+    final comments = _commentsOf(el.data);
+    for (final c in comments) {
+      if (c['replyToId']?.toString() == parentId.toString() && c['id']?.toString() != parentId.toString()) {
+        result.add(c['id'] as int? ?? -1).where((id) => id != -1).toList();
+        // Recursivo: este comentario también puede tener respuestas propias
+        final repliedIds = _findCommentsRepliedToHelper(c['id'] as int, parentId);
+        result.addAll(repliedIds);
+      }
+    }
+    return result.where((id) => id != -1).toList();
   }
 
   /// Extrae las reacciones del campo `data` de un elemento.
@@ -852,6 +960,16 @@ Future<void> moveLocal(BoardElementV2 el, double x, double y) async {
           v is List ? List<String>.from(v.map((x) => x.toString())) : <String>[];
     }
     return out;
+  }
+
+  /// Extrae los comentarios del campo `data` de un elemento (mismo formato que BoardSocialData.commentsOf).
+  List<Map<String, dynamic>> _commentsOf(Map<String, dynamic> data) {
+    final raw = data['comments'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
   }
 
   Future<void> _deleteLocal(int id) async {

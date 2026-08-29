@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:furi_app/providers/favorites_provider.dart';
 
 void main() {
@@ -86,5 +87,48 @@ void main() {
     ]);
     expect(pv.averageRatingFor('game'), 2);
     expect(pv.averageRatingFor('movie'), 5);
+  });
+
+  // Tanda 2 #1: el realtime NO debe pisar el estado optimista local de las
+  // demás filas. Antes el callback hacia load() entero y borraba los edits
+  // locales de otras filas.
+  test('applyRealtimeRow actualiza solo esa fila y preserva el resto', () {
+    final a = FavoriteItem(id: 1, title: 'A', category: 'movie', userId: 'u1');
+    final b = FavoriteItem(id: 2, title: 'B', category: 'series', userId: 'u1');
+    pv.setItemsForTest([a, b]);
+    pv.applyRealtimeRow(
+      {
+        'id': 1,
+        'title': 'A2',
+        'category': 'movie',
+        'user_id': 'u2',
+        'favorited': true,
+        'rating_facu': 3.0,
+        'rating_rocio': 4.0,
+        'critica': 'x',
+      },
+      null,
+      PostgresChangeEvent.update,
+    );
+    expect(pv.items.length, 2); // no se duplica ni se pierde B
+    expect(pv.items.firstWhere((i) => i.id == 1).title, 'A2');
+    expect(pv.items.firstWhere((i) => i.id == 2).title, 'B'); // intacta
+  });
+
+  test('applyRealtimeRow inserta fila nueva sin duplicar', () {
+    pv.setItemsForTest([]);
+    pv.applyRealtimeRow(
+      {'id': 5, 'title': 'N', 'category': 'game', 'user_id': 'u9'},
+      null,
+      PostgresChangeEvent.insert,
+    );
+    expect(pv.items.length, 1);
+    expect(pv.items.first.id, 5);
+  });
+
+  test('applyRealtimeRow borra fila por oldRecord', () {
+    pv.setItemsForTest([FavoriteItem(id: 7, title: 'X', category: 'music', userId: 'u1')]);
+    pv.applyRealtimeRow(null, {'id': 7}, PostgresChangeEvent.delete);
+    expect(pv.items.isEmpty, isTrue);
   });
 }

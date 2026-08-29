@@ -24,6 +24,7 @@ const _finTheme = ThemeSet(
   dark: Color(0xFF111111),
   light: Color(0xFFFFFFFF),
   mid: Color(0xFF222222),
+  es: 'Finanzas',
 );
 
 /// Finanzas estilo "Nosotros": tiles de balance/ingresos/gastos con swap,
@@ -71,7 +72,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             } else {
               pv.add(Transaction(userId: AppState.myId ?? '', type: type, category: category, amount: amt, description: titleCtrl.text));
             }
-            AppFeedback.saved(context, 'TransacciÃ³n guardada');
+            AppFeedback.saved(context, 'Transacción guardada');
           }
           Navigator.pop(ctx);
         }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF111111), width: 2)), child: Icon(existing != null ? Icons.check : Icons.add, color: _c, size: 20))),

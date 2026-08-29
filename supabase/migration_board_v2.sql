@@ -38,6 +38,17 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
   is_new BOOLEAN NOT NULL DEFAULT true
 );
 
+-- Agregar columna synced si no existe (migración idempotente)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'board_elements_v2' AND column_name = 'synced'
+  ) THEN
+    ALTER TABLE board_elements_v2 ADD COLUMN synced INTEGER NOT NULL DEFAULT 1;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_board_elements_v2_board_id
   ON board_elements_v2(board_id);
 
@@ -68,5 +79,13 @@ GRANT USAGE, SELECT ON SEQUENCE board_elements_v2_id_seq TO authenticated, servi
 GRANT ALL ON boards TO authenticated, service_role;
 GRANT USAGE, SELECT ON SEQUENCE boards_id_seq TO authenticated, service_role;
 
--- 4. Realtime para el sync en vivo
-ALTER PUBLICATION supabase_realtime ADD TABLE board_elements_v2;
+-- 4. Realtime para el sync en vivo (idempotente: ignora si ya es miembro)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE board_elements_v2;
+  EXCEPTION WHEN duplicate_object THEN
+    -- Ya es miembro de la publicación; no hacer nada.
+    NULL;
+  END;
+END $$;

@@ -14,4 +14,12 @@ CREATE POLICY "full_access_chat_typing" ON chat_typing
 GRANT ALL ON TABLE chat_typing TO anon;
 GRANT ALL ON TABLE chat_typing TO authenticated;
 
-ALTER PUBLICATION supabase_realtime ADD TABLE chat_typing;
+-- Realtime (idempotente: ignora si ya es miembro de la publicación)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE chat_typing;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;

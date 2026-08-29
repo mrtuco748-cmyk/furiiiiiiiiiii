@@ -27,6 +27,10 @@ class _MetasScreenState extends State<MetasScreen> {
   String? _error;
   RealtimeChannel? _channel;
 
+  // Tap counter logic (single vs double tap) - igual que en Retos
+  int _tapMetaId = 0;
+  Timer? _tapTimerMeta;
+
   @override
   void initState() {
     super.initState();
@@ -217,6 +221,48 @@ class _MetasScreenState extends State<MetasScreen> {
     );
   }
 
+  Widget _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
+    final done = _done(meta);
+    final title = meta['title'] as String? ?? '';
+    final description = meta['description'] as String? ?? '';
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      backgroundColor: t.mid,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: t.d, width: 4)),
+      title: Icon(Icons.flag, color: t.light, size: 34),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+            child: Row(children: [
+              Icon(Icons.emoji_events, color: t.d, size: 22),
+              const Spacer(),
+              LocaScreen.closeIcon(() => Navigator.pop(ctx), t.d, Icons.close),
+            ]),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(title, textAlign: TextAlign.center,
+                  style: GoogleFonts.bangers(color: t.light, fontSize: 26, fontWeight: FontWeight.w900,
+                    decoration: done ? TextDecoration.lineThrough : null)),
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(description, textAlign: TextAlign.center,
+                    style: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.7), fontSize: 14,
+                      decoration: done ? TextDecoration.lineThrough : null)),
+                ],
+              ]),
+            ]),
+          ],
+        ),
+      ),
+      actions: [
+        TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10), border: Border.rtl(color: t.mid, width: 2)), child: Icon(Icons.close, color: t.light, size: 20)),
+      ],
+    ));
+  }
+
   Widget _historyPanel(ThemeSet t, VoidCallback close) {
     return LocaScreen.panel(color: t.mid, borderColor: t.d, child: Column(children: [
       Padding(
@@ -240,10 +286,27 @@ class _MetasScreenState extends State<MetasScreen> {
     ]));
   }
 
-  Widget _historyMetaCard(ThemeSet t, Map<String, dynamic> meta) {
+Widget _historyMetaCard(ThemeSet t, Map<String, dynamic> meta) {
     final done = _done(meta);
     return TapTile(
-      onTap: () => _toggle(meta),
+      onTap: () {
+        if (_tapMetaId == meta['id']) {
+          // Double tap within 500ms: show expanded panel, don't toggle
+          _showMetaPanel(t, meta);
+          _tapMetaId = 0; // reset after showing
+        } else {
+          // First tap: immediately toggle completed
+          _toggle(meta);
+          // Auto-reset after 500ms so next tap is treated as first tap
+          setState(() => _tapMetaId = 0);
+          // Cancel any previous timer and start new one
+          _tapTimerMeta?.cancel();
+          _tapTimerMeta = Timer(const Duration(milliseconds: 500), () {
+            if (mounted) setState(() => _tapMetaId = 0);
+          });
+          if (mounted) _showError('¡Meta completada!');
+        }
+      },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Container(
@@ -251,7 +314,7 @@ class _MetasScreenState extends State<MetasScreen> {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: t.mid,
-            border: Border.all(color: done ? t.d : t.e, width: 3),
+            border: Border.rtl(color: done ? t.d : t.e, width: 3),
             borderRadius: BorderRadius.circular(18),
             boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
           ),

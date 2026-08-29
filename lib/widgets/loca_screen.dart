@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_theme.dart';
+import '../services/sound_service.dart';
 import 'brutal_style.dart';
 import 'loca_arranger.dart';
 import 'responsive_wrapper.dart';
@@ -152,6 +153,7 @@ class _LocaScreenState extends State<LocaScreen>
   }
 
   void _open(int idx) {
+    SoundService().swoosh();
     setState(() => _openPanel = idx);
     _ctrl.forward(from: 0);
   }

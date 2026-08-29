@@ -12,5 +12,14 @@ ALTER TABLE couple_locations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "full_access_couple_locations" ON couple_locations;
 CREATE POLICY "full_access_couple_locations" ON couple_locations FOR ALL USING (true);
 
-ALTER PUBLICATION supabase_realtime ADD TABLE couple_locations;
+-- Realtime (idempotente: ignora si ya es miembro de la publicación)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'couple_locations'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE couple_locations;
+  END IF;
+END $$;
 GRANT ALL ON couple_locations TO anon, authenticated;

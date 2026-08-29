@@ -21,7 +21,32 @@ class SoundService {
   // que los SFX cortos no lo interrumpan con su stop().
   static final AudioPlayer _bgPlayer = AudioPlayer()..audioCache.prefix = '';
   static bool _bgStarted = false;
-  static const double _bgVolume = 0.4;
+  static const double _bgVolume = 0.5;
+
+  // Contexto de audio para SFX: pide foco "transient may duck" en Android para
+  // que, al sonar un click/pop, NO pause la música de fondo (solo la baja un
+  // instante) y en iOS mezcle con la música en vez de cortarla. Sin esto,
+  // Android le da el foco exclusivo al SFX y pausa el reproductor de fondo.
+  static final AudioContext _sfxContext = AudioContext(
+    android: AudioContextAndroid(
+      audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+    ),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playback,
+      options: {AVAudioSessionOptions.mixWithOthers},
+    ),
+  );
+
+  // Contexto de audio para la música de fondo: mantiene el foco y mezcla en iOS.
+  static final AudioContext _bgContext = AudioContext(
+    android: AudioContextAndroid(
+      audioFocus: AndroidAudioFocus.gain,
+    ),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playback,
+      options: {AVAudioSessionOptions.mixWithOthers},
+    ),
+  );
 
   // Los calls pasan "sounds/xxx"; la clave real del bundle es "Assets/sounds/xxx".
   static const String _assetPrefix = 'Assets/';
@@ -33,7 +58,8 @@ class SoundService {
     if (!enabled) return;
     try {
       await _player.stop();
-      await _player.setVolume(volume);
+      await _player.setAudioContext(_sfxContext);
+      await _player.setVolume(volume * SettingsService().sfxVolume);
       await _player.play(AssetSource(_asset(asset)));
     } catch (_) {}
   }
@@ -71,10 +97,19 @@ class SoundService {
     if (!SettingsService().enableSound) return;
     try {
       _bgStarted = true;
+      await _bgPlayer.setAudioContext(_bgContext);
       await _bgPlayer.setReleaseMode(ReleaseMode.loop);
-      await _bgPlayer.setVolume(_bgVolume);
+      await _bgPlayer.setVolume(SettingsService().bgVolume);
       await _bgPlayer.play(AssetSource(_asset('sounds/musicaDeFondo.mp3')));
     } catch (_) {}
+  }
+
+  Future<void> updateBgVolume(double volume) async {
+    if (_bgStarted) {
+      try {
+        await _bgPlayer.setVolume(volume);
+      } catch (_) {}
+    }
   }
 
   /// Detiene la música de fondo (toggle "Sonidos" apagado).

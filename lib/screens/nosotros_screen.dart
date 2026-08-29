@@ -716,7 +716,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                 child: Container(
                   decoration: BoxDecoration(
                     color: _purple,
-                    border: Border.all(color: t.c, width: 4),
+                    border: Border.all(color: _purple, width: 4),
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(10, 10), blurRadius: 0)],
                   ),
@@ -752,8 +752,8 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                                 hintText: '😊',
                                 hintStyle: TextStyle(color: t.light.withValues(alpha: 0.3), fontSize: 22),
                                 filled: true, fillColor: t.dark.withValues(alpha: 0.3),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.c, width: 2)),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.c, width: 2)),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple, width: 2)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple, width: 2)),
                                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.d, width: 3)),
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                               ),
@@ -779,7 +779,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                             child: Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: t.c, width: 2)),
+                                border: Border.all(color: _purple, width: 2)),
                               child: Text(e, style: const TextStyle(fontSize: 20)),
                             ),
                           )).toList(),

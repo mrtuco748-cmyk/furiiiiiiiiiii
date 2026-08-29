@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../models/couple_location.dart';
 import '../supabase_config.dart';
+import '../services/local_cache.dart';
 
 /// Ubicaciones de la pareja y distancia en tiempo real. Sin cache local (como
 /// finanzas/workouts): las últimas ubicaciones viven en Supabase `couple_locations`
@@ -49,6 +50,13 @@ class LocationProvider extends ChangeNotifier {
     _loading = true;
     _error = null;
     notifyListeners();
+    // Cache local (offline-first): mostramos lo último conocido de inmediato.
+    final cached = await LocalCache.getList('cache_locations');
+    if (cached.isNotEmpty) {
+      _apply(cached.map((m) => CoupleLocation.fromMap(m)).toList());
+      _loading = false;
+      notifyListeners();
+    }
     try {
       final data = await SupabaseConfig.client
           .from(_table)
@@ -57,8 +65,12 @@ class LocationProvider extends ChangeNotifier {
       _apply((data as List)
           .map((r) => CoupleLocation.fromMap(Map<String, dynamic>.from(r as Map)))
           .toList());
+      await LocalCache.setList(
+          'cache_locations', _locations.map((l) => l.toMap()).toList());
     } catch (e) {
-      _error = 'No se pudieron cargar las ubicaciones';
+      if (_locations.isEmpty) {
+        _error = 'No se pudieron cargar las ubicaciones';
+      }
       developer.log('LocationProvider.load error: $e');
     }
     _loading = false;

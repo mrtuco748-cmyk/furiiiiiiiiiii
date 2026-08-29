@@ -78,14 +78,14 @@ abstract final class LocaArranger {
         // aceptan bloques más chicos que minW pero SIEMPRE positivos.
         final lo = minW / node.width;
         final hi = (node.width - minW) / node.width;
-        if (lo <= hi) f = f.clamp(lo, hi);
+        if (lo <= hi) { f = f.clamp(lo, hi); } else { f = 0.5; }
         final w1 = node.width * f;
         nodes.add(_Node(node.left, node.top, w1, node.height, aIdx));
         nodes.add(_Node(node.left + w1, node.top, node.width - w1, node.height, bIdx));
       } else {
         final lo = minH / node.height;
         final hi = (node.height - minH) / node.height;
-        if (lo <= hi) f = f.clamp(lo, hi);
+        if (lo <= hi) { f = f.clamp(lo, hi); } else { f = 0.5; }
         final h1 = node.height * f;
         nodes.add(_Node(node.left, node.top, node.width, h1, aIdx));
         nodes.add(_Node(node.left, node.top + h1, node.width, node.height - h1, bIdx));

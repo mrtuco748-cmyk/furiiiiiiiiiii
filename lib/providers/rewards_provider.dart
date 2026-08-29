@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../models/rewards.dart';
 import '../supabase_config.dart';
+import '../services/local_cache.dart';
 
 /// Puntos y recompensas de pareja: cajita de deseos (rewards) + libro de
 /// puntos (PointsEntry). Sin cache local (como finanzas/workouts).
@@ -44,8 +45,21 @@ class RewardsProvider extends ChangeNotifier {
   Future<void> load() async {
     _loading = true;
     _error = null;
+    // Cache local (offline-first): mostramos lo último conocido de inmediato.
+    final cachedR = await LocalCache.getList('cache_rewards');
+    final cachedP = await LocalCache.getList('cache_points');
+    if (cachedR.isNotEmpty || cachedP.isNotEmpty) {
+      _rewards = cachedR.map((m) => CoupleReward.fromMap(m)).toList();
+      _entries = cachedP.map((m) => PointsEntry.fromMap(m)).toList();
+      _loading = false;
+      notifyListeners();
+    }
     notifyListeners();
     await Future.wait([_loadRewards(), _loadPoints()]);
+    await LocalCache.setList(
+        'cache_rewards', _rewards.map((r) => r.toMap()).toList());
+    await LocalCache.setList(
+        'cache_points', _entries.map((e) => e.toMap()).toList());
     _loading = false;
     notifyListeners();
     _subscribeRealtime();
@@ -86,10 +100,13 @@ class RewardsProvider extends ChangeNotifier {
   Future<void> addReward(String title, String emoji, int cost) async {
     _error = null;
     try {
-      await SupabaseConfig.client.from(_rewardsTable).insert(
-          CoupleReward(title: title, emoji: emoji, cost: cost, createdBy: myId).toMap());
-      await _loadRewards();
-      notifyListeners();
+      final data = await SupabaseConfig.client
+          .from(_rewardsTable)
+          .insert(CoupleReward(title: title, emoji: emoji, cost: cost, createdBy: myId).toMap())
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      _mergeReward(CoupleReward.fromMap(Map<String, dynamic>.from(data as Map)));
     } catch (e) {
       _error = 'No se pudo crear la recompensa';
       developer.log('RewardsProvider.addReward error: $e');
@@ -121,11 +138,14 @@ class RewardsProvider extends ChangeNotifier {
     _rewards[idx] = next;
     notifyListeners();
     try {
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from(_rewardsTable)
           .update({'fulfilled': next.fulfilled})
           .eq('id', id)
+          .select()
+          .single()
           .timeout(const Duration(seconds: 10));
+      _mergeReward(CoupleReward.fromMap(Map<String, dynamic>.from(data as Map)));
     } catch (e) {
       _error = 'No se pudo actualizar la recompensa';
       developer.log('RewardsProvider.toggleFulfilled error: $e');
@@ -138,11 +158,13 @@ class RewardsProvider extends ChangeNotifier {
   Future<void> addPoints(String userId, String reason, int delta) async {
     _error = null;
     try {
-      await SupabaseConfig.client
+      final data = await SupabaseConfig.client
           .from(_pointsTable)
-          .insert(PointsEntry(userId: userId, reason: reason, delta: delta).toMap());
-      await _loadPoints();
-      notifyListeners();
+          .insert(PointsEntry(userId: userId, reason: reason, delta: delta).toMap())
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      _mergeEntry(PointsEntry.fromMap(Map<String, dynamic>.from(data as Map)));
     } catch (e) {
       _error = 'No se pudieron guardar los puntos';
       developer.log('RewardsProvider.addPoints error: $e');
@@ -199,4 +221,55 @@ class RewardsProvider extends ChangeNotifier {
     if (payload.eventType == PostgresChangeEvent.delete) {
       final id = payload.oldRecord['id'];
       if (id != null) {
-        _rewards
+        _rewards = _rewards.where((r) => r.id != id).toList();
+        notifyListeners();
+      }
+      return;
+    }
+    final row = payload.newRecord as Map<String, dynamic>?;
+    if (row == null) return;
+    _mergeReward(CoupleReward.fromMap(Map<String, dynamic>.from(row)));
+  }
+
+  void _onPointsRealtime(PostgresChangePayload payload) {
+    if (payload.eventType == PostgresChangeEvent.delete) {
+      final id = payload.oldRecord['id'];
+      if (id != null) {
+        _entries = _entries.where((e) => e.id != id).toList();
+        notifyListeners();
+      }
+      return;
+    }
+    final row = payload.newRecord as Map<String, dynamic>?;
+    if (row == null) return;
+    _mergeEntry(PointsEntry.fromMap(Map<String, dynamic>.from(row)));
+  }
+
+  /// Aplica UN solo cambio de realtime sin reemplazar toda la lista, para no
+  /// pisar el estado optimista local de otras filas (bug de Tanda 2).
+  void _mergeReward(CoupleReward reward) {
+    final idx = _rewards.indexWhere((r) => r.id == reward.id);
+    if (idx == -1) {
+      _rewards = [reward, ..._rewards];
+    } else {
+      _rewards[idx] = reward;
+    }
+    notifyListeners();
+  }
+
+  void _mergeEntry(PointsEntry entry) {
+    final idx = _entries.indexWhere((e) => e.id == entry.id);
+    if (idx == -1) {
+      _entries = [..._entries, entry];
+    } else {
+      _entries[idx] = entry;
+    }
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
+  }
+}

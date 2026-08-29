@@ -5,6 +5,7 @@ class Letter {
   final String title;
   final String content;
   final bool isOpened;
+  final bool isEdited;
   final DateTime? scheduledOpen;
   final DateTime? createdAt;
 
@@ -15,6 +16,7 @@ class Letter {
     required this.title,
     required this.content,
     this.isOpened = false,
+    this.isEdited = false,
     this.scheduledOpen,
     this.createdAt,
   });
@@ -26,6 +28,7 @@ class Letter {
         title: m['title'] as String,
         content: m['content'] as String,
         isOpened: m['is_opened'] as bool? ?? false,
+        isEdited: m['is_edited'] as bool? ?? false,
         scheduledOpen: m['scheduled_open'] != null
             ? DateTime.tryParse(m['scheduled_open'] as String)
             : null,

@@ -133,8 +133,41 @@ class GoBackIntent extends Intent {
   const GoBackIntent();
 }
 
-class FuriApp extends StatelessWidget {
+class FuriApp extends StatefulWidget {
   const FuriApp({super.key});
+
+  @override
+  State<FuriApp> createState() => _FuriAppState();
+}
+
+class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance?.addObserver(this);
+    // Ensure background music starts if settings enabled
+    SoundService().startBackgroundMusic();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance?.removeObserver(this);
+    // Stop music when app is fully disposed
+    SoundService().stopBackgroundMusic();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      // App is backgrounded or being removed; stop music
+      SoundService().stopBackgroundMusic();
+    } else if (state == AppLifecycleState.resumed) {
+      // App returned to foreground; restart if enabled
+      SoundService().startBackgroundMusic();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,12 +183,12 @@ class FuriApp extends StatelessWidget {
         },
         child: MultiProvider(
           providers: [
+            ChangeNotifierProvider.value(value: SettingsService()),
             ChangeNotifierProvider(create: (_) => ScheduleProvider()),
             ChangeNotifierProvider(create: (_) => EventTypeProvider()),
             ChangeNotifierProvider(create: (_) => ClassTypeProvider()),
             ChangeNotifierProvider(create: (_) => ClassScheduleProvider()),
             ChangeNotifierProvider(create: (_) => SyncProvider()),
-
             ChangeNotifierProvider(create: (_) => StudyProvider()),
             ChangeNotifierProvider(create: (_) => FinancesProvider()),
             ChangeNotifierProvider(create: (_) => GalleryProvider()),

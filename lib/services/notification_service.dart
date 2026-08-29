@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,6 +13,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../supabase_config.dart';
 import '../app_state.dart';
 import '../firebase_options.dart';
+import 'local_cache.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -143,6 +145,9 @@ class NotificationService {
       final body = message.notification?.body ?? '';
       final data = message.data;
       _showLocalNotification(title, body, data);
+      if (title.isNotEmpty || body.isNotEmpty) {
+        _storePushNotification(data, title, body);
+      }
     });
   }
 
@@ -152,6 +157,28 @@ class NotificationService {
     final data = message.data;
     if (title.isNotEmpty || body.isNotEmpty) {
       _showLocalNotification(title, body, data);
+      _storePushNotification(data, title, body);
+    }
+  }
+
+  static Future<void> _storePushNotification(
+    Map<String, dynamic> data,
+    String title,
+    String body,
+  ) async {
+    final type = data['type'] as String? ?? 'notification';
+    try {
+      await SupabaseConfig.client.from('notifications').insert({
+        'user_id': AppState.myId,
+        'from_user': AppState.myId,
+        'type': type,
+        'title': title,
+        'body': body,
+        'data': data,
+        'read': false,
+      });
+    } catch (e) {
+      debugPrint('NotificationService._storePushNotification error: $e');
     }
   }
 
@@ -346,12 +373,32 @@ class NotificationService {
           .from('notifications')
           .select()
           .eq('user_id', AppState.myId!)
-          .order('created_at', ascending: false)
-          .limit(50);
-      return (res as List).cast<Map<String, dynamic>>();
+          .order('created_at', ascending: false);
+      final list = (res as List).cast<Map<String, dynamic>>();
+      // Optionally update local cache for offline support
+      await LocalCache.setList('cache_notifications', list);
+      return list;
     } catch (e) {
       debugPrint('NotificationService.getNotifications error: $e');
-      return [];
+      // Fallback to cache if available
+      final cached = await LocalCache.getList('cache_notifications');
+      return cached;
+    }
+  }
+
+  static Future<void> _refreshNotificationsCache() async {
+    try {
+      final res = await SupabaseConfig.client
+          .from('notifications')
+          .select()
+          .eq('user_id', AppState.myId!)
+          .order('created_at', ascending: false)
+          .limit(50)
+          .timeout(const Duration(seconds: 10));
+      await LocalCache.setList(
+          'cache_notifications', (res as List).cast<Map<String, dynamic>>());
+    } catch (e) {
+      debugPrint('NotificationService._refreshNotificationsCache error: $e');
     }
   }
 
@@ -381,6 +428,9 @@ class NotificationService {
 
   static RealtimeChannel? _globalChannel;
   static VoidCallback? onNewMessage;
+
+  static RealtimeChannel? _notifChannel;
+  static VoidCallback? onNewNotification;
 
   static void startListening() {
     _globalChannel?.unsubscribe();
@@ -414,22 +464,59 @@ class NotificationService {
         table: 'messages',
         callback: (payload) {
           final updated = payload.newRecord;
-          final reactions = updated['reactions'];
-          if (reactions != null && (reactions as Map).isNotEmpty) {
-            final fromUser = updated['from_user'] as String? ?? '';
-            if (fromUser == AppState.partnerId) {
-              _showLocalNotification('Reacción', 'Alguien reaccionó a tu mensaje', {'type': 'reaction'});
-            }
-          }
+    final reactions = updated['reactions'] as Map<String, dynamic>?;
+    if (reactions != null && reactions.isNotEmpty) {
+      final myId = AppState.myId;
+      final partnerId = AppState.partnerId;
+      bool myReacted = false;
+      bool partnerReacted = false;
+      reactions.forEach((key, value) {
+        final List<dynamic> users = (value as List?) ?? [];
+        if (myId != null && users.contains(myId)) myReacted = true;
+        if (partnerId != null && users.contains(partnerId)) partnerReacted = true;
+      });
+      if (!myReacted && partnerReacted) {
+        _showLocalNotification('Reacción', 'Alguien reaccionó a tu mensaje', {'type': 'reaction'});
+      }
+    }
         },
       );
 
     _globalChannel!.subscribe();
+
+    startListeningNotifications();
+  }
+
+  /// Suscribirse a cambios en la tabla `notifications` para actualizar
+  /// el panel de notificaciones en tiempo real cuando llegan nuevas.
+  static void startListeningNotifications() {
+    _notifChannel?.unsubscribe();
+    if (AppState.myId == null) return;
+
+    _notifChannel = SupabaseConfig.client.channel('notifications-${AppState.myId}');
+
+    _notifChannel!
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'notifications',
+        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: AppState.myId!),
+        callback: (payload) {
+          developer.log('NotificationService: nueva notificación via realtime');
+          onNewNotification?.call();
+        },
+      )
+      .subscribe();
   }
 
   static void stopListening() {
     _globalChannel?.unsubscribe();
     _globalChannel = null;
+  }
+
+  static void stopListeningNotifications() {
+    _notifChannel?.unsubscribe();
+    _notifChannel = null;
   }
 
   static Future<int> getUnreadCount() async {

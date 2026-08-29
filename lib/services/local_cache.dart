@@ -7,16 +7,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// con Supabase guardando solo lo nuevo/cambiado. Cada sección usa una key
 /// propia (`cache_<tabla>`).
 class LocalCache {
-  static Future<List<Map<String, dynamic>>?> getList(String key) async {
+  static Future<List<Map<String, dynamic>>> getList(String key) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(key);
-      if (raw == null || raw.isEmpty) return null;
-      return (jsonDecode(raw) as List)
+      if (raw == null || raw.isEmpty) return <Map<String, dynamic>>[];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <Map<String, dynamic>>[];
+      return decoded
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
     } catch (_) {
-      return null;
+      return <Map<String, dynamic>>[];
     }
   }
 

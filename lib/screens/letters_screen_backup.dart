@@ -16,13 +16,20 @@ import '../widgets/brutal_style.dart';
 import '../widgets/app_feedback.dart';
 
 const _cInbox = Color(0xFFFF1493);
-const _cRead = Color(0xFF7A3E5A);
-const _cSealed = Color(0xFFFFB300);
-const _cSent = Color(0xFF00F0FF);
-const _dark = Color(0xFF1A1A1A);
-const _mid = Color(0xFF2A2A2A);
-const _black = Color(0xFF000000);
-const _gold = Color(0xFFFFD700);
+  const _cRead = Color(0xFF7A3E5A);
+  const _cSealed = Color(0xFFFFB300);
+  const _cSent = Color(0xFF00F0FF);
+  const _dark = Color(0xFF1A1A1A);
+  const _mid = Color(0xFF2A2A2A);
+  const _black = Color(0xFF000000);
+  const _gold = Color(0xFFFFD700);
+  // Paleta de colores distintiva para cada bloque de carta
+  final _paletteColors = [
+    Color(0xFFFF1493), Color(0xFF00D4FF), Color(0xFF39FF14),
+    Color(0xFFFFB300), Color(0xFF9D00FF), Color(0xFF00F0FF),
+    Color(0xFFFF66C4), Color(0xFF00FF66), Color(0xFFFF5757),
+    Color(0xFF7000FF), Color(0xFF00E5FF), Color(0xFFFF9800),
+  ];
 
 class LettersScreen extends StatefulWidget {
   final AppMode mode;
@@ -218,7 +225,7 @@ class _LettersScreenState extends State<LettersScreen> {
     } catch (_) {}
   }
 
-void _showLetter(String title, String body, String date, Color color) {
+  void _showLetter(String title, String body, String date, Color color) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -231,7 +238,7 @@ void _showLetter(String title, String body, String date, Color color) {
           Text(body, style: GoogleFonts.bangers(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w400)),
           const SizedBox(height: 12),
           Text(_formatDate(date), style: GoogleFonts.bangers(color: Colors.white38, fontSize: 11)),
-        ],
+        ]),
         actions: [
           TapTile(
             onTap: () => Navigator.of(ctx).pop(),
@@ -247,95 +254,6 @@ void _showLetter(String title, String body, String date, Color color) {
           ),
         ],
       ),
-    );
-  }
-
-  Future<void> _finishEditLetter(int id, String newTitle, String newBody) async {
-    if (newTitle.isEmpty || newBody.isEmpty) return;
-    try {
-      await SupabaseConfig.client.from('letters').update({
-        'title': newTitle,
-        'content': newBody,
-        'is_edited': true,
-      }).eq('id', id);
-      _loadLetters();
-      if (mounted) AppFeedback.saved(context, 'Carta editada');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo guardar la edición', style: GoogleFonts.bangers(color: Colors.white)), backgroundColor: Color(0xFFCC0000)),
-        );
-      }
-    }
-  }
-
-  Widget _showSentLetterEditor(Map<String, dynamic> letter) {
-    final titleCtrl = TextEditingController(text: letter['title']?.toString() ?? '');
-    final bodyCtrl = TextEditingController(text: letter['content']?.toString() ?? '');
-    return AlertDialog(
-      backgroundColor: _dark,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: _cSent, width: 4)),
-      title: Text('Editar carta', style: GoogleFonts.bangers(color: _cSent, fontSize: 18)),
-      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        TextField(
-          controller: titleCtrl,
-          style: GoogleFonts.bangers(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-            hintText: 'Título',
-            hintStyle: GoogleFonts.banger(color: Colors.white38),
-          ),
-          maxLines: 1,
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: bodyCtrl,
-          style: GoogleFonts.bangers(color: Colors.white, fontSize: 14),
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-            hintText: 'Cuerpo',
-            hintStyle: GoogleFonts.banger(color: Colors.white38),
-          ),
-          maxLines: 3,
-        ),
-        const SizedBox(height: 12),
-        Text('Fecha: ${_formatDate(letter['created_at']?.toString() ?? '')}', style: GoogleFonts.banger(color: Colors.white54, fontSize: 11)),
-      ]),
-      actions: [
-        TapTile(
-          onTap: () async {
-            final newTitle = titleCtrl.text.trim();
-            final newBody = bodyCtrl.text.trim();
-            if (newTitle.isEmpty || newBody.isEmpty) return;
-            HapticFeedback.heavyImpact();
-            await _finishEditLetter(letter['id'], newTitle, newBody);
-            Navigator.of(context).pop();
-          },
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _cSent,
-              border: Border.all(color: _cSent, width: 2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text('Guardar', style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
-          ),
-        ),
-        TapTile(
-          onTap: () => Navigator.of(context).pop(),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _dark,
-              border: Border.all(color: _dark, width: 2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.close, color: _cSent, size: 28),
-          ),
-        ),
-      ],
     );
   }
 
@@ -433,10 +351,15 @@ void _showLetter(String title, String body, String date, Color color) {
     );
   }
 
+  int _paletteIndex(Map<String, dynamic> letter) {
+    final id = letter['id'] as int?;
+    return id != null ? id % _paletteColors.length : 0;
+  }
+
   Color _letterColor(Map<String, dynamic> letter) {
     final sealed = _isSealed(letter, incoming: true);
     if (sealed) return _cSealed;
-    return _isReadByMe(letter) ? _cRead : _cInbox;
+    return _isReadByMe(letter) ? _cRead : _paletteColors[_paletteIndex(letter) % _paletteColors.length];
   }
 
   Color _letterIconColor(Map<String, dynamic> letter) {
@@ -560,11 +483,8 @@ void _showLetter(String title, String body, String date, Color color) {
     return TapTile(
       onTap: () {
         HapticFeedback.heavyImpact();
-        final isMySent = !incoming && letter['from_user'] == AppState.myId;
         if (sealed) {
           _showLetter(title, '🔒 Se podrá abrir más adelante', date, _cSealed);
-        } else if (isMySent) {
-          _showSentLetterEditor(letter);
         } else {
           if (incoming) _markReadLocal((letter['id'] as num?)?.toInt() ?? -1);
           _showLetter(title, body, date, color);

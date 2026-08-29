@@ -201,11 +201,25 @@ Future<void> showElementOptionsSheet(
                 ),
               );
               HapticFeedback.heavyImpact();
+              setSheetState(() {});
               return;
             }
-            pv.react(live, newData, key);
-            setSheetState(() {});
-            HapticFeedback.selectionClick();
+            try {
+              pv.react(live, newData, key);
+              setSheetState(() {});
+              HapticFeedback.selectionClick();
+            } catch (e) {
+              debugPrint('BoardElementOptions.react error: $e');
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Error al guardar reacción',
+                    style: TextStyle(fontFamily: 'monospace'),
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
           }
 
           void customReact() {

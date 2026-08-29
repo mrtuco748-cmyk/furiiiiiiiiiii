@@ -34,6 +34,7 @@ class ChatProvider extends ChangeNotifier {
   Map<int, String> _localPaths = {};
   bool _partnerTyping = false;
   Timer? _typingDebounce;
+  Timer? _typingReceiverTimer;
   RealtimeChannel? _typingChannel;
 
   List<Message> get messages => List.unmodifiable(_messages);
@@ -57,9 +58,12 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> init() async {
     _localPaths = await media.loadLocalIndex();
-    await Future.wait([loadMessages(), loadPartnerName()]);
+    // Nos suscribimos al realtime ANTES de cargar el snapshot de la BD: así
+    // cualquier mensaje que llegue por el canal mientras hacemos el fetch no
+    // se pierde. loadMessages hace merge por id en vez de limpiar la lista.
     subscribeRealtime();
     subscribeTyping();
+    await Future.wait([loadMessages(), loadPartnerName()]);
   }
 
   Future<void> loadPartnerName() async {
@@ -91,14 +95,25 @@ class ChatProvider extends ChangeNotifier {
           .order('created_at', ascending: false)
           .limit(100);
       final newestFirst = List<Map<String, dynamic>>.from(data as List);
+      final fetched = newestFirst.reversed.map((row) {
+        final id = Message.fromMap(row).id;
+        return Message.fromMap(row, localPath: _localPaths[id]);
+      }).toList();
+      // Merge por id: preserva los mensajes que ya entraron por realtime
+      // durante la carga (la suscripción corre antes del fetch en init()).
+      final byId = <int, Message>{};
+      for (final m in _messages) {
+        byId[m.id] = m;
+      }
+      for (final m in fetched) {
+        byId[m.id] = m;
+      }
+      final merged = byId.values.toList()
+        ..sort((a, b) => (a.createdAt ?? DateTime(0))
+            .compareTo(b.createdAt ?? DateTime(0)));
       _messages
         ..clear()
-        ..addAll(
-          newestFirst.reversed.map((row) {
-            final id = Message.fromMap(row).id;
-            return Message.fromMap(row, localPath: _localPaths[id]);
-          }),
-        );
+        ..addAll(merged);
       _state =
           _messages.isEmpty ? ChatLoadState.empty : ChatLoadState.data;
       notifyListeners();
@@ -460,9 +475,29 @@ class ChatProvider extends ChangeNotifier {
             final row = payload.newRecord as Map<String, dynamic>? ?? const {};
             if (row['user_id'] != partnerId) return;
             final active = row['is_typing'] == true;
-            if (active != _partnerTyping) {
-              _partnerTyping = active;
-              notifyListeners();
+            if (active) {
+              // La pareja está escribiendo: encendemos el indicador y armamos
+              // un timeout de seguridad. Si en 4s no llega un nuevo "true"
+              // (p. ej. se perdió el "false" por red), lo apagamos solos para
+              // no dejar "escribiendo..." eterno en pantalla.
+              _typingReceiverTimer?.cancel();
+              _typingReceiverTimer = Timer(const Duration(seconds: 4), () {
+                if (_partnerTyping) {
+                  _partnerTyping = false;
+                  notifyListeners();
+                }
+              });
+              if (!_partnerTyping) {
+                _partnerTyping = true;
+                notifyListeners();
+              }
+            } else {
+              // "false" explícito: apagar en el acto y cancelar el timeout.
+              _typingReceiverTimer?.cancel();
+              if (_partnerTyping) {
+                _partnerTyping = false;
+                notifyListeners();
+              }
             }
           },
         )
@@ -500,6 +535,7 @@ class ChatProvider extends ChangeNotifier {
   @override
   void dispose() {
     _typingDebounce?.cancel();
+    _typingReceiverTimer?.cancel();
     _typingChannel?.unsubscribe();
     _channel?.unsubscribe();
     super.dispose();

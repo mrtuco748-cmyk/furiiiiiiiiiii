@@ -73,7 +73,11 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
     _transformController.addListener(_onTransformChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _goToCenter();
-      context.read<BoardProviderV2>().load();
+      context.read<BoardProviderV2>().load().then((_) {
+        // Forzar rebuild después de que todo cargó para recalcular viewport
+        // y que _elementVisible funcione con los datos reales
+        if (mounted) setState(() {});
+      });
     });
   }
 
@@ -435,17 +439,19 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
               // pan del InteractiveViewer (antes: quedaban muertas >10000px).
               InteractiveViewer(
                 transformationController: _transformController,
-                boundaryMargin: const EdgeInsets.all(0),
+                boundaryMargin: const EdgeInsets.all(double.infinity),
                 constrained: false,
                 minScale: 0.1,
                 maxScale: 5.0,
                 panEnabled: !_isDraggingElement,
-                child: SizedBox(
-                  width: world.width,
-                  height: world.height,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
+                child: Transform.translate(
+                  offset: Offset(world.left, world.top),
+                  child: SizedBox(
+                    width: world.width,
+                    height: world.height,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
                       if (!pv.loading)
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -475,9 +481,9 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
                           builder: (context, visible, _) => Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              for (final el in pv.elements.where((e) =>
-                                  e.type != BoardElementType.connector))
-                                if (_elementVisible(el, visible))
+                                for (final el in pv.elements.where((e) =>
+                                    e.type != BoardElementType.connector))
+                                  if (_elementVisible(el, visible, world))
                                   Positioned(
                                     left: el.x - world.left,
                                     top: el.y - world.top,
@@ -488,6 +494,7 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
                         ),
                     ],
                   ),
+                ),
                 ),
               ),
             ],
@@ -1191,9 +1198,10 @@ class _PizarraScreenV2State extends State<PizarraScreenV2> {
   }
 
   /// Virtualización: true si el rect del elemento intersecta el viewport.
-  bool _elementVisible(BoardElementV2 el, Rect viewport) {
+  bool _elementVisible(BoardElementV2 el, Rect viewport, Rect world) {
+    if (viewport == Rect.zero) return true; // Mostrar durante renderizado inicial
     final r = Rect.fromLTWH(
-        el.x, el.y, el.width ?? 180, el.height ?? 110);
+        el.x - world.left, el.y - world.top, el.width ?? 180, el.height ?? 110);
     return r.overlaps(viewport.inflate(400));
   }
 

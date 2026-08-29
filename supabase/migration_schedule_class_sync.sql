@@ -19,5 +19,17 @@ GRANT ALL ON TABLE schedules TO authenticated;
 GRANT ALL ON TABLE class_schedules TO anon;
 GRANT ALL ON TABLE class_schedules TO authenticated;
 
-ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
-ALTER PUBLICATION supabase_realtime ADD TABLE class_schedules;
+-- Realtime (idempotente: ignora si ya son miembros de la publicación)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE class_schedules;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;

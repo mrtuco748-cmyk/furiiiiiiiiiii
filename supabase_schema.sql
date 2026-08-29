@@ -125,20 +125,21 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   UNIQUE(user_id, token)
 );
 
--- 11. NOTIFICATIONS (in-app history)
-CREATE TABLE IF NOT EXISTS notifications (
-  id BIGSERIAL PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) NOT NULL,
-  from_user UUID REFERENCES profiles(id),
-  type TEXT NOT NULL,
-  title TEXT NOT NULL,
-  body TEXT NOT NULL,
-  data JSONB DEFAULT '{}'::jsonb,
-  read BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+ -- 11. NOTIFICATIONS (in-app history)
+ CREATE TABLE IF NOT EXISTS notifications (
+   id BIGSERIAL PRIMARY KEY,
+   user_id UUID REFERENCES profiles(id) NOT NULL,
+   from_user UUID REFERENCES profiles(id),
+   type TEXT NOT NULL,
+   title TEXT NOT NULL,
+   body TEXT NOT NULL,
+   data JSONB DEFAULT '{}'::jsonb,
+   read BOOLEAN DEFAULT false,
+   created_at TIMESTAMPTZ DEFAULT NOW()
+ );
+ ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 
--- 12. COUPLE DATA (shared config)
+ -- 12. COUPLE DATA (shared config)
 CREATE TABLE IF NOT EXISTS couple_data (
   id BIGSERIAL PRIMARY KEY,
   couple_id UUID REFERENCES profiles(id) NOT NULL,
@@ -367,7 +368,8 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
   data JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  is_new BOOLEAN NOT NULL DEFAULT true
+  is_new BOOLEAN NOT NULL DEFAULT true,
+  synced INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_board_elements_v2_board_id

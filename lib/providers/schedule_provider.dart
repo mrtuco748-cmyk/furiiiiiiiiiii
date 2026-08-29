@@ -107,11 +107,15 @@ class ScheduleProvider extends ChangeNotifier {
   }
 
   Future<int> addSchedule(Schedule schedule) async {
+    // Log the payload being sent to Supabase for debugging
+    developer.log('Attempting to add schedule to Supabase: \\${schedule.toSupabaseMap()}');
     int? cloudId;
     try {
       cloudId = await _insertCloud(schedule);
     } catch (e) {
       developer.log('Sync: fallo al subir schedule a Supabase: $e');
+      // Rethrow to allow UI to handle the error appropriately
+      rethrow;
     }
     final insertedId = await _db.insert(
       'schedules',

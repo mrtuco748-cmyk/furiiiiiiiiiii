@@ -46,6 +46,7 @@ class _BrutalGridState extends State<_BrutalGrid>
   bool _showDeck = false;
   bool _showPoemas = false;
   bool _notifDrawer = false;
+  bool _shortcutPanelOpen = false;
   late final AnimationController _drawerCtrl;
   late final Animation<Offset> _drawerSlide;
   late final Animation<double> _drawerFade;
@@ -90,9 +91,18 @@ class _BrutalGridState extends State<_BrutalGrid>
     super.dispose();
   }
 
+  final GlobalKey<_NotificationPanelState> _notifPanelKey = GlobalKey<_NotificationPanelState>();
+
   void _openNotificationDrawer() {
+    if (_shortcutPanelOpen) {
+      _closeShortcutPanel();
+      return;
+    }
     setState(() => _notifDrawer = true);
     _drawerCtrl.forward(from: 0);
+    Future.delayed(const Duration(milliseconds: 50), () {
+      _notifPanelKey.currentState?.refresh();
+    });
   }
 
   void _closeNotificationDrawer() {
@@ -101,31 +111,73 @@ class _BrutalGridState extends State<_BrutalGrid>
     });
   }
 
+  void _openShortcutPanel() {
+    if (_notifDrawer) {
+      _closeNotificationDrawer();
+      return;
+    }
+    setState(() => _shortcutPanelOpen = true);
+    _drawerCtrl.forward(from: 0);
+  }
+
+  void _closeShortcutPanel() {
+    _drawerCtrl.reverse().then((_) {
+      if (mounted) setState(() => _shortcutPanelOpen = false);
+    });
+  }
+
   /// Panel de notificaciones que se desliza desde la izquierda con animación.
-  Widget _notificationDrawer(ThemeSet t) {
-    return Positioned.fill(
+  /// Se posiciona a la altura del botón superior izquierdo.
+  Widget _notificationDrawer(ThemeSet t, double panelHeight, double left, double panelWidth) {
+    final visible = _notifDrawer || _drawerCtrl.isAnimating;
+    if (!visible) return const SizedBox.shrink();
+    return Positioned(
+      left: left, top: 0,
+      width: panelWidth, height: panelHeight,
       child: AnimatedBuilder(
         animation: _drawerCtrl,
         builder: (context, _) {
-          final visible = _notifDrawer || _drawerCtrl.isAnimating;
           return IgnorePointer(
-            ignoring: !visible,
+            ignoring: !(_notifDrawer || _drawerCtrl.isAnimating),
             child: Stack(children: [
               GestureDetector(
                 onTap: _closeNotificationDrawer,
                 behavior: HitTestBehavior.opaque,
                 child: Container(color: Colors.black.withValues(alpha: 0.5 * _drawerFade.value)),
               ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: 0.82,
-                  heightFactor: 1,
-                  child: SlideTransition(
-                    position: _drawerSlide,
-                    child: _NotificationPanel(theme: t, onClose: _closeNotificationDrawer),
-                  ),
-                ),
+              SlideTransition(
+                position: _drawerSlide,
+                child: _NotificationPanel(key: _notifPanelKey, theme: t, onClose: _closeNotificationDrawer),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Panel de accesos rápidos que se desliza desde la izquierda.
+  /// Se posiciona a la altura del botón inferior izquierdo.
+  Widget _shortcutPanelDrawer(ThemeSet t, double panelHeight, double left, double panelWidth) {
+    final visible = _shortcutPanelOpen || _drawerCtrl.isAnimating;
+    if (!visible) return const SizedBox.shrink();
+    return Positioned(
+      left: left, top: panelHeight,
+      width: panelWidth, height: panelHeight,
+      child: AnimatedBuilder(
+        animation: _drawerCtrl,
+        builder: (context, _) {
+          return IgnorePointer(
+            ignoring: !(_shortcutPanelOpen || _drawerCtrl.isAnimating),
+            child: Stack(children: [
+              GestureDetector(
+                onTap: _closeShortcutPanel,
+                behavior: HitTestBehavior.opaque,
+                child: Container(color: Colors.black.withValues(alpha: 0.5 * _drawerFade.value)),
+              ),
+              SlideTransition(
+                position: _drawerSlide,
+                child: _ShortcutPanel(theme: t, onClose: _closeShortcutPanel, onAction: _executeShortcutAction, onConfig: _openShortcutConfig),
               ),
             ]),
           );
@@ -145,6 +197,114 @@ class _BrutalGridState extends State<_BrutalGrid>
 
   void _openSettings() {
     context.push(RouterRoutes.settings, extra: _mode);
+  }
+
+  void _openShortcutConfig() {
+    final t = getTheme(_mode);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: t.a, width: 4),
+        ),
+        title: Text('Crear desde Inicio',
+            style: GoogleFonts.bangers(fontSize: 24, color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            children: [
+               _scBtn(ctx, 'Carta', Icons.edit, () => _executeShortcutAction('create_letter'), t),
+               _scBtn(ctx, 'Nota', Icons.note_add, () => _executeShortcutAction('create_note'), t),
+               _scBtn(ctx, 'Favorito', Icons.add_circle, () => _executeShortcutAction('create_favorite'), t),
+               _scBtn(ctx, 'Evento', Icons.event, () => _executeShortcutAction('create_event'), t),
+               _scBtn(ctx, 'Reto', Icons.flag, () => _executeShortcutAction('create_challenge'), t),
+               _scBtn(ctx, 'Meta', Icons.emoji_events, () => _executeShortcutAction('create_goal'), t),
+               _scBtn(ctx, 'Finanzas', Icons.account_balance_wallet, () => _executeShortcutAction('create_transaction'), t),
+               _scBtn(ctx, 'Pregunta', Icons.chat_bubble_outline, () => _executeShortcutAction('create_question'), t),
+               _scBtn(ctx, 'Galería', Icons.photo_camera_front, () => _executeShortcutAction('create_gallery'), t),
+               _scBtn(ctx, 'Tarea', Icons.task_alt, () => _executeShortcutAction('create_task'), t),
+               _scBtn(ctx, 'Clase', Icons.school, () => _executeShortcutAction('create_class'), t),
+               _scBtn(ctx, 'Recordator', Icons.alarm, () => _executeShortcutAction('create_reminder'), t),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _executeShortcutAction(String action) {
+    switch (action) {
+      case 'create_letter':
+        context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode});
+        break;
+      case 'create_note':
+        context.push(RouterRoutes.pizarra, extra: {'createNote': true});
+        break;
+      case 'create_favorite':
+        context.push(RouterRoutes.favoritos, extra: {'create': true});
+        break;
+      case 'create_event':
+        context.push(RouterRoutes.scheduleForm, extra: {'create': true});
+        break;
+      case 'create_challenge':
+        context.push(RouterRoutes.retos, extra: {'create': true});
+        break;
+      case 'create_goal':
+        context.push(RouterRoutes.metas, extra: {'create': true});
+        break;
+      case 'create_transaction':
+        context.push(RouterRoutes.finanzas, extra: {'create': true});
+        break;
+      case 'create_question':
+        context.push(RouterRoutes.trivia, extra: {'create': true});
+        break;
+      case 'create_gallery':
+        context.push(RouterRoutes.galeria, extra: {'create': true});
+        break;
+      case 'create_task':
+        // Las tareas no tienen ruta propia aún; ir a configuración
+        _openSettings();
+        break;
+      case 'create_class':
+        context.push(RouterRoutes.calendarMosaico, extra: {'createClass': true});
+        break;
+      case 'create_reminder':
+        context.push(RouterRoutes.calendarMosaico, extra: {'createReminder': true});
+        break;
+      default:
+        break;
+    }
+  }
+
+  Widget _scBtn(BuildContext ctx, String name, IconData icon, VoidCallback onTap, ThemeSet t) {
+    return TapTile(
+      onTap: () {
+        HapticFeedback.heavyImpact();
+        onTap();
+        Navigator.pop(ctx);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: t.c,
+          border: Border.all(color: t.c, width: 2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: t.dark, size: 28),
+            const SizedBox(height: 4),
+            Text(name, style: GoogleFonts.bangers(color: t.dark, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
   }
 
   ThemeSet mutedTheme(ThemeSet t) {
@@ -229,6 +389,7 @@ class _BrutalGridState extends State<_BrutalGrid>
   bool get _canPop {
     final deckPv = context.read<DeckProvider>();
     return !_notifDrawer &&
+        !_shortcutPanelOpen &&
         !_showDeck &&
         !_showPoemas &&
         deckPv.pendingMatch == null;
@@ -239,6 +400,10 @@ class _BrutalGridState extends State<_BrutalGrid>
   void _handleBack() {
     if (_notifDrawer) {
       _closeNotificationDrawer();
+      return;
+    }
+    if (_shortcutPanelOpen) {
+      _closeShortcutPanel();
       return;
     }
     if (_showDeck) {
@@ -296,7 +461,7 @@ final raw = getTheme(_mode);
                   child: coupleTile(couplePv, t, onTap: () => _openLogros()));
               },
             ),
-            block(0, 0, c1, y5 + rh[5], t.d, LeftButtons(t: t, onTopTap: () {}, onBottomTap: () {}, onSwipeRight: _openNotificationDrawer, onDown: _confettiGlobal), _confettiAt, borderWidth: 4),
+             block(0, 0, c1, y5 + rh[5], t.d, LeftButtons(t: t, onTopTap: _openNotificationDrawer, onBottomTap: _openShortcutPanel, onSwipeRight: _openNotificationDrawer, onDown: _confettiGlobal), _confettiAt, borderWidth: 4),
             block(x2, 0, x4 - x2, rh[0], t.a,
               Center(child: Text(AppState.identity == 'Rocio' ? 'Mis Cosas' : 'Herramientas',
                 style: GoogleFonts.bangers(color: t.light, fontWeight: FontWeight.bold, fontSize: w * 0.055))),
@@ -365,7 +530,8 @@ final raw = getTheme(_mode);
                   onClose: () => setState(() => _showPoemas = false),
                 ),
               ),
-            _notificationDrawer(t),
+             _notificationDrawer(t, (y5 + rh[5]) / 2, 0, w * 0.7),
+            _shortcutPanelDrawer(t, (y5 + rh[5]) / 2, 0, w * 0.7),
             Consumer<DeckProvider>(
               builder: (context, deckPv, _) {
                 final match = deckPv.pendingMatch;
@@ -588,7 +754,7 @@ Widget tbLine(ThemeSet t) {
 class _NotificationPanel extends StatefulWidget {
   final ThemeSet theme;
   final VoidCallback onClose;
-  const _NotificationPanel({required this.theme, required this.onClose});
+  const _NotificationPanel({Key? key, required this.theme, required this.onClose}) : super(key: key);
 
   @override
   State<_NotificationPanel> createState() => _NotificationPanelState();
@@ -604,6 +770,8 @@ class _NotificationPanelState extends State<_NotificationPanel> {
     super.initState();
     _load();
   }
+
+  void refresh() => _load();
 
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
@@ -739,4 +907,91 @@ class _NotificationPanelState extends State<_NotificationPanel> {
       },
     );
   }
+}
+
+class _ShortcutPanel extends StatelessWidget {
+  final ThemeSet theme;
+  final VoidCallback onClose;
+  final ValueChanged<String> onAction;
+  final VoidCallback onConfig;
+
+  const _ShortcutPanel({
+    super.key,
+    required this.theme,
+    required this.onClose,
+    required this.onAction,
+    required this.onConfig,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = theme;
+    return Material(
+      color: const Color(0xFF101010),
+      child: SafeArea(child: Column(children: [
+        Container(height: 1, color: t.d),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Row(children: [
+            Icon(Icons.shortcut, color: t.a, size: 24),
+            const SizedBox(width: 8),
+            Text('Crear', style: GoogleFonts.bangers(color: t.light, fontSize: 18, fontWeight: FontWeight.w900)),
+            const Spacer(),
+            TapTile(onTap: onConfig, child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.settings, color: t.dark, size: 24),
+            )),
+            const SizedBox(width: 4),
+            TapTile(onTap: onClose, child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.close, color: t.dark, size: 24),
+            )),
+          ]),
+        ),
+        Expanded(
+          child: GridView.count(
+            crossAxisCount: 3,
+            padding: const EdgeInsets.all(12),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            children: [
+              _scItem(Icons.edit, 'Carta', t.a, () => onAction('create_letter')),
+              _scItem(Icons.note_add, 'Nota', t.c, () => onAction('create_note')),
+              _scItem(Icons.add_circle, 'Favorito', t.c, () => onAction('create_favorite')),
+              _scItem(Icons.event, 'Evento', t.b, () => onAction('create_event')),
+              _scItem(Icons.flag, 'Reto', t.d, () => onAction('create_challenge')),
+              _scItem(Icons.emoji_events, 'Meta', t.e, () => onAction('create_goal')),
+              _scItem(Icons.account_balance_wallet, 'Finanzas', t.d, () => onAction('create_transaction')),
+              _scItem(Icons.chat_bubble_outline, 'Pregunta', t.a, () => onAction('create_question')),
+              _scItem(Icons.photo_camera_front, 'Galería', t.b, () => onAction('create_gallery')),
+              _scItem(Icons.task_alt, 'Tarea', t.c, () => onAction('create_task')),
+              _scItem(Icons.school, 'Clase', t.b, () => onAction('create_class')),
+              _scItem(Icons.alarm, 'Recordator', t.a, () => onAction('create_reminder')),
+            ],
+          ),
+        ),
+      ])),
+    );
+  }
+}
+
+Widget _scItem(IconData icon, String label, Color color, VoidCallback onTap) {
+  return TapTile(
+    onTap: onTap,
+    child: Container(
+      decoration: BoxDecoration(
+        color: color,
+        border: Border.all(color: color, width: 2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: const Color(0xFFFFFFFF), size: 28),
+          const SizedBox(height: 4),
+          Text(label, style: GoogleFonts.bangers(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900), textAlign: TextAlign.center),
+        ],
+      ),
+    ),
+  );
 }

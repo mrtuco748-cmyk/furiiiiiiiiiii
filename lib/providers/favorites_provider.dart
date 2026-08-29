@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
 import '../app_state.dart';
+import '../services/local_cache.dart';
 
 class FavoriteItem {
   final int? id;
@@ -180,7 +181,7 @@ class FavoritesProvider extends ChangeNotifier {
     if (event == PostgresChangeEvent.delete) {
       final id = oldRecord?['id'];
       if (id != null) {
-        _items.removeWhere((i) => i.id == id);
+        _items = _items.where((i) => i.id != id).toList();
         notifyListeners();
       }
       return;
@@ -194,7 +195,9 @@ class FavoritesProvider extends ChangeNotifier {
     if (idx == -1) {
       _items = [item, ..._items];
     } else {
-      _items[idx] = item;
+      final copy = List<FavoriteItem>.from(_items);
+      copy[idx] = item;
+      _items = copy;
     }
     notifyListeners();
   }
@@ -202,7 +205,16 @@ class FavoritesProvider extends ChangeNotifier {
   Future<void> load() async {
     _loading = true;
     _error = null;
-    notifyListeners();
+    // Cache local (offline-first): mostramos lo último conocido de inmediato
+    // para no mostrar un tile de carga al entrar a la sección.
+    final cached = await LocalCache.getList('cache_favorites');
+    if (cached.isNotEmpty) {
+      _items = cached
+          .map((m) => FavoriteItem.fromMap(m))
+          .toList();
+      _loading = false;
+      notifyListeners();
+    }
     try {
       final res = await SupabaseConfig.client
           .from('favorites')
@@ -213,11 +225,13 @@ class FavoritesProvider extends ChangeNotifier {
       _items = (res as List)
           .map((e) => FavoriteItem.fromMap(e as Map<String, dynamic>))
           .toList();
+      await LocalCache.setList(
+          'cache_favorites', _items.map((i) => i.toMap()).toList());
       _error = null;
       if (_channel == null) _subscribeRealtime();
     } catch (e) {
-      _items = [];
-      _error = 'No se pudieron cargar los favoritos';
+      // Ante un fallo de red dejamos el cache (si lo había) y avisamos.
+      if (_items.isEmpty) _error = 'No se pudieron cargar los favoritos';
       debugPrint('FavoritesProvider.load error: $e');
     }
     _loading = false;

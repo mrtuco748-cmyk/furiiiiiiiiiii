@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../services/sound_service.dart';
+
 class SwapWidget extends StatefulWidget {
   final Widget iconChild;
   final Widget swapChild;
@@ -63,6 +65,7 @@ class _SwapWidgetState extends State<SwapWidget> {
   void _showSwapContent() {
     if (!mounted) return;
     setState(() => _showingSwap = true);
+    SoundService().swoosh();
     widget.onSwapShow?.call();
     _timer = Timer(widget.swapDuration, () {
       if (!mounted) return;

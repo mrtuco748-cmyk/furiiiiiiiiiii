@@ -134,7 +134,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   }
 
   Widget _monthNav(double w, double h) {
-    final months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+    final months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     return Positioned(left: w * 0.03, top: h * 0.005, width: w * 0.94, height: h * 0.05,
       child: Row(children: [
         TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.chevron_left, color: _c, size: 26))),
@@ -166,7 +166,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   }
 
   Widget _dayNameRow(double w, double dh) {
-    final days = ['L','M','M','J','V','S','D'];
+    final days = ['L','Ma','Mi','J','V','S','D'];
     return SizedBox(width: w, height: dh,
       child: Row(children: days.map((d) => SizedBox(width: w / 7, child: Center(child: Text(d, style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.35), fontSize: 9, letterSpacing: 1))))).toList()),
     );
@@ -220,7 +220,6 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   Widget _dayCell(int day, Color bg, {List<Schedule>? events, bool isToday = false, bool isSelected = false, bool isOutside = false, int num = 0}) {
     if (day == 0) return const SizedBox.shrink();
     final hasEvents = events != null && events.isNotEmpty;
-    final hasClasses = events?.any((e) => e.type == 'Clase') ?? false;
 
     // Minimalista: celda neutra; hoy = borde acento; seleccionado = acento lleno.
     final Color cellBg;
@@ -263,14 +262,40 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
         ),
         child: Stack(children: [
           Center(child: Text('$day', style: GoogleFonts.bangers(color: textColor, fontSize: 13))),
-          if (hasEvents || hasClasses)
-            Positioned(bottom: 3, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasClasses)
-                  Container(width: 4, height: 4, margin: const EdgeInsets.symmetric(horizontal: 1), decoration: const BoxDecoration(color: _c, shape: BoxShape.circle)),
-                ...events!.where((e) => e.type != 'Clase').take(3).map((e) => Container(width: 4, height: 4, margin: const EdgeInsets.symmetric(horizontal: 1), decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle))),
-              ],
-            )),
+          if (hasEvents)
+            Positioned(
+              bottom: 3,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Class events: use each class's color
+                  ...events!
+                      .where((e) => e.type == 'Clase')
+                      .take(3)
+                      .map((e) => Container(
+                            width: 4,
+                            height: 4,
+                            margin: const EdgeInsets.symmetric(horizontal: 1),
+                            decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle),
+                          ))
+                      .toList(),
+                  // Non‑class events: keep existing behavior
+                  ...events!
+                      .where((e) => e.type != 'Clase')
+                      .take(3)
+                      .map((e) => Container(
+                            width: 4,
+                            height: 4,
+                            margin: const EdgeInsets.symmetric(horizontal: 1),
+                            decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle),
+                          ))
+                      .toList(),
+                ],
+              ),
+            ),
         ]),
       ),
     );

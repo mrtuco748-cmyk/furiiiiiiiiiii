@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/trivia.dart';
 import '../../providers/trivia_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_feedback.dart';
 import '../../widgets/loca_screen.dart';
 import '../../widgets/tap_tile.dart';
 
@@ -54,10 +55,24 @@ class _TriviaScreenState extends State<TriviaScreen> {
             icon: answered ? Icons.check_circle : Icons.interpreter_mode,
             color: const Color(0xFF9D00FF),
             iconColor: answered ? const Color(0xFF39FF14) : Colors.white,
-            label: 'Trivia',
+            label: 'Trivias',
             onTap: () => setState(() => _showDeck = true),
             swapBuilder: q == null ? null : (_) => _scoreSwap(pv, t),
             autoPlaySwap: q != null && pv.bothAnsweredToday,
+          ),
+          LocaEntry(
+            icon: Icons.add,
+            color: const Color(0xFF9D00FF),
+            iconColor: Colors.white,
+            label: 'Agregar',
+            panel: 1,
+          ),
+          LocaEntry(
+            icon: Icons.history,
+            color: const Color(0xFF9D00FF),
+            iconColor: Colors.white,
+            label: 'Historial',
+            panel: 2,
           ),
           if (pv.hasError)
             LocaEntry(
@@ -72,7 +87,11 @@ class _TriviaScreenState extends State<TriviaScreen> {
           seed: 83,
           theme: t,
           entries: entries,
-          panels: [(_, close) => _gamePanel(close, t, pv, q)],
+          panels: [
+            (_, close) => _gamePanel(close, t, pv, q),
+            (_, close) => _addQuestionPanel(close, t, pv),
+            (_, close) => _historyPanel(close, t, pv),
+          ],
         );
       },
     );
@@ -224,6 +243,188 @@ class _TriviaScreenState extends State<TriviaScreen> {
     await pv.submit(questionId: q!.id!, answer: shownAnswer, guess: shownGuess);
     if (!mounted) return;
     setState(() { _saving = false; _myAnswer = null; _myGuess = null; });
+  }
+
+  Widget _addQuestionPanel(VoidCallback close, ThemeSet t, TriviaProvider pv) {
+    return LocaScreen.panel(
+      color: const Color(0xFF2A2A2A),
+      borderColor: const Color(0xFF9D00FF),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+          child: Row(children: [
+            Icon(Icons.add, color: const Color(0xFF9D00FF), size: 22),
+            const Spacer(),
+            LocaScreen.closeIcon(close, const Color(0xFF9D00FF), Icons.close),
+          ]),
+        ),
+        Expanded(child: _AddQuestionPanel(theme: t, provider: pv, onClose: close)),
+      ]),
+    );
+  }
+
+  Widget _historyPanel(VoidCallback close, ThemeSet t, TriviaProvider pv) {
+    final byQuestion = <int, TriviaQuestion>{
+      for (final q in pv.questions)
+        if (q.id != null) q.id!: q
+    };
+    final partnerAnswer = <int, String>{
+      for (final a in pv.answers)
+        if (a.userId == pv.partnerId && a.answer.isNotEmpty) a.questionId: a.answer
+    };
+    final myAnswers = pv.answers.where((a) => a.userId == pv.myId).toList();
+    myAnswers.sort((a, b) => (b.date ?? '').compareTo(a.date ?? ''));
+    return LocaScreen.panel(
+      color: const Color(0xFF2A2A2A),
+      borderColor: const Color(0xFF9D00FF),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+          child: Row(children: [
+            Icon(Icons.history, color: const Color(0xFF9D00FF), size: 22),
+            const Spacer(),
+            LocaScreen.closeIcon(close, const Color(0xFF9D00FF), Icons.close),
+          ]),
+        ),
+        Expanded(
+          child: myAnswers.isEmpty
+              ? const Center(child: Icon(Icons.history, color: Colors.white54, size: 56))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: myAnswers.length,
+                  separatorBuilder: (c, i) => const SizedBox(height: 10),
+                  itemBuilder: (c, i) => _historyRow(
+                    t,
+                    byQuestion[myAnswers[i].questionId],
+                    myAnswers[i],
+                    partnerAnswer[myAnswers[i].questionId],
+                  ),
+                ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _historyRow(ThemeSet t, TriviaQuestion? q, TriviaAnswer a, String? partnerAnswer) {
+    final guessed = a.guess;
+    final hit = partnerAnswer != null && guessed != null && partnerAnswer == guessed;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111111),
+        border: Border.all(color: const Color(0xFF111111), width: 2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(q?.question ?? 'Pregunta',
+            style: GoogleFonts.bangers(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text('Tu respuesta: ${a.answer}', style: GoogleFonts.bangers(color: Colors.white70, fontSize: 12)),
+        Text('Tu predicción: ${guessed ?? '-'}', style: GoogleFonts.bangers(color: Colors.white70, fontSize: 12)),
+        Text('Pareja: ${partnerAnswer ?? 'sin responder'}', style: GoogleFonts.bangers(color: Colors.white70, fontSize: 12)),
+        if (guessed != null && partnerAnswer != null)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: hit ? const Color(0xFF39FF14) : const Color(0xFFFF0000),
+              border: Border.all(color: hit ? const Color(0xFF39FF14) : const Color(0xFFFF0000), width: 2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(hit ? 'Acertaste!' : 'No acertaste',
+                style: GoogleFonts.bangers(color: hit ? const Color(0xFF0A0A0A) : Colors.white, fontSize: 12)),
+          ),
+      ]),
+    );
+  }
+}
+
+class _AddQuestionPanel extends StatefulWidget {
+  final ThemeSet theme;
+  final TriviaProvider provider;
+  final VoidCallback onClose;
+  const _AddQuestionPanel({required this.theme, required this.provider, required this.onClose});
+
+  @override
+  State<_AddQuestionPanel> createState() => _AddQuestionPanelState();
+}
+
+class _AddQuestionPanelState extends State<_AddQuestionPanel> {
+  final _qCtrl = TextEditingController();
+  final List<TextEditingController> _optCtrls = List.generate(4, (_) => TextEditingController());
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _qCtrl.dispose();
+    for (final c in _optCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  List<String> get _opts => _optCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+  bool get _canSave => _qCtrl.text.trim().isNotEmpty && _opts.length >= 2 && !_saving;
+
+  InputDecoration _dec(ThemeSet t, String label) => InputDecoration(
+        labelText: label,
+        labelStyle: GoogleFonts.bangers(color: t.c, fontSize: 13),
+        filled: true,
+        fillColor: const Color(0xFF111111),
+        border: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF111111), width: 2), borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF111111), width: 2), borderRadius: BorderRadius.circular(10)),
+        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: t.c, width: 2), borderRadius: BorderRadius.circular(10)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      );
+
+  Future<void> _save() async {
+    if (!_canSave) return;
+    setState(() => _saving = true);
+    final ok = await widget.provider.addQuestion(question: _qCtrl.text.trim(), options: _opts);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) {
+      AppFeedback.saved(context, 'Pregunta agregada');
+      widget.onClose();
+    } else {
+      AppFeedback.error(context, 'No se pudo agregar');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.theme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextField(controller: _qCtrl, maxLines: 3, maxLength: 200, decoration: _dec(t, 'Pregunta'),
+            style: GoogleFonts.bangers(color: Colors.white, fontSize: 14)),
+        const SizedBox(height: 12),
+        Text('Opciones', style: GoogleFonts.bangers(color: t.c, fontSize: 14)),
+        const SizedBox(height: 8),
+        for (var i = 0; i < 4; i++) ...[
+          TextField(controller: _optCtrls[i], maxLength: 60, decoration: _dec(t, 'Opción ${i + 1}'),
+              style: GoogleFonts.bangers(color: Colors.white, fontSize: 13)),
+          const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 8),
+        TapTile(
+          onTap: _save,
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _canSave ? t.c : const Color(0xFF111111),
+              border: Border.all(color: _canSave ? t.c : const Color(0xFF111111), width: 3),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(
+              child: Icon(_saving ? Icons.hourglass_top : Icons.check,
+                  color: _canSave ? Colors.white : const Color(0xFF888888), size: 22),
+            ),
+          ),
+        ),
+      ]),
+    );
   }
 }
 

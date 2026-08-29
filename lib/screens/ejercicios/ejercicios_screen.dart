@@ -27,10 +27,10 @@ class EjerciciosScreen extends StatefulWidget {
 
 class _EjerciciosScreenState extends State<EjerciciosScreen> {
   static const _bg = Color(0xFF0A0A0A);
-  static const _lima = Color(0xFF39FF14);
-  static const _panel = Color(0xFF0E3A0E);
-  static const _panelLight = Color(0xFF175217);
-  static const _darkText = Color(0xFF062B06);
+  static const _cyan = Color(0xFF00D4FF);
+  static const _panel = Color(0xFF004466);
+  static const _panelLight = Color(0xFF006688);
+  static const _darkText = Color(0xFF002233);
   static const _white = Color(0xFFFFFFFF);
   static const _red = Color(0xFFFF4444);
   static const _facuColor = Color(0xFF00E5FF);
@@ -87,8 +87,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       height: h * 0.07,
       margin: EdgeInsets.all(w * 0.02),
       decoration: BoxDecoration(
-        color: _lima,
-        border: Border.all(color: _lima, width: 4),
+        color: _cyan,
+        border: Border.all(color: _cyan, width: 4),
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
           BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0),
@@ -142,8 +142,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: selected ? _lima : _panel,
-          border: Border.all(color: selected ? _lima : _panel, width: 3),
+          color: selected ? _cyan : _panel,
+          border: Border.all(color: selected ? _cyan : _panel, width: 3),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -172,7 +172,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
   Widget _body(double w, double h) {
     final pv = context.watch<WorkoutProvider>();
     if (pv.loading) {
-      return Center(child: CircularProgressIndicator(color: _lima));
+      return Center(child: CircularProgressIndicator(color: _cyan));
     }
     if (pv.hasError) {
       return _errorView(pv.error ?? 'Error', pv);
@@ -285,7 +285,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       decoration: _panelDeco(),
       child: Row(
         children: [
-          const Icon(Icons.local_fire_department, color: _lima, size: 28),
+          const Icon(Icons.local_fire_department, color: _cyan, size: 28),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -327,8 +327,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isToday ? _lima : _panel,
-                  border: Border.all(color: isToday ? _lima : _panel, width: 2),
+                  color: isToday ? _cyan : _panel,
+                  border: Border.all(color: isToday ? _cyan : _panel, width: 2),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -356,7 +356,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 decoration: _panelDeco(),
                 child: Row(
                   children: [
-                    const Icon(Icons.add, color: _lima, size: 18),
+                    const Icon(Icons.add, color: _cyan, size: 18),
                     const SizedBox(width: 6),
                     Text(
                       'Asignar rutina',
@@ -372,7 +372,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           else ...[
             Row(
               children: [
-                const Icon(Icons.list_alt, color: _lima, size: 18),
+                const Icon(Icons.list_alt, color: _cyan, size: 18),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -459,8 +459,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         width: 30,
         height: 30,
         decoration: BoxDecoration(
-          color: done ? _lima : _panel,
-          border: Border.all(color: done ? _lima : _panel, width: 2),
+          color: done ? _cyan : _panel,
+          border: Border.all(color: done ? _cyan : _panel, width: 2),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(Icons.check, color: done ? _darkText : _white, size: 18),
@@ -493,7 +493,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               Text(
                 seriesTxt,
                 style: GoogleFonts.bangers(
-                  color: _lima,
+                  color: _cyan,
                   fontSize: 12,
                 ),
               ),
@@ -501,7 +501,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               const SizedBox(width: 6),
               Text(
                 weightTxt,
-                style: GoogleFonts.bangers(color: _lima, fontSize: 12),
+                style: GoogleFonts.bangers(color: _cyan, fontSize: 12),
               ),
             ],
           ],
@@ -579,7 +579,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 if (log.summary.isNotEmpty)
                   Text(
                     log.summary,
-                    style: GoogleFonts.bangers(color: _lima, fontSize: 12),
+                    style: GoogleFonts.bangers(color: _cyan, fontSize: 12),
                   ),
               ],
             ),
@@ -650,7 +650,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         padding: const EdgeInsets.all(12),
         decoration: _panelDeco(
           color: c.isCompleted ? _panelLight : _panel,
-          borderColor: c.isApproved ? _lima : null,
+          borderColor: c.isApproved ? _cyan : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -661,7 +661,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                   c.isCompleted
                       ? Icons.emoji_events
                       : (c.isApproved ? Icons.flag : Icons.outlined_flag),
-                  color: c.isCompleted ? _lima : _white,
+                  color: c.isCompleted ? _cyan : _white,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -771,7 +771,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                   Text(
                     'Por grupo muscular',
                     style: GoogleFonts.bangers(
-                      color: _lima,
+                      color: _cyan,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
@@ -794,7 +794,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                           Text(
                             '${m.value}',
                             style: GoogleFonts.bangers(
-                              color: _lima,
+                              color: _cyan,
                               fontSize: 12,
                             ),
                           ),
@@ -815,7 +815,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       decoration: _panelDeco(),
       child: Row(
         children: [
-          Icon(icon, color: _lima, size: 22),
+          Icon(icon, color: _cyan, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -826,7 +826,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           Text(
             value,
             style: GoogleFonts.bangers(
-              color: _lima,
+              color: _cyan,
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
@@ -857,8 +857,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           width: w * 0.13,
           height: w * 0.13,
           decoration: BoxDecoration(
-            color: _lima,
-            border: Border.all(color: _lima, width: 3),
+            color: _cyan,
+            border: Border.all(color: _cyan, width: 3),
             borderRadius: BorderRadius.circular(16),
           ),
           child: const Icon(Icons.add, color: _darkText, size: 30),
@@ -952,8 +952,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: active ? _lima : _panelLight,
-              border: Border.all(color: _lima, width: 1.5),
+              color: active ? _cyan : _panelLight,
+              border: Border.all(color: _cyan, width: 1.5),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(n, style: GoogleFonts.bangers(color: _white, fontSize: 11)),
@@ -991,9 +991,9 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             backgroundColor: _panel,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
-              side: const BorderSide(color: _lima, width: 4),
+              side: const BorderSide(color: _cyan, width: 4),
             ),
-            title: const Icon(Icons.fitness_center, color: _lima, size: 30),
+            title: const Icon(Icons.fitness_center, color: _cyan, size: 30),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1020,7 +1020,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                                   const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: _panelLight,
-                                border: Border.all(color: _lima, width: 1.5),
+                                border: Border.all(color: _cyan, width: 1.5),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(n,
@@ -1051,7 +1051,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                           ),
                           Text(_itemSummary(it),
                               style: GoogleFonts.bangers(
-                                  color: _lima, fontSize: 11)),
+                                  color: _cyan, fontSize: 11)),
                           TapTile(
                             onTap: () => setLocal(() => items.remove(it)),
                             child: const Padding(
@@ -1075,10 +1075,10 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                       decoration: BoxDecoration(
                         color: _panelLight,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: _lima, width: 1.5),
+                        border: Border.all(color: _cyan, width: 1.5),
                       ),
                       child: const Center(
-                          child: Icon(Icons.add, color: _lima, size: 20)),
+                          child: Icon(Icons.add, color: _cyan, size: 20)),
                     ),
                   ),
                 ],
@@ -1108,8 +1108,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: _lima,
-                    border: Border.all(color: _lima, width: 2),
+                    color: _cyan,
+                    border: Border.all(color: _cyan, width: 2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.check, color: _darkText, size: 20),
@@ -1175,7 +1175,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       ),
       title: Row(
         children: [
-          const Icon(Icons.fitness_center, color: _lima, size: 22),
+          const Icon(Icons.fitness_center, color: _cyan, size: 22),
           const SizedBox(width: 8),
           Text(
             title,
@@ -1216,8 +1216,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           child: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: _lima,
-              border: Border.all(color: _lima, width: 2),
+              color: _cyan,
+              border: Border.all(color: _cyan, width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.check, color: _darkText, size: 20),
@@ -1282,7 +1282,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: _lima, width: 3),
+        borderSide: const BorderSide(color: _cyan, width: 3),
       ),
     );
   }
@@ -1315,7 +1315,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                       Text(
                         live.name,
                         style: GoogleFonts.bangers(
-                          color: _lima,
+                          color: _cyan,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1369,8 +1369,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: _lima,
-                        border: Border.all(color: _lima, width: 2),
+                        color: _cyan,
+                        border: Border.all(color: _cyan, width: 2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.add, color: _darkText, size: 22),
@@ -1528,7 +1528,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                         child: Text(
                           live.exerciseName,
                           style: GoogleFonts.bangers(
-                            color: _lima,
+                            color: _cyan,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -1550,7 +1550,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                         },
                         child: const Padding(
                           padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.trending_up, color: _lima, size: 20),
+                          child: Icon(Icons.trending_up, color: _cyan, size: 20),
                         ),
                       ),
                       if (live.id != null) ...[
@@ -1668,13 +1668,13 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           _stat('PRIMERO', fmt(fw)),
           _stat('ÚLTIMO', fmt(lw)),
           _stat('AVANCE', '${delta >= 0 ? '+' : ''}${fmt(delta)}',
-              color: delta >= 0 ? _lima : _red),
+              color: delta >= 0 ? _cyan : _red),
         ]),
       ),
       const SizedBox(height: 8),
       Text('Historial de mejora',
           style: GoogleFonts.bangers(
-              color: _lima, fontSize: 12, fontWeight: FontWeight.bold)),
+              color: _cyan, fontSize: 12, fontWeight: FontWeight.bold)),
       const SizedBox(height: 4),
       for (final l in all.reversed) _improveRow(l),
     ]);
@@ -1684,7 +1684,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     return Column(children: [
       Text(value,
           style: GoogleFonts.bangers(
-              color: color ?? _lima, fontSize: 16, fontWeight: FontWeight.w900)),
+              color: color ?? _cyan, fontSize: 16, fontWeight: FontWeight.w900)),
       Text(label,
           style: GoogleFonts.bangers(
               color: _white.withValues(alpha: 0.55), fontSize: 9)),
@@ -1710,7 +1710,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           Text(seriesTxt,
               style: GoogleFonts.bangers(color: _white, fontSize: 12)),
         const SizedBox(width: 8),
-        Text(weightTxt, style: GoogleFonts.bangers(color: _lima, fontSize: 13)),
+        Text(weightTxt, style: GoogleFonts.bangers(color: _cyan, fontSize: 13)),
       ]),
     );
   }
@@ -1800,7 +1800,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                         onTap: () => _customReactionDialog(
                             (key) async => onReact(key)),
                         child: const Icon(Icons.add_reaction,
-                            color: _lima, size: 26),
+                            color: _cyan, size: 26),
                       ),
                     ],
                   ),
@@ -1838,7 +1838,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           ),
           TapTile(
             onTap: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Icon(Icons.check, color: _lima, size: 20),
+            child: const Icon(Icons.check, color: _cyan, size: 20),
           ),
         ],
       ),
@@ -1861,7 +1861,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: _panelLight,
-                border: Border.all(color: _lima, width: 2),
+                border: Border.all(color: _cyan, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -1903,7 +1903,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                         child: Text(
                           live.title,
                           style: GoogleFonts.bangers(
-                            color: _lima,
+                            color: _cyan,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -1947,7 +1947,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                           live.approvedByUser(pv.myId)
                               ? Icons.undo
                               : Icons.how_to_reg,
-                          live.approvedByUser(pv.myId) ? _lima : _panelLight,
+                          live.approvedByUser(pv.myId) ? _cyan : _panelLight,
                           _white,
                           () async {
                             if (live.id == null) return;
@@ -1962,7 +1962,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                           live.completedByUser(pv.myId)
                               ? Icons.undo
                               : Icons.emoji_events,
-                          live.completedByUser(pv.myId) ? _lima : _panelLight,
+                          live.completedByUser(pv.myId) ? _cyan : _panelLight,
                           live.completedByUser(pv.myId) ? _darkText : _white,
                           () async {
                             if (live.id == null) return;
@@ -2096,7 +2096,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       children: [
         Row(
           children: [
-            const Icon(Icons.chat_bubble_outline, color: _lima, size: 18),
+            const Icon(Icons.chat_bubble_outline, color: _cyan, size: 18),
             const SizedBox(width: 6),
             Text(
               'Comentarios',
@@ -2183,8 +2183,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: _lima,
-                  border: Border.all(color: _lima, width: 2),
+                  color: _cyan,
+                  border: Border.all(color: _cyan, width: 2),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.send, color: _darkText, size: 18),

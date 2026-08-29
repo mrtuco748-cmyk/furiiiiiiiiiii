@@ -237,6 +237,43 @@ class TriviaProvider extends ChangeNotifier {
     }
   }
 
+  // ─── CREAR PREGUNTA ───────────────────────────────────────────
+
+  /// Crea una pregunta nueva en el banco (la pareja la ve en tiempo real).
+  Future<bool> addQuestion({
+    required String question,
+    required List<String> options,
+  }) async {
+    _error = null;
+    try {
+      final cleaned = options.where((o) => o.trim().isNotEmpty).toList();
+      if (question.trim().isEmpty || cleaned.length < 2) return false;
+      final res = await SupabaseConfig.client
+          .from(_qTable)
+          .insert({
+            'question': question.trim(),
+            'options': cleaned.map((o) => o.trim()).toList(),
+          })
+          .select()
+          .timeout(const Duration(seconds: 10));
+      if (res.isNotEmpty) {
+        _questions.add(
+          TriviaQuestion.fromMap(Map<String, dynamic>.from(res.first as Map)),
+        );
+        _questions.sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
+      } else {
+        await _loadQuestions();
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'No se pudo crear la pregunta';
+      developer.log('TriviaProvider.addQuestion error: $e');
+      notifyListeners();
+      return false;
+    }
+  }
+
   // ─── REALTIME ─────────────────────────────────────────────────
 
   void _subscribeRealtime() {
@@ -249,7 +286,18 @@ class TriviaProvider extends ChangeNotifier {
           table: _aTable,
           callback: (_) => _reloadAnswers(),
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: _qTable,
+          callback: (_) => _reloadQuestions(),
+        )
         .subscribe();
+  }
+
+  Future<void> _reloadQuestions() async {
+    await _loadQuestions();
+    notifyListeners();
   }
 
   Future<void> _reloadAnswers() async {

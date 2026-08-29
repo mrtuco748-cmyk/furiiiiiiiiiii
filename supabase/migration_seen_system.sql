@@ -7,3 +7,6 @@ ALTER TABLE challenges
 
 ALTER TABLE letters
   ADD COLUMN IF NOT EXISTS seen_by JSONB DEFAULT '[]'::jsonb;
+
+ALTER TABLE letters
+  ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false;

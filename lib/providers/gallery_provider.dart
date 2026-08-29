@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
 import '../app_state.dart';
+import '../services/local_cache.dart';
 
 class GalleryComment {
   final int? id;
@@ -128,22 +129,29 @@ class GalleryProvider extends ChangeNotifier {
       },
     ).subscribe();
   }
-
   Future<void> load() async {
-    _loading = true; _error = null; notifyListeners();
+    _loading = true;
+    _error = null;
+    // Cache local (offline-first): mostramos lo último conocido de inmediato.
+    final cached = await LocalCache.getList('cache_gallery');
+    if (cached.isNotEmpty) {
+      _items = cached.map((m) => GalleryItem.fromMap(m)).toList();
+      _loading = false;
+      notifyListeners();
+    }
     try {
       final res = await SupabaseConfig.client.from('gallery').select()
           .order('created_at', ascending: false).limit(50).timeout(const Duration(seconds: 10));
       _items = (res as List).map((e) => GalleryItem.fromMap(e as Map<String, dynamic>)).toList();
+      await LocalCache.setList(
+          'cache_gallery', _items.map((i) => i.toMap()).toList());
       if (_channel == null) _subscribeRealtime();
     } catch (e) {
-      _items = [];
-      _error = 'No se pudieron cargar las fotos';
+      if (_items.isEmpty) _error = 'No se pudieron cargar las fotos';
       debugPrint('GalleryProvider.load error: $e');
     }
     _loading = false; notifyListeners();
   }
-
   Future<void> uploadAndAdd(String filePath, {String? album, String? label}) async {
     _error = null;
     try {
