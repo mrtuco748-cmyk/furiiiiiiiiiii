@@ -44,12 +44,16 @@ END $$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'couple_rewards') THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE couple_rewards;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'couple_points') THEN
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE couple_points;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;
 
 GRANT ALL ON couple_rewards TO anon, authenticated;

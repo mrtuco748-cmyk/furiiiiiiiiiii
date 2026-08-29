@@ -12,12 +12,14 @@ class SettingsService extends ChangeNotifier {
   static const _keySfxVolume = 'sfxVolume';
   static const _keyAppMode = 'appMode';
   static const _keyHomeShortcut = 'homeShortcut';
+  static const _keyAutoPlaySwap = 'autoPlaySwap';
 
   bool _enableSound = true;
   double _bgVolume = 0.5;
   double _sfxVolume = 1.0;
   AppMode _appMode = AppMode.dark;
   String _homeShortcut = 'Mazos';
+  bool _autoPlaySwap = false;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -29,6 +31,7 @@ class SettingsService extends ChangeNotifier {
       _appMode = AppMode.values.firstWhere((e) => e.name == modeName, orElse: () => AppMode.dark);
     }
     _homeShortcut = prefs.getString(_keyHomeShortcut) ?? 'Mazos';
+    _autoPlaySwap = prefs.getBool(_keyAutoPlaySwap) ?? false;
     notifyListeners();
   }
 
@@ -37,6 +40,7 @@ class SettingsService extends ChangeNotifier {
   double get sfxVolume => _sfxVolume;
   AppMode get appMode => _appMode;
   String get homeShortcut => _homeShortcut;
+  bool get autoPlaySwap => _autoPlaySwap;
 
   Future<void> setEnableSound(bool value) async {
     _enableSound = value;
@@ -70,6 +74,13 @@ class SettingsService extends ChangeNotifier {
     _homeShortcut = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyHomeShortcut, value);
+    notifyListeners();
+  }
+
+  Future<void> setAutoPlaySwap(bool value) async {
+    _autoPlaySwap = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAutoPlaySwap, value);
     notifyListeners();
   }
 }

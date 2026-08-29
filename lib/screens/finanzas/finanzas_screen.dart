@@ -14,6 +14,7 @@ const _c = Color(0xFF00FF66);
 const _cIncome = Color(0xFF008844);
 const _red = Color(0xFFFF4444);
 const _blue = Color(0xFF0088FF);
+const _bg = Color(0xFF111111);
 
 const _finTheme = ThemeSet(
   a: Color(0xFF00FF66),
@@ -24,7 +25,7 @@ const _finTheme = ThemeSet(
   dark: Color(0xFF111111),
   light: Color(0xFFFFFFFF),
   mid: Color(0xFF222222),
-  es: 'Finanzas',
+  
 );
 
 /// Finanzas estilo "Nosotros": tiles de balance/ingresos/gastos con swap,
@@ -81,7 +82,10 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   }
 
   Widget _segBtn(String label, bool active, VoidCallback onTap, Color color) {
-    return TapTile(onTap: () { HapticFeedback.heavyImpact(); onTap(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: active ? color : color.withValues(alpha: 0.3), border: Border.all(color: color, width: 2), borderRadius: BorderRadius.circular(14)), child: Text(label, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: active ? Colors.white : color))));
+    return TapTile(onTap: () { HapticFeedback.heavyImpact(); onTap(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(
+      color: active ? color : _bg, 
+      border: Border.all(color: active ? color : color.withValues(alpha: 0.5), width: 2), 
+      borderRadius: BorderRadius.circular(14)), child: Text(label, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: active ? Colors.white : color))));
   }
 
   void _deleteTransaction(Transaction t) {
@@ -107,11 +111,11 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         final entries = <LocaEntry>[
           LocaEntry(
             icon: Icons.account_balance,
-            color: _c,
+            color: _cIncome,
             iconColor: const Color(0xFF111111),
             label: 'saldo',
             weight: 3,
-            swapBuilder: (_) => _numSwap('\$${pv.balance.toStringAsFixed(0)}', const Color(0xFF111111)),
+            swapBuilder: (_) => _numSwap('\$${pv.balance.toStringAsFixed(0)}', Colors.white),
             tapToSwap: true,
           ),
           LocaEntry(

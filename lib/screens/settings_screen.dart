@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../router.dart';
 import '../services/settings_service.dart';
@@ -20,17 +22,22 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoPlaySwap = false;
   double _blockWeight = 1.0;
+  bool _zenMode = false;
+  double _bgVolume = 0.5;
+  double _sfxVolume = 1.0;
 
   @override
   void initState() {
     super.initState();
-    _autoPlaySwap = false; // Swap desactivado por defecto en brutalista
-    _blockWeight = 1.0; // Peso base para bloques
+    _autoPlaySwap = Provider.of<SettingsService>(context, listen: false).autoPlaySwap;
+    _blockWeight = 1.0;
+    _zenMode = false;
   }
 
   @override
   Widget build(BuildContext context) {
     final t = appThemes[widget.mode]!;
+    final settings = context.watch<SettingsService>();
     final entries = [
       // Cambiar sesión
       LocaEntry(
@@ -49,87 +56,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
         color: t.a,
         label: 'Tema',
         onTap: () {
-          // Cycle through AppMode values
           final current = widget.mode;
           final all = AppMode.values;
           final nextIdx = all.indexOf(current) + 1;
           final nextMode = nextIdx < all.length ? all[nextIdx] : AppMode.values.first;
           if (context.mounted) {
-            context.goNamed(
-              RouterRoutes.settings,
-              extra: nextMode,
-            );
+            context.goNamed(RouterRoutes.settings, extra: nextMode);
           }
         },
       ),
-      // Volumen música (controlado por SettingsService bgVolume)
+      // Volumen música (toggle between 0.0 and 1.0)
       LocaEntry(
         icon: Icons.volume_up,
         color: t.c,
-        label: 'Vol. Música',
-        onTap: () {},
-        // Note: volumen se ajusta en SettingsService y se refleja en el mosaico
-      ),
-      // Volumen SFX (controlado por SettingsService sfxVolume)
-      LocaEntry(
-        icon: Icons.volume_up,
-        color: t.d,
-        label: 'Vol. Efectos',
-        onTap: () {},
-      ),
-      // Haptics toggle: siempre activado por regla brutalista,
-      // pero con interruptor guardado para preferencia del usuario
-      LocaEntry(
-        icon: Icons.volume_off,
-        color: t.e,
-        label: _buildHapticsLabel(),
+        label: 'Vol. Música: ${settings.bgVolume.toStringAsFixed(1)}',
         onTap: () {
           HapticFeedback.lightImpact();
           setState(() {
-            _autoPlaySwap = !_autoPlaySwap;
+            _bgVolume = settings.bgVolume <= 0.3 ? 0.5 : 0.0;
           });
-          // Guardar preferencia: setEnableSound alterna el sonido global
-          // Las haptics siguen siempre activadas en la app brutalista
-          SettingsService().setEnableSound(!SettingsService().enableSound);
+          settings.setBgVolume(_bgVolume);
         },
       ),
-      // Mutear categorías de notificación (bot WhatsApp)
+      // Volumen SFX (toggle between 0.0 and 1.0)
+      LocaEntry(
+        icon: Icons.volume_up,
+        color: t.d,
+        label: 'Vol. Efectos: ${settings.sfxVolume.toStringAsFixed(1)}',
+        onTap: () {
+          HapticFeedback.lightImpact();
+          setState(() {
+            _sfxVolume = settings.sfxVolume <= 0.3 ? 1.0 : 0.0;
+          });
+          settings.setSfxVolume(_sfxVolume);
+        },
+      ),
+      // Háptics / sonido toggle
+      LocaEntry(
+        icon: Icons.volume_off,
+        color: t.e,
+        label: settings.enableSound ? 'Háptics on' : 'Háptics off',
+        onTap: () {
+          HapticFeedback.lightImpact();
+          settings.setEnableSound(!settings.enableSound);
+        },
+      ),
+      // Notificaciones de tareas → pantalla de notificaciones
       LocaEntry(
         icon: Icons.notifications_none,
         color: t.b,
         label: 'Notif. Tareas',
         onTap: () {
           HapticFeedback.lightImpact();
+          if (context.mounted) context.push(RouterRoutes.notifications);
         },
       ),
+      // Notificaciones de favoritos → pantalla de favoritos
       LocaEntry(
         icon: Icons.favorite,
         color: t.e,
         label: 'Notif. Favoritos',
         onTap: () {
           HapticFeedback.lightImpact();
+          if (context.mounted) context.push(RouterRoutes.favoritos);
         },
       ),
-      // Modo Zen: ocultar balances/rachas de la vista
+      // Modo Zen: ocultar balances/rachas
       LocaEntry(
         icon: Icons.zoom_out,
         color: t.a,
-        label: 'Modo Zen',
+        label: _zenMode ? 'Zen ON' : 'Modo Zen',
         onTap: () {
           HapticFeedback.lightImpact();
-          // Logic to hide balances/streaks would go here
+          setState(() {
+            _zenMode = !_zenMode;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_zenMode ? 'Modo Zen activado' : 'Modo Zen desactivado',
+                style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
+              backgroundColor: const Color(0xFF0A0A0A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              duration: const Duration(seconds: 1),
+            ),
+          );
         },
       ),
-      // Atajos rápidos configurables
-      LocaEntry(
-        icon: Icons.menu_book,
-        color: t.d,
-        label: 'Atajos rápidos',
-        onTap: () {
-          HapticFeedback.lightImpact();
-        },
-      ),
-      // --- NUEVA OPCIÓN: Velocidad de swap ---
+      // Swap automático
       LocaEntry(
         icon: _autoPlaySwap ? Icons.stop : Icons.autorenew,
         color: t.c,
@@ -139,35 +154,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
           setState(() {
             _autoPlaySwap = !_autoPlaySwap;
           });
+          settings.setAutoPlaySwap(_autoPlaySwap);
         },
         autoPlaySwap: _autoPlaySwap,
         iconDuration: Duration(milliseconds: _autoPlaySwap ? 200 : 700),
         swapDuration: Duration(milliseconds: _autoPlaySwap ? 200 : 700),
       ),
-      // --- NUEVA OPCIÓN: Peso de bloques (tamaño) ---
-      // Usa el parámetro 'weight' de LocaEntry: más texto = bloque más grande
+      // Tamaño de bloques
       LocaEntry(
         icon: Icons.format_size,
         color: t.d,
         label: 'Tamaño bloque: $_blockWeight',
         onTap: () {
           HapticFeedback.lightImpact();
-          // Cycle weight values: 0.5, 1.0, 1.5, 2.0
           setState(() {
             _blockWeight = _blockWeight >= 2.0 ? 0.5 : _blockWeight + 0.5;
           });
         },
-        // El peso afecta: label largo → bloque más grande
-        // Valores: 0.5 (pequeño), 1.0 (normal), 1.5 (grande), 2.0 (muy grande)
       ),
     ];
     return LocaScreen(seed: 43, theme: t, entries: entries);
-  }
-
-  // Helper para label de haptics basado en estado actual
-  String _buildHapticsLabel() {
-    // Las haptics siempre están on en F.U.R.i brutalista;
-    // el toggle guarda preferencia pero no las desactiva nunca.
-    return SettingsService().enableSound ? 'Háptics on' : 'Háptics off';
   }
 }

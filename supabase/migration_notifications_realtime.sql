@@ -7,14 +7,11 @@
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime'
-      AND schemaname = 'public'
-      AND tablename = 'notifications'
-  ) THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL -- ya es miembro, no hacer nada
+  END;
 END $$;
 
 -- Asegurar RLS y policies estén activos (idempotente)

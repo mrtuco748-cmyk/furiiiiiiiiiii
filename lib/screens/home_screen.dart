@@ -244,7 +244,7 @@ class _BrutalGridState extends State<_BrutalGrid>
         context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode});
         break;
       case 'create_note':
-        context.push(RouterRoutes.pizarra, extra: {'createNote': true});
+        context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode});
         break;
       case 'create_favorite':
         context.push(RouterRoutes.favoritos, extra: {'create': true});
@@ -285,7 +285,7 @@ class _BrutalGridState extends State<_BrutalGrid>
   Widget _scBtn(BuildContext ctx, String name, IconData icon, VoidCallback onTap, ThemeSet t) {
     return TapTile(
       onTap: () {
-        HapticFeedback.heavyImpact();
+        // HapticFeedback.heavyImpact();
         onTap();
         Navigator.pop(ctx);
       },
@@ -360,8 +360,7 @@ class _BrutalGridState extends State<_BrutalGrid>
   }
 
   void _openPizarra(double x, double y) {
-    _confettiAt(x, y);
-    context.push(RouterRoutes.pizarra);
+    context.push(RouterRoutes.letters, extra: _mode);
   }
 
   void _openEjercicios(double x, double y) {

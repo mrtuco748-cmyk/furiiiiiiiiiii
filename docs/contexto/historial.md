@@ -1,5 +1,50 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-08-31] - BUGFIX - APK release: flutter clean + fix notes_screen (muchos cambios no se aplicaban)
+
+**Resumen**: El usuario reportó que muchos cambios hechos en el código no aparecían en la app APK instalada. Causa raíz: el build incremental de Flutter no refresca el `app.so` en release — cada cambio de Dart exige `flutter clean` + rebuild completo. Además había un error de compilación en `notes_screen.dart` (método fuera de clase) que impedía generar el APK.
+
+**Cambios realizados**:
+- `lib/screens/notes/otes_screen.dart`: `_showDeleteConfirm` estaba definido dentro de `_NoteCard` (StatelessWidget) en vez de `_NotesScreenState` → movido al State class correcto. Eliminado duplicate definition.
+- Build completo desde cero: `flutter clean` → `flutter pub get` → `flutter build apk --release` (72.8 MB)
+
+**Lecciones**: **REGLA DEFINITIVA**: después de cada cambio de Dart, para APK release SIEMPRE hacer `flutter clean` + `flutter build apk --release` (no incremental). El `app.so` cacheado no se regenera en build incremental. Si el APK no refleja cambios, esta es la causa #1.
+
+**Impacto**: `notes_screen.dart`, APK release.
+
+---
+
+## [2026-08-31] - BUGFIX - Compilación APK release: fixes de sintaxis y tipos
+
+**Resumen**: El APK release no compilaba por múltiples errores de sintaxis y tipos en `letters_screen.dart` y `metas_screen.dart`. Se corrigieron todos los errores y el APK se genera exitosamente (99.3 MB).
+
+**Cambios realizados**:
+- `lib/screens/letters_screen.dart`:
+  - `_showLetter()`: `Column(children: [...],` → `Column(children: [...]),` — faltaba `)` para cerrar el constructor Column antes de `actions:` (el parser interpretaba `actions:` como parámetro de Column).
+  - `_showSentLetterEditor()`: `const InputDecoration(...)` → `InputDecoration(...)` en 2 campos (`Título` y `Cuerpo`) — `GoogleFonts.bangers()` no es una expresión constante y no puede usarse en `const InputDecoration.hintStyle`.
+  - `GoogleFonts.banger` → `GoogleFonts.bangers` (3 ocurrencias) — el nombre de la fuente es "Bangers" (con s).
+- `lib/screens/metas_screen.dart`:
+  - `_showMetaPanel()`: `Widget _showMetaPanel` → `void _showMetaPanel` — la función usa `showDialog` (retorna `Future<void>`) y no retorna un Widget.
+  - `_showMetaPanel()`: se reescribió el cuerpo completo para cerrar correctamente `Column` y `SingleChildScrollView` antes de `actions:` — `actions` es parámetro de `AlertDialog`, no del `Column`.
+  - `Border(color: t.mid, width: 2)` → `Border.all(color: t.mid, width: 2)` (2 ocurrencias) — `Border` no tiene parámetro named `color`; hay que usar `Border.all()`.
+  - `TapTile(...)` de línea única → reescrito en múltiples líneas para claridad y balance de paréntesis.
+
+**Lecciones**: `const InputDecoration` no acepta `GoogleFonts.bangers()` (no es const). El nombre de la fuente Google Fonts debe coincidir exactamente: "Bangers" no "Banger". `Border(color:..., width:...)` no existe; usar `Border.all(color:..., width:...)`. Los callbacks de panel en `LocaScreen` deben retornar `void` si usan `showDialog`.
+
+**Impacto**: `lib/screens/letters_screen.dart`, `lib/screens/metas_screen.dart`, `docs/contexto/historial.md`.
+
+## [2026-08-30] - BUGFIX - Push FCM: goals y challenges notificaban al creador
+
+**Resumen**: Los triggers de push FCM para goals y challenges usaban `furi_notify_couple()` que envía notificaciones a AMBOS miembros (creador incluido). Se corrigió para que solo notifiquen a la pareja del autor (el que NO generó la acción).
+
+**Cambios realizados**:
+- `supabase/migration_push_categories.sql`: `notify_goal_insert()` cambió de `furi_notify_couple(NEW.couple_id, ...)` a `furi_notify_partner(NEW.couple_id, ...)`. `notify_challenge_insert()` mismo fix. La función `furi_notify_partner()` resuelve al partner desde `profiles` y envía solo a él.
+- `docs/contexto/bot-whatsapp.md`: actualizada la tabla de categorías (#5 challenges, #6 goals) para indicar explícitamente "→ a la pareja del creador".
+
+**Lecciones**: `furi_notify_couple()` envía a ambos (creador + partner) — es correcto SOLO para eventos de pareja (logros, racha, trivia). Para acciones individuales (goals, challenges) debe usarse `furi_notify_partner()` que resuelve al partner del creador y notifica solo a él. La regla es: si el creador generó la acción, la notificación va al otro.
+
+**Impacto**: `supabase/migration_push_categories.sql`, `docs/contexto/bot-whatsapp.md`, `docs/contexto/historial.md`.
+
 ## [2026-08-29] - FEATURE - Bot WhatsApp en tiempo real (webhook pg_net -> GitHub dispatch)
 
 **Resumen**: El bot avisaba con hasta horas de delay porque GitHub Actions `schedule: */30` en repos gratuitos no garantiza puntualidad. Se agregó webhook en tiempo real: cada INSERT en Supabase dispara el workflow en segundos vía `pg_net`, el cron de 30min queda de respaldo.

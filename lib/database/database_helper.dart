@@ -15,7 +15,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 9, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 10, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -140,6 +140,18 @@ class DatabaseHelper {
       // patrón que board_elements_v2.synced).
       await db.execute("ALTER TABLE schedules ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
       await db.execute("ALTER TABLE class_schedules ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
+    }
+    if (oldVersion < 10) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS notes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT DEFAULT '',
+          color TEXT NOT NULL DEFAULT '#FFF9C4',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
     }
   }
 
@@ -287,6 +299,16 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
     await db.execute('''
       CREATE UNIQUE INDEX IF NOT EXISTS idx_class_schedules_cloudId
       ON class_schedules(cloudId) WHERE cloudId IS NOT NULL
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL DEFAULT '',
+        content TEXT DEFAULT '',
+        color TEXT NOT NULL DEFAULT '#FFF9C4',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
     ''');
   }
 

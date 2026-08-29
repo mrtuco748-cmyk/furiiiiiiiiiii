@@ -23,10 +23,9 @@ CREATE POLICY "full_access_deck_cards" ON deck_cards FOR ALL USING (true);
 -- Realtime (idempotente)
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'deck_cards'
-  ) THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE deck_cards;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;

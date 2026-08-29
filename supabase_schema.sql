@@ -137,7 +137,14 @@ CREATE TABLE IF NOT EXISTS device_tokens (
    read BOOLEAN DEFAULT false,
    created_at TIMESTAMPTZ DEFAULT NOW()
  );
- ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+ DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL
+  END;
+END $$;
 
  -- 12. COUPLE DATA (shared config)
 CREATE TABLE IF NOT EXISTS couple_data (

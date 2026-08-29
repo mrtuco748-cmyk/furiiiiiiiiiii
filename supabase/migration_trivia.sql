@@ -17,10 +17,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_question_answers_user_date
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'question_answers'
-  ) THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE question_answers;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;

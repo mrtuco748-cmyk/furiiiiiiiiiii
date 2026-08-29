@@ -180,7 +180,18 @@ class _MetasScreenState extends State<MetasScreen> {
   @override
   Widget build(BuildContext context) {
     final t = getTheme(widget.mode);
-    final palette = [t.a, t.b, t.c, t.d, t.e];
+    // Paleta variada SIN verde para las metas.
+    final palette = [
+      const Color(0xFFFF6B00), // naranja
+      const Color(0xFF00D4FF), // cian
+      const Color(0xFF9D00FF), // violeta
+      const Color(0xFFFF1493), // rosa
+      const Color(0xFFFFDE59), // amarillo
+      const Color(0xFFFF00FF), // fucsia
+      const Color(0xFF7000FF), // morado
+      const Color(0xFFFF5757), // rojo
+    ];
+    final doneColor = const Color(0xFF39FF14); // verde lima solo para completadas
     // Mosaico: solo las 8 metas más recientes (en su orden). El resto se ve
     // desde "historial".
     final shownMetas = _metas.take(8).toList();
@@ -190,20 +201,20 @@ class _MetasScreenState extends State<MetasScreen> {
       for (var i = 0; i < shownMetas.length; i++)
         LocaEntry(
           icon: _done(shownMetas[i]) ? Icons.check_circle : Icons.radio_button_unchecked,
-          color: _done(shownMetas[i]) ? t.d : palette[i % palette.length],
+          color: _done(shownMetas[i]) ? doneColor : palette[i % palette.length],
           label: shownMetas[i]['title'] as String? ?? '',
           panel: i,
         ),
       LocaEntry(
         icon: Icons.history,
-        color: t.d,
+        color: const Color(0xFF555555),
         label: 'historial',
         panel: shownMetas.length,
         isAction: true,
       ),
       LocaEntry(
         icon: Icons.add,
-        color: t.e,
+        color: const Color(0xFF39FF14),
         label: 'agregar',
         onTap: () => _addOrEdit(),
         isAction: true,
@@ -221,7 +232,7 @@ class _MetasScreenState extends State<MetasScreen> {
     );
   }
 
-  Widget _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
+void _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
     final done = _done(meta);
     final title = meta['title'] as String? ?? '';
     final description = meta['description'] as String? ?? '';
@@ -253,12 +264,23 @@ class _MetasScreenState extends State<MetasScreen> {
                       decoration: done ? TextDecoration.lineThrough : null)),
                 ],
               ]),
-            ]),
-          ],
-        ),
+            ),
+          ),
+        ]),
       ),
       actions: [
-        TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10), border: Border.rtl(color: t.mid, width: 2)), child: Icon(Icons.close, color: t.light, size: 20)),
+        TapTile(
+          onTap: () => Navigator.pop(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: t.mid,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: t.mid, width: 2),
+            ),
+            child: Icon(Icons.close, color: t.light, size: 20),
+          ),
+        ),
       ],
     ));
   }
@@ -312,12 +334,11 @@ Widget _historyMetaCard(ThemeSet t, Map<String, dynamic> meta) {
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: t.mid,
-            border: Border.rtl(color: done ? t.d : t.e, width: 3),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
-          ),
+decoration: BoxDecoration(
+              color: t.mid,
+              border: Border.all(color: done ? t.d : t.e, width: 3),
+              borderRadius: BorderRadius.circular(18),
+            ),
           child: Row(children: [
             Icon(done ? Icons.check_circle : Icons.radio_button_unchecked, color: done ? t.d : t.e, size: 22),
             const SizedBox(width: 12),

@@ -29,12 +29,11 @@ END $$;
 -- Publicación realtime para que ambos dispositivos vean los logros al instante
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'couple_achievements'
-  ) THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE couple_achievements;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;
 
 GRANT ALL ON couple_achievements TO anon, authenticated;

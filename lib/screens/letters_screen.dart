@@ -24,6 +24,18 @@ const _mid = Color(0xFF2A2A2A);
 const _black = Color(0xFF000000);
 const _gold = Color(0xFFFFD700);
 
+/// Paleta variada para bloques de cartas en el mosaico.
+const _letterPalette = [
+  Color(0xFFFF6B00), // naranja
+  Color(0xFF00D4FF), // cian
+  Color(0xFF9D00FF), // violeta
+  Color(0xFFFF1493), // rosa
+  Color(0xFFFFDE59), // amarillo
+  Color(0xFFFF00FF), // fucsia
+  Color(0xFF7000FF), // morado
+  Color(0xFFFF5757), // rojo
+];
+
 class LettersScreen extends StatefulWidget {
   final AppMode mode;
   final String name;
@@ -231,7 +243,7 @@ void _showLetter(String title, String body, String date, Color color) {
           Text(body, style: GoogleFonts.bangers(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w400)),
           const SizedBox(height: 12),
           Text(_formatDate(date), style: GoogleFonts.bangers(color: Colors.white38, fontSize: 11)),
-        ],
+        ]),
         actions: [
           TapTile(
             onTap: () => Navigator.of(ctx).pop(),
@@ -282,10 +294,10 @@ void _showLetter(String title, String body, String date, Color color) {
         TextField(
           controller: titleCtrl,
           style: GoogleFonts.bangers(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             border: InputBorder.none,
             hintText: 'Título',
-            hintStyle: GoogleFonts.banger(color: Colors.white38),
+            hintStyle: GoogleFonts.bangers(color: Colors.white38),
           ),
           maxLines: 1,
         ),
@@ -293,15 +305,15 @@ void _showLetter(String title, String body, String date, Color color) {
         TextField(
           controller: bodyCtrl,
           style: GoogleFonts.bangers(color: Colors.white, fontSize: 14),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             border: InputBorder.none,
             hintText: 'Cuerpo',
-            hintStyle: GoogleFonts.banger(color: Colors.white38),
+            hintStyle: GoogleFonts.bangers(color: Colors.white38),
           ),
           maxLines: 3,
         ),
         const SizedBox(height: 12),
-        Text('Fecha: ${_formatDate(letter['created_at']?.toString() ?? '')}', style: GoogleFonts.banger(color: Colors.white54, fontSize: 11)),
+        Text('Fecha: ${_formatDate(letter['created_at']?.toString() ?? '')}', style: GoogleFonts.bangers(color: Colors.white54, fontSize: 11)),
       ]),
       actions: [
         TapTile(
@@ -359,7 +371,7 @@ void _showLetter(String title, String body, String date, Color color) {
       for (var i = 0; i < shownInbox.length; i++)
         LocaEntry(
           icon: _letterIcon(shownInbox[i]),
-          color: _letterColor(shownInbox[i]),
+          color: _letterColor(shownInbox[i], index: i),
           iconColor: _letterIconColor(shownInbox[i]),
           label: shownInbox[i]['title']?.toString() ?? '',
           childBuilder: (_) => _letterChild(shownInbox[i]),
@@ -433,10 +445,10 @@ void _showLetter(String title, String body, String date, Color color) {
     );
   }
 
-  Color _letterColor(Map<String, dynamic> letter) {
+  Color _letterColor(Map<String, dynamic> letter, {required int index}) {
     final sealed = _isSealed(letter, incoming: true);
     if (sealed) return _cSealed;
-    return _isReadByMe(letter) ? _cRead : _cInbox;
+    return _letterPalette[index % _letterPalette.length];
   }
 
   Color _letterIconColor(Map<String, dynamic> letter) {

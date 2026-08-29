@@ -295,7 +295,7 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
   Widget _catSelector(String category, ValueChanged<String> onChanged) {
     const allowed = {'movie', 'series', 'game', 'music'};
     return Wrap(
-      spacing: 6, runSpacing: 6,
+      spacing: 8, runSpacing: 8,
       children: FavoritesProvider.categoryEmojis.entries
           .where((e) => allowed.contains(e.key))
           .map((e) {
@@ -303,12 +303,21 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
         return GestureDetector(
           onTap: () => onChanged(e.key),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(color: selected ? _vc : _bg, borderRadius: BorderRadius.circular(10)),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? _vc : _bg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: selected ? _vc : _panel, width: 2),
+            ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(e.value, style: const TextStyle(fontSize: 14)),
-              const SizedBox(width: 4),
-              Text(e.key, style: GoogleFonts.bangers(fontSize: 10, color: selected ? _bg : _light, fontWeight: FontWeight.bold)),
+              Text(e.value, style: GoogleFonts.bangers(
+                  fontSize: 20, 
+                  color: selected ? _bg : _light)),
+              const SizedBox(width: 6),
+              Text(e.key, style: GoogleFonts.bangers(
+                fontSize: 14, 
+                color: selected ? _bg : _light, 
+                fontWeight: FontWeight.bold)),
             ]),
           ),
         );

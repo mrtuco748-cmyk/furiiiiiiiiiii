@@ -15,11 +15,10 @@ CREATE POLICY "full_access_couple_locations" ON couple_locations FOR ALL USING (
 -- Realtime (idempotente: ignora si ya es miembro de la publicación)
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'couple_locations'
-  ) THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE couple_locations;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;
 GRANT ALL ON couple_locations TO anon, authenticated;

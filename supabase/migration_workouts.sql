@@ -95,28 +95,24 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, se
 -- Realtime (idempotente)
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'workout_logs'
-  ) THEN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE workout_logs;
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'workout_routines'
-  ) THEN
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE workout_routines;
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'workout_completions'
-  ) THEN
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE workout_completions;
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'workout_challenges'
-  ) THEN
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE workout_challenges;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;

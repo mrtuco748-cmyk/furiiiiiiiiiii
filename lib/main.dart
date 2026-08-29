@@ -23,8 +23,7 @@ import 'providers/study_provider.dart';
 import 'providers/finances_provider.dart';
 import 'providers/gallery_provider.dart';
 import 'providers/favorites_provider.dart';
-import 'providers/board_data_provider.dart';
-import 'providers/board_provider_v2.dart';
+import 'providers/notes_provider.dart';
 import 'providers/workout_provider.dart';
 import 'providers/couple_provider.dart';
 import 'providers/couple_achievements_provider.dart';
@@ -193,9 +192,8 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
             ChangeNotifierProvider(create: (_) => FinancesProvider()),
             ChangeNotifierProvider(create: (_) => GalleryProvider()),
             ChangeNotifierProvider(create: (_) => FavoritesProvider()),
-            ChangeNotifierProvider(create: (_) => BoardDataProvider()),
-            ChangeNotifierProvider(create: (_) => BoardProviderV2()),
-            ChangeNotifierProvider(create: (_) => WorkoutProvider()),
+            ChangeNotifierProvider(create: (_) => NotesProvider()),
+             ChangeNotifierProvider(create: (_) => WorkoutProvider()),
             ChangeNotifierProvider(create: (_) => CoupleProvider()),
             ChangeNotifierProvider(create: (_) => CoupleAchievementsProvider()),
             ChangeNotifierProvider(create: (_) => TriviaProvider()),

@@ -60,9 +60,9 @@ class CalendarMosaicoScreen extends StatelessWidget {
   }
 }
 
-/// Pizarra estilo "Nosotros": un bloque gigante que abre el canvas.
-class PizarraMosaicoScreen extends StatelessWidget {
-  const PizarraMosaicoScreen({super.key});
+/// Notas estilo "Nosotros": un bloque gigante que abre la sección de notas.
+class NotesMosaicoScreen extends StatelessWidget {
+  const NotesMosaicoScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -71,10 +71,10 @@ class PizarraMosaicoScreen extends StatelessWidget {
       theme: _canvasTheme,
       entries: [
         LocaEntry(
-          icon: Icons.draw,
+          icon: Icons.note_add,
           color: const Color(0xFF9D00FF),
-          label: 'Pizarra',
-          onTap: () { HapticFeedback.heavyImpact(); context.push(RouterRoutes.pizarra); },
+          label: 'Notas',
+          onTap: () { HapticFeedback.heavyImpact(); context.push(RouterRoutes.notes); },
         ),
       ],
     );

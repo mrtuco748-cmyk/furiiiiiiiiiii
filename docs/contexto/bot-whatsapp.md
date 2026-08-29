@@ -61,8 +61,8 @@ Evita notificaciones duplicadas. Antes de enviar se chequea si `(tabla, registro
 | 3 | moods | 😊 | Ultima 1h | `mood-{id}` |
 | 4 | letters | 💌 | Ultima 1h · no spoilea cartas selladas (apertura futura) | `letter-{id}` |
 | 4b | letters (apertura) | 💌 | Entrega ceremonial cuando `scheduled_open` cae en la última 1h ("tu carta acaba de abrirse") | `letteropen-{id}-{fecha}` |
-| 5 | challenges | 🚩 | Ultima 1h (creado/iniciado/completado) | `challenge-{id}` |
-| 6 | goals | 🏅 | Ultima 1h (creada/completada) | `goal-{id}` |
+| 5 | challenges | 🚩 | Ultima 1h (creado/iniciado/completado) → a la pareja del creador | `challenge-{id}` |
+| 6 | goals | 🏅 | Ultima 1h (creada/completada) → a la pareja del creador | `goal-{id}` |
 | 7 | tasks | ✅ | Ultima 1h | `task-{id}` |
 | 8 | transactions | 💰/💸 | Ultima 1h (income/expense) | `transaction-{id}` |
 | 9 | favorites | ⭐ | Ultima 1h | `favorite-{id}` |

@@ -223,10 +223,12 @@ class GalleryProvider extends ChangeNotifier {
     final reactions = <String, List<String>>{};
     current.reactions.forEach((k, v) => reactions[k] = List<String>.from(v));
     final already = reactions[key]?.contains(AppState.myId) ?? false;
+    final toRemove = <String>[];
     reactions.forEach((k, list) {
       list.remove(AppState.myId);
-      if (list.isEmpty) reactions.remove(k);
+      if (list.isEmpty) toRemove.add(k);
     });
+    for (final k in toRemove) { reactions.remove(k); }
     if (!already) {
       reactions.putIfAbsent(key, () => <String>[]).add(AppState.myId ?? '');
     }

@@ -13,7 +13,7 @@ import 'screens/trivia/trivia_screen.dart';
 import 'screens/finanzas/finanzas_screen.dart';
 import 'screens/galeria/galeria_screen.dart';
 import 'screens/favoritos/favoritos_screen.dart';
-import 'screens/pizarra_v2/pizarra_screen_v2.dart';
+import 'screens/notes/notes_screen.dart';
 import 'screens/ejercicios/ejercicios_screen.dart';
 import 'screens/logros/logros_screen.dart';
 import 'screens/recompensas/rewards_screen.dart';
@@ -42,13 +42,14 @@ abstract final class RouterRoutes {
   static const String finanzas = '/finanzas';
   static const String galeria = '/galeria';
   static const String favoritos = '/favoritos';
-  static const String pizarra = '/pizarra';
+  static const String notes = '/notes';
   static const String ejercicios = '/ejercicios';
   static const String logros = '/logros';
   static const String rewards = '/rewards';
   static const String chat = '/chat';
   static const String retos = '/retos';
   static const String cartas = '/cartas';
+  static const String letters = '/letters';
   static const String metas = '/metas';
   static const String mapa = '/mapa';
   static const String scheduleForm = '/calendar/form';
@@ -56,7 +57,7 @@ abstract final class RouterRoutes {
   static const String classBoard = '/calendar/clases';
   static const String classSetup = '/calendar/setup';
   static const String calendarMosaico = '/calendario-mosaico';
-  static const String pizarraMosaico = '/pizarra-mosaico';
+  static const String notesMosaico = '/notes-mosaico';
   static const String ejerciciosMosaico = '/ejercicios-mosaico';
 }
 
@@ -124,8 +125,8 @@ final GoRouter appRouter = GoRouter(
       builder: (_, _) => const FavoritosScreen(),
     ),
     GoRoute(
-      path: RouterRoutes.pizarra,
-      builder: (_, _) => const PizarraScreenV2(),
+      path: RouterRoutes.notes,
+      builder: (_, state) => NotesScreen(),
     ),
     GoRoute(
       path: RouterRoutes.ejercicios,
@@ -200,8 +201,8 @@ final GoRouter appRouter = GoRouter(
       builder: (_, _) => const CalendarMosaicoScreen(),
     ),
     GoRoute(
-      path: RouterRoutes.pizarraMosaico,
-      builder: (_, _) => const PizarraMosaicoScreen(),
+      path: RouterRoutes.notesMosaico,
+      builder: (_, _) => const NotesMosaicoScreen(),
     ),
     GoRoute(
       path: RouterRoutes.ejerciciosMosaico,

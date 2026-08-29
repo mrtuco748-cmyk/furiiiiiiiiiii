@@ -6,11 +6,16 @@ ALTER TABLE schedules ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT '';
 
 ALTER TABLE schedules ALTER COLUMN color TYPE BIGINT USING color::bigint;
 
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'schedules') THEN
+DO $$
+BEGIN
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'class_schedules') THEN
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE class_schedules;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;

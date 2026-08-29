@@ -160,11 +160,11 @@ CREATE TRIGGER on_mood_insert_send_push
   AFTER INSERT ON moods
   FOR EACH ROW EXECUTE FUNCTION notify_mood_insert();
 
--- METAS (goals): notificar a AMBOS de la pareja
+-- METAS (goals): notificar SOLO a la pareja del autor (no al creador)
 CREATE OR REPLACE FUNCTION notify_goal_insert()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  PERFORM furi_notify_couple(NEW.couple_id, 'Nueva meta', NEW.title, jsonb_build_object('type', 'goal', 'id', NEW.id));
+  PERFORM furi_notify_partner(NEW.couple_id, 'Nueva meta', NEW.title, jsonb_build_object('type', 'goal', 'id', NEW.id));
   RETURN NEW;
 END;
 $$;
@@ -174,11 +174,11 @@ CREATE TRIGGER on_goal_insert_send_push
   AFTER INSERT ON goals
   FOR EACH ROW EXECUTE FUNCTION notify_goal_insert();
 
--- RETOS (challenges): notificar a AMBOS de la pareja
+-- RETOS (challenges): notificar SOLO a la pareja del autor
 CREATE OR REPLACE FUNCTION notify_challenge_insert()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  PERFORM furi_notify_couple(NEW.couple_id, 'Nuevo reto', NEW.title, jsonb_build_object('type', 'challenge', 'id', NEW.id));
+  PERFORM furi_notify_partner(NEW.couple_id, 'Nuevo reto', NEW.title, jsonb_build_object('type', 'challenge', 'id', NEW.id));
   RETURN NEW;
 END;
 $$;
