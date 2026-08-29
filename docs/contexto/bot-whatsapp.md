@@ -231,9 +231,24 @@ No mostrara QR y verificara eventos inmediatamente.
 ```yaml
 on:
   schedule:
-    - cron: '*/30 * * * *'  # cada 30 min
+    - cron: '*/30 * * * *'  # respaldo cada 30 min
   workflow_dispatch:         # manual
+  repository_dispatch:       # webhook en tiempo real desde Supabase (pg_net)
+    types: [bot-trigger]
+concurrency:
+  group: bot-furi
+  cancel-in-progress: false
 ```
+
+### Webhook en tiempo real (desde 2026-08-29)
+
+Supabase dispara el bot **segundos** después de cada INSERT vía `pg_net` → GitHub API.
+
+- **Migración**: `supabase/migration_bot_webhook.sql` crea `furi_trigger_bot()` y triggers `trg_furi_bot_dispatch` en 20 tablas.
+- **PAT**: guardado en `vault.decrypted_secrets` con `name = 'github_bot_pat'` (`vault.create_secret('ghp_...', 'github_bot_pat')`).
+- **Función**: `POST https://api.github.com/repos/mrtuco748-cmyk/furiiiiiiiiiii/actions/workflows/bot-whatsapp.yml/dispatches` con `ref: main`.
+- **Cron 30min** queda como respaldo por si el webhook falla.
+- **Verificación**: `SELECT * FROM net._http_response ORDER BY created DESC LIMIT 5;` (status 204 = ok).
 
 Secrets requeridos:
 - `SUPABASE_URL` - URL del proyecto Supabase
@@ -255,7 +270,7 @@ Secrets requeridos:
 
 ## Limitaciones
 
-- No es tiempo real (polling cada 30 min)
+- ~~No es tiempo real (polling cada 30 min)~~ → Desde 2026-08-29 es **tiempo real** vía webhook (polling queda de respaldo)
 - WhatsApp puede desconectar sesion en CI (se requiere re-escanear localmente)
 - Depende de GitHub Actions uptime y Supabase disponibilidad
 

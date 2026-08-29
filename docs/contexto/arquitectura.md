@@ -265,7 +265,7 @@ App abierta:
 
 ### Bot WhatsApp (notificaciones proactivas)
 ```
-GitHub Actions (cada 30 min)
+GitHub Actions (webhook en tiempo real + respaldo cada 30 min)
   → node bot.js
     → loadSessionFromSupabase()  (bot_sessions table)
     → makeWASocket() conecta WhatsApp

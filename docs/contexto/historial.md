@@ -1,5 +1,19 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-08-29] - FEATURE - Bot WhatsApp en tiempo real (webhook pg_net -> GitHub dispatch)
+
+**Resumen**: El bot avisaba con hasta horas de delay porque GitHub Actions `schedule: */30` en repos gratuitos no garantiza puntualidad. Se agregó webhook en tiempo real: cada INSERT en Supabase dispara el workflow en segundos vía `pg_net`, el cron de 30min queda de respaldo.
+
+**Cambios realizados**:
+- `supabase/migration_bot_webhook.sql` (nuevo): función `furi_trigger_bot()` (SECURITY DEFINER, lee PAT desde `vault.decrypted_secrets` `github_bot_pat`, `net.http_post` a `.../actions/workflows/bot-whatsapp.yml/dispatches` con `ref: main`, nunca bloquea el INSERT) + triggers `trg_furi_bot_dispatch` en 20 tablas (moods, letters, challenges, goals, tasks, transactions, favorites, notes, gallery, timeline_events, custom_questions, deck_cards, workout_*, couple_achievements, question_answers, schedules, class_schedules, anniversaries). Idempotente.
+- `.github/workflows/bot-whatsapp.yml`: agregado `repository_dispatch: types: [bot-trigger]` y `concurrency: group: bot-furi, cancel-in-progress: false`.
+- `docs/contexto/bot-whatsapp.md` y `arquitectura.md`: documentado webhook y que ya no es polling puro.
+- PAT `ghp_...` guardado en Vault (`vault.create_secret(..., 'github_bot_pat')`) por el usuario en SQL Editor (no en repo).
+
+**Lecciones**: `schedule: cron` de GitHub es best-effort en free tier, puede demorar horas; la ventana dinámica (`last_run_at` capped 24h) evitaba pérdida pero no el delay. El webhook con `pg_net` + `repository_dispatch` da tiempo real sin servidor 24/7 ni migrar a WhatsApp Cloud API.
+
+**Impacto**: `migration_bot_webhook.sql` (nuevo), `bot-whatsapp.yml`, docs.
+
 ## [2026-08-29] - BUGFIX - Pizarra v2: fixes de sincronizaci�n y race conditions
 
 **Resumen**: Auditor�a completa del provider BoardProviderV2 y widget BoardElementOptions corrigiendo 8 bugs cr�ticos/altos que afectaban la consistencia de datos en tiempo real, eliminaci�n de elementos, reacciones y manejo de estado offline.
