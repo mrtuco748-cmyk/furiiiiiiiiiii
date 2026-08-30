@@ -1,5 +1,20 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-08-31] - BUGFIX - Atajos "Nota" y "Carta" del Home mostraban "página no encontrada"
+
+**Resumen**: Los botones de acceso rápido "Nota" y "Carta" del panel de shortcuts del Home navigaban a rutas sin GoRoute. "Nota" apuntaba a `RouterRoutes.letters` (`/letters`) que no tenía ruta definida (solo existía `/cartas` para `LettersScreen`). La fix previa (ce3b924) ya había corregido "Nota" a `RouterRoutes.notes` (`/notes`), pero el fix no llegó al APK v1.0.3 porque se commiteó después del build. "Carta" seguía roto apuntando a `/letters`. Ambos fixeados en esta tanda + rebuild completo.
+
+**Cambios realizados**:
+- `lib/screens/home_screen.dart`: `case 'create_letter'` cambiado de `context.push(RouterRoutes.letters)` a `context.push(RouterRoutes.cartas)` — corrige la ruta inexistente `/letters` a la ruta real `/cartas`.
+- APK v1.0.4 reconstruido con `flutter clean` + `flutter build apk --release` incluyendo los 3 commits posteriores a v1.0.3 (f4fe171 restaurar colores, ce3b924 fix nota+trivia, d19b7c5 fix carta).
+- Release v1.0.4 publicado en GitHub.
+
+**Lecciones**: `RouterRoutes.letters` (`/letters`) era un alias sin GoRoute; la ruta real era `RouterRoutes.cartas` (`/cartas`). Al definir constantes de ruta, verificar que cada const tenga un `GoRoute(path:)` correspondiente en la tabla del router. Un build incremental puede no incluir commits recientes — `flutter clean` antes del build release garantiza el snapshot fresco.
+
+**Impacto**: `lib/screens/home_screen.dart`, APK release v1.0.4.
+
+---
+
 ## [2026-08-30] - BUGFIX - Botón de volumen de música no funcionaba en tiempo real
 
 **Resumen**: El botón de volumen de música en Settings no aplicaba el cambio al AudioPlayer en tiempo real. Al tocar el botón, `SettingsService.setBgVolume()` guardaba el valor en SharedPreferences y notificaba la UI, pero nunca llamaba a `SoundService().updateBgVolume()` para cambiar el volumen del `_bgPlayer`. El mismo problema existía para el toggle de sonidos on/off: `setEnableSound()` guardaba el valor pero no iniciaba/detenía la música de fondo.
