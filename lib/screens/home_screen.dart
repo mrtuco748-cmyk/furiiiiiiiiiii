@@ -244,7 +244,7 @@ class _BrutalGridState extends State<_BrutalGrid>
   void _executeShortcutAction(String action) {
     switch (action) {
       case 'create_letter':
-        context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode});
+        context.push(RouterRoutes.cartas, extra: {'create': true, 'mode': _mode});
         break;
       case 'create_note':
         context.push(RouterRoutes.notes);
