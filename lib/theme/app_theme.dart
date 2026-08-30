@@ -89,28 +89,28 @@ extension ThemeColors on BuildContext {
 
 const appThemes = <AppMode, ThemeSet>{
   AppMode.flower: ThemeSet(
-    a: Color(0xFFFF1A1A), b: Color(0xFFFF6B6B), c: Color(0xFFFF8E53),
-    d: Color(0xFFFFB366), e: Color(0xFFFFE066),
-    dark: Color(0xFF2A0A0A), light: Color(0xFFFFF0F0), mid: Color(0xFF3A1A1A),
+    a: Color(0xFFFF66C4), b: Color(0xFF00F0FF), c: Color(0xFF00FF66),
+    d: Color(0xFFFFDE59), e: Color(0xFFFF5757),
+    dark: Color(0xFF1A1A1A), light: Color(0xFFFFFFFF), mid: Color(0xFF2A2A2A),
   ),
   AppMode.green: ThemeSet(
-    a: Color(0xFF66FF4D), b: Color(0xFF57F274), c: Color(0xFF4DB84E),
-    d: Color(0xFF00A368), e: Color(0xFF006633),
-    dark: Color(0xFF0A2A0A), light: Color(0xFFF0FFF0), mid: Color(0xFF1A3A2A),
+    a: Color(0xFF00FF66), b: Color(0xFF00F0FF), c: Color(0xFFFFDE59),
+    d: Color(0xFFFF66C4), e: Color(0xFF7000FF),
+    dark: Color(0xFF1B2E1B), light: Color(0xFFF1F8E9), mid: Color(0xFF263A26),
   ),
   AppMode.dark: ThemeSet(
-    a: Color(0xFF9B59B6), b: Color(0xFF8E44AD), c: Color(0xFFE91E63),
-    d: Color(0xFFCDDC39), e: Color(0xFFff9800),
-    dark: Color(0xFF1A1A2E), light: Color(0xFFE8EAF6), mid: Color(0xFF2C3E50),
+    a: Color(0xFF7000FF), b: Color(0xFF00F0FF), c: Color(0xFF00FF66),
+    d: Color(0xFFFF66C4), e: Color(0xFFFF5757),
+    dark: Color(0xFF0D0D0D), light: Color(0xFFE0E0E0), mid: Color(0xFF1E1E1E),
   ),
   AppMode.blue: ThemeSet(
-    a: Color(0xFF01579B), b: Color(0xFF009688), c: Color(0xFF00AAFF),
-    d: Color(0xFF795548), e: Color(0xFF607D8B),
-    dark: Color(0xFF0D47A1), light: Color(0xFFE3F2FD), mid: Color(0xFF1A237E),
+    a: Color(0xFF00F0FF), b: Color(0xFFFFDE59), c: Color(0xFF00FF66),
+    d: Color(0xFFFF66C4), e: Color(0xFF7000FF),
+    dark: Color(0xFF0D2137), light: Color(0xFFE3F2FD), mid: Color(0xFF1A334A),
   ),
   AppMode.heart: ThemeSet(
-    a: Color(0xFFC2185B), b: Color(0xFFEC407A), c: Color(0xFFFB7626),
-    d: Color(0xFFFFC107), e: Color(0xFFFF9800),
-    dark: Color(0xFF4A1428), light: Color(0xFFFDF6EC), mid: Color(0xFF6A1B9A),
+    a: Color(0xFFFF5757), b: Color(0xFFFF66C4), c: Color(0xFF00F0FF),
+    d: Color(0xFFFFDE59), e: Color(0xFF7000FF),
+    dark: Color(0xFF2D0A0A), light: Color(0xFFFFF5F5), mid: Color(0xFF3D1414),
   ),
 };
