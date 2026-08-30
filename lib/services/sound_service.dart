@@ -7,15 +7,16 @@ class SoundService {
   factory SoundService() => _instance;
   SoundService._();
 
-  // El AudioCache de audioplayers antepone "assets/" por defecto al resolver
-  // el asset por rootBundle. Como este proyecto declara los assets con la ruta
-  // real "Assets/sounds/<archivo>.wav" (A mayúscula, preservada tal cual en el
-  // bundle), hay que vaciar ese prefijo del cache para que rootBundle.load()
-  // reciba la clave exacta. Sin esto buscaba "assets/Assets/sounds/..." →
-  // clave inexistente → el catch traga el fallo → silencio en TODAS las
-  // plataformas.
   static final AudioPlayer _player = AudioPlayer()..audioCache.prefix = '';
   static DateTime? _lastClickTime;
+  static DateTime? _lastSwooshTime;
+
+  // Lock para evitar que llamadas concurrentes a _play se superpongan.
+  static bool _isPlaying = false;
+
+  static const int _swooshDebounceMs = 400;
+  static const int _clickDebounceMs = 150;
+  static const int _popDebounceMs = 300;
 
   // Player dedicado para la música de fondo (loop). Separado de _player para
   // que los SFX cortos no lo interrumpan con su stop().
@@ -54,41 +55,59 @@ class SoundService {
   static String _asset(String name) => '$_assetPrefix$name';
 
   Future<void> _play(String asset, {double volume = 1.0}) async {
+    if (_isPlaying) return;
     final enabled = SettingsService().enableSound;
     if (!enabled) return;
     try {
+      _isPlaying = true;
       await _player.stop();
       await _player.setAudioContext(_sfxContext);
       await _player.setVolume(volume * SettingsService().sfxVolume);
       await _player.play(AssetSource(_asset(asset)));
     } catch (_) {}
+    _isPlaying = false;
   }
 
   Future<void> click() async {
     final now = DateTime.now();
-    if (_lastClickTime != null && now.difference(_lastClickTime!).inMilliseconds < 150) return;
+    if (_lastClickTime != null && now.difference(_lastClickTime!).inMilliseconds < _clickDebounceMs) return;
     _lastClickTime = now;
     HapticFeedback.lightImpact();
     await _play('sounds/click.wav', volume: 0.5);
   }
 
   Future<void> pop() async {
+    final now = DateTime.now();
+    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _popDebounceMs) return;
+    _lastSwooshTime = now;
     HapticFeedback.mediumImpact();
     await _play('sounds/pop.wav');
   }
 
   Future<void> success() async {
+    final now = DateTime.now();
+    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _popDebounceMs) return;
+    _lastSwooshTime = now;
     HapticFeedback.heavyImpact();
     await _play('sounds/success.wav');
   }
 
   Future<void> swoosh() async {
+    final now = DateTime.now();
+    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _swooshDebounceMs) return;
+    _lastSwooshTime = now;
     HapticFeedback.selectionClick();
     await _play('sounds/swoosh.wav');
   }
 
   void tick() { HapticFeedback.selectionClick(); }
-  Future<void> alert() async { HapticFeedback.heavyImpact(); await _play('sounds/pop.wav'); }
+  Future<void> alert() async {
+    final now = DateTime.now();
+    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _popDebounceMs) return;
+    _lastSwooshTime = now;
+    HapticFeedback.heavyImpact();
+    await _play('sounds/pop.wav');
+  }
 
   /// Arranca la música de fondo en bucle (si el sonido está habilitado). Se
   /// vuelve a llamar si se re-enciende el sonido en Configuración.
@@ -118,5 +137,5 @@ class SoundService {
     try { await _bgPlayer.stop(); } catch (_) {}
   }
 
-  void dispose() { _player.dispose(); _bgPlayer.dispose(); }
+  void dispose() { _isPlaying = false; _player.dispose(); _bgPlayer.dispose(); }
 }

@@ -246,10 +246,12 @@ class GalleryProvider extends ChangeNotifier {
             'user_id': AppState.myId ?? '',
           })
           .timeout(const Duration(seconds: 10));
-      final li = _items.indexWhere((i) => i.id == id);
-      if (li >= 0) {
-        _items[li] = _items[li].copyWith(reactions: GalleryItem.parseReactions(res));
-        notifyListeners();
+      if (res != null) {
+        final li = _items.indexWhere((i) => i.id == id);
+        if (li >= 0) {
+          _items[li] = _items[li].copyWith(reactions: GalleryItem.parseReactions(res));
+          notifyListeners();
+        }
       }
     } catch (e) {
       _items[idx] = current;

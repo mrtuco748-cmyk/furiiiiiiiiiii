@@ -17,6 +17,14 @@ class _NotesScreenState extends State<NotesScreen> {
   final _fabKey = GlobalKey();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<NotesProvider>().load();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
@@ -381,8 +389,7 @@ class _NoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorHex = note.colorHex;
-    final cardColor = Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
+    final cardColor = Color(int.parse('0xFF${note.color.replaceFirst('#', '')}'));
     return GestureDetector(
       onLongPress: onDelete,
       child: TapTile(

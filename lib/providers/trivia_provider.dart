@@ -57,6 +57,24 @@ class TriviaProvider extends ChangeNotifier {
         todayAnswers, q!.id!, {myId, partnerId});
   }
 
+  /// Preguntas que YO aún no respondí (para el mazo).
+  List<TriviaQuestion> get unansweredQuestions {
+    final myAnsweredIds = _answers
+        .where((a) => a.userId == myId)
+        .map((a) => a.questionId)
+        .toSet();
+    return _questions.where((q) => q.id != null && !myAnsweredIds.contains(q.id)).toList();
+  }
+
+  /// Preguntas que YA respondí (para el historial).
+  List<TriviaQuestion> get answeredQuestions {
+    final myAnsweredIds = _answers
+        .where((a) => a.userId == myId)
+        .map((a) => a.questionId)
+        .toSet();
+    return _questions.where((q) => q.id != null && myAnsweredIds.contains(q.id)).toList();
+  }
+
   int get myScore => TriviaStats.scoreFor(_answers, myId, partnerId);
   int get partnerScore => TriviaStats.scoreFor(_answers, partnerId, myId);
 

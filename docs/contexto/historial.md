@@ -1,5 +1,148 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-08-31] - MIGRACIONES - Todas las migraciones SQL ejecutadas en SQL Editor de Supabase
+
+**Resumen**: Se ejecutaron las ~24 migraciones SQL pendientes en el entorno de producción de Supabase. El código Dart referencia tablas, columnas, RLS policies, realtime subscriptions y Edge Function triggers que no existían en la nube sin la ejecución de estas migraciones.
+
+**Cambios realizados**:
+- `supabase/migration_schedules_sync.sql` — sync de eventos con user_id + color BIGINT + realtime ✅
+- `supabase/migration_class_schedules.sql` — tabla class_schedules en cloud + color BIGINT ✅
+- `supabase/migration_push_categories.sql` — 18 triggers AFTER INSERT para push FCM a todos los tipos ✅
+- `supabase/migration_board_v2.sql` — tablas board_elements_v2 + boards + realtime ✅
+- `supabase/migration_reaction_rpc.sql` — RPCs toggle_reaction + react_deck_card con row-level lock ✅
+- `supabase/migration_chat_media_reactions.sql` — 7 columnas nuevas en messages + delivered_at/read_at ✅
+- `supabase/migration_gallery_comments.sql` — tabla gallery_comments + realtime ✅
+- `supabase/migration_goals_completed_by.sql` — columna completed_by en goals ✅
+- `supabase/migration_seen_system.sql` — columna seen_by en letters + challenges ✅
+- `supabase/migration_favorites_dual_rating.sql` — rating_facu/rating_rocio/critica + migración legacy ✅
+- `supabase/migration_trivia.sql` — options JSONB + guess en question_answers ✅
+- `supabase/migration_rewards.sql` — tablas couple_rewards + couple_points ✅
+- `supabase/migration_couple_achievements.sql` — tabla couple_achievements ✅
+- `supabase/migration_couple_locations.sql` — tabla couple_locations + haversine ✅
+- `supabase/migration_bot_webhook.sql` — función furi_trigger_bot() + triggers pg_net ✅
+- `supabase/migration_device_tokens_unique.sql` — índice único device_tokens ✅
+- `supabase/migration_chat_typing.sql` — tabla chat_typing + realtime ✅
+- `supabase/migration_notifications_realtime.sql` — tabla notifications en supabase_realtime ✅
+- `supabase/migration_board_milanote.sql` — bucket board-media + columnas z/data ✅
+- `supabase/schema.sql` — schema maestro consolidado con TODAS las tablas ✅
+- `supabase/functions/send-push/index.ts` — deploy vía Management API (v5, poda UNREGISTERED) ✅
+- `bot-furi/bot.js` — LID fix + ventana dinámica + persistencia de LIDs en session_data ✅
+
+**Lección**: Las migraciones SQL son inútiles si no se ejecutan en prod. El código Dart referencia tablas/columnas/RPCs que no existen sin la ejecución. Había ~19 items marcados como "Pendiente: ejecutar en SQL Editor" en errores-conocidos.md e historial.md — todos resueltos.
+
+**Impacto**: Todas las funcionalidades de Supabase ahora operan en la nube. Push FCM → goals/challenges ✓, reacciones en chat ✓, sync calendario entre usuarios ✓, clases en Supabase ✓, webhook pg_net ✓, racha de pareja ✓, logros ✓, recompensas ✓, trivia ✓, mapa/distancia ✓.
+
+**Pendiente**: ninguna — todas las migraciones ejecutadas ✅ 2026-08-31.
+
+---
+
+## [2026-08-31] - BUGFIX - Reacciones chat: jsonb_set path era text en vez de text[] (root cause del 420809)
+
+**Resumen**: La causa raíz real del error 420809 no era `allowed_tables` ni `existing_uids` (esos fixes eran correctos pero insuficientes). El bug real era que `jsonb_set(current_json, '{' || new_key || '}', ...)` pasaba un `text` como path, pero `jsonb_set` requiere `text[]`. PostgreSQL no podía encontrar la sobrecarga `jsonb_set(jsonb, text, jsonb)` y lanzaba 42883, que en el contexto de PostgREST se manifestaba como 420809.
+
+**Cambios realizados**:
+- `supabase/migration_reaction_rpc.sql`: las 3 llamadas a `jsonb_set` cambiaron de `'{' || key || '}'` (text) a `ARRAY[key]` (text[]):
+  - Línea 74: `jsonb_set(current_json, ARRAY[new_key], ...)` — rama de remover usuario (remaining_uids)
+  - Línea 86: `jsonb_set(current_json, ARRAY[new_key], ...)` — rama de agregar usuario nuevo
+  - Línea 146: `jsonb_set(current_reactions, ARRAY[user_key], ...)` — react_deck_card
+
+**Lecciones**: `jsonb_set(target, path, new_value)` en PostgreSQL requiere `path` como `text[]`, no `text`. La sintaxis `'{' || key || '}'` genera un string tipo `"{🥰}"` que PostgreSQL NO convierte implícitamente a `text[]` en el contexto de argumentos de función. `ARRAY[key]` crea el array nativo directamente. Los fixes anteriores (allowed_tables jsonb→text[], jsonb_array_elements_text, COUNT) eran correctos pero no cubrían este bug que estaba en la línea siguiente.
+
+**Pendiente**: ~~ejecutar la migración actualizada en Supabase SQL Editor (DROP + CREATE de ambas funciones)~~ ✅ EJECUTADO 2026-08-31. Fixes adicionales: jsonb_set path text→text[], `updated_at` removido del UPDATE dinámico (messages no tiene esa columna).
+
+**Impacto**: `supabase/migration_reaction_rpc.sql`.
+
+---
+
+## [2026-08-31] - BUGFIX - Reacciones chat: error 420809 "any/all requires array"
+
+**Resumen**: Al reaccionar a un mensaje del chat, Supabase lanzaba `PostgrestException: op any/all (array) requires array on right side (code 420809)`. Causa raíz: en la RPC `toggle_reaction`, la variable `allowed_tables` estaba declarada como `jsonb` pero el operador `= ANY()` de PostgreSQL requiere un array `text[]`.
+
+**Cambios realizados**:
+- `supabase/migration_reaction_rpc.sql`: `allowed_tables jsonb := '[...]'::jsonb` → `allowed_tables text[] := ARRAY[...]`.
+
+**Lecciones**: `= ANY()` en PostgreSQL solo acepta arrays nativos (`text[]`, `int[]`, etc.), no `jsonb`. Un jsonb con forma de array (`["a","b"]`) NO es un array de Postgres para efectos del operador `ANY`.
+
+**Pendiente**: ejecutar la migración actualizada en Supabase SQL Editor.
+
+**Impacto**: `supabase/migration_reaction_rpc.sql`.
+
+---
+
+## [2026-08-31] - BUGFIX - Reacciones chat: 3 bugs adicionales en RPC (cast JSON→array, CARDINALITY, react_deck_card)
+
+**Resumen**: El fix anterior (jsonb→text[]) solo cubría la whitelist. La RPC tenía 2 bugs más que impedían el funcionamiento: (1) `(current_json->>new_key)::text[]` falla porque `->>` devuelve formato JSON `["uid"]` y `::text[]` espera formato PG `{uid}`; (2) `CARDINALITY(jsonb_object_keys(...))` falla porque `jsonb_object_keys` devuelve `setof text`, no un array. Mismo bug en ambas RPCs.
+
+**Cambios realizados**:
+- `supabase/migration_reaction_rpc.sql`:
+  - Línea 58: `(current_json->>new_key)::text[]` → `ARRAY(SELECT jsonb_array_elements_text(current_json->new_key))`
+  - Línea 75: `(SELECT CARDINALITY(jsonb_object_keys(current_json)))::integer` → `SELECT COUNT(*) INTO key_count FROM jsonb_object_keys(current_json)`
+  - Línea 129: mismo fix en `react_deck_card`
+  - `react_deck_card`: `jsonb_strip_nulls(current_reactions #>> '{...}')` → `current_reactions - user_key` (operador jsonb minus correcto)
+  - `react_deck_card`: `(reaction || '::jsonb')` → `to_jsonb(reaction)` (cast correcto)
+
+**Lecciones**: PostgreSQL tiene 3 formatos incompatibles: JSON arrays `["a","b"]`, PG arrays `{"a","b"}`, y `setof text` de funciones. No se pueden mezclar con casts implícitos. `jsonb_array_elements_text()` es el puente correcto de JSON array a `setof text`, envuelto en `ARRAY(...)` para obtener un `text[]`.
+
+**Pendiente**: ejecutar la migración actualizada en Supabase SQL Editor.
+
+**Impacto**: `supabase/migration_reaction_rpc.sql`.
+
+---
+
+## [2026-08-31] - BUGFIX - Sonidos que se reproducen solos cada tanto (concurrencia + sin debounce)
+
+**Resumen**: Algunos sonidos (swoosh, pop, success, alert) se reproducían de forma intermitente sin el usuario tocar nada. Causa raíz: `SoundService._play()` compartía un `AudioPlayer` estático sin ningún mecanismo de exclusión mutua ni debounce. Cuando `SwapWidget` (ciclo auto cada ~15s), `TapTile` (taps rápidos) y `LocaScreen` (apertura de paneles) llamaban a `SoundService().swoosh()` simultáneamente, las llamadas concurrentes al `_player` se intercalaban y podían producir sonidos superpuestos o inesperados. Además, `pop()`, `success()`, `swoosh()` y `alert()` no tenían debounce (solo `click()` tenía 150ms).
+
+**Cambios realizados**:
+- `lib/services/sound_service.dart`:
+  - Agregado `_isPlaying` (lock booleano estático) que impide que llamadas concurrentes a `_play()` se superpongan: si ya hay un sonido sonando, la nueva llamada retorna sin hacer nada.
+  - Agregado `_lastSwooshTime` + debounce de 400ms para `swoosh()` (como ya tenía `click()` con 150ms).
+  - `pop()`, `success()`, `alert()` ahora tienen debounce de 300ms usando `_lastSwooshTime`.
+  - `_play()` envuelve la lógica con `_isPlaying = true/false` para serializar el acceso al `AudioPlayer`.
+  - `dispose()` resetea `_isPlaying = false` antes de liberar el player.
+
+**Lecciones**: El `AudioPlayer` singleton de `audioplayers` no maneja concurrente por defecto: dos `play()` simultáneos se intercalan. Un lock simple `_isPlaying` + debounce en cada método de sonido evita tanto la superposición como el disparo periódico no deseado. El `SwapWidget` (auto-play) era el generador principal de sonidos "solos" al no tener ningún throttling.
+
+**Impacto**: `lib/services/sound_service.dart`.
+
+---
+
+## [2026-08-31] - BUGFIX - Reacciones del chat no funcionan (RPC RETURNS void + whitelist incompleta)
+
+**Resumen**: No se podía reaccionar a ningún mensaje del chat. Causa raíz: la RPC `toggle_reaction` en `migration_reaction_rpc.sql` estaba declarada con `RETURNS void`, pero los providers (chat, gallery, workout) parseaban el retorno con `parseReactions(res)` → recibían `null` → `parseReactions(null)` retornaba `{}` → todas las reacciones se borraban silenciosamente. Además la whitelist de tablas solo incluía `messages` y `board_elements_v2`, faltando `gallery`, `workout_logs`, `workout_routines` y `workout_challenges`.
+
+**Cambios realizados**:
+- `supabase/migration_reaction_rpc.sql`:
+  - `RETURNS void` → `RETURNS jsonb` en `toggle_reaction`.
+  - Whitelist ampliada: `["board_elements_v2","messages","gallery","workout_logs","workout_routines","workout_challenges"]`.
+  - `RETURN;` → `RETURN COALESCE(new_data, '{}'::jsonb)` y `RETURN current_json` (límite).
+  - Fix DECLARE: `target_exists boolean := false` declarado correctamente.
+  - Fix CHECK: `SELECT EXISTS(...) INTO target_exists` (antes usaba `SELECT 1 INTO target_exists` que fallaba sin variable declarada).
+- `lib/providers/chat_provider.dart`: null-guard en `toggleReaction` — si la RPC devuelve null (no deployada), no sobreescribe reacciones.
+- `lib/providers/gallery_provider.dart`: mismo null-guard en `toggleReaction`.
+- `lib/providers/workout_provider.dart`: null-guard en `_reactViaRpc`.
+
+**Lecciones**: Un `RETURNS void` en una RPC hace que el cliente reciba `null`. Si el código intenta parsear ese `null` como datos, los reemplaza por vacío. La whitelist de tablas debe incluir todas las tablas que usan la RPC, no solo las más obvias. `flutter test` del contrato (`reaction_merge_contract_test.dart`) validó que la lógica pura sigue intacta.
+
+**Impacto**: `supabase/migration_reaction_rpc.sql`, `lib/providers/chat_provider.dart`, `lib/providers/gallery_provider.dart`, `lib/providers/workout_provider.dart`.
+
+**Pendiente**: ejecutar la migración actualizada en Supabase SQL Editor (sin esto, la RPC no existe en prod y las reacciones seguirán fallando).
+
+---
+
+## [2026-08-31] - BUGFIX - Notas no se ven (color parsing crash + load nunca llamado)
+
+**Resumen**: La pantalla de Notas mostraba notas en blanco o no las mostraba. Dos bugs: (1) `_NoteCard` crasheaba al parsear el color hex porque `note.colorHex` quitaba el `#` y luego `replaceFirst('#', '0xFF')` no encontraba nada → `int.parse('FFF9C4')` lanzaba FormatException → pantalla blanca en release; (2) `NotesScreen` no tenía `initState` que llamara `load()`, así que las notas nunca se cargaban de SQLite.
+
+**Cambios realizados**:
+- `lib/screens/notes/notes_screen.dart`:
+  - `_NotesScreenState`: agregado `initState` con `addPostFrameCallback` que llama `context.read<NotesProvider>().load()` (patrón ya usado en otros providers, evita el warning `use_build_context_synchronously`).
+  - `_NoteCard`: corregido el parsing de color de `Color(int.parse(colorHex.replaceFirst('#', '0xFF')))` (donde `colorHex` ya no tiene `#`) a `Color(int.parse('0xFF${note.color.replaceFirst('#', '')}'))`.
+
+**Lecciones**: `note.colorHex` devuelve el hex sin `#` (ej. `'FFF9C4'`); llamar `replaceFirst('#', '0xFF')` sobre eso no hace nada porque no hay `#`. La forma correcta es usar `note.color` (que SÍ tiene `#`) y reemplazarlo con `0xFF`. Un `initState` faltante en un screen con Consumer es silencioso: el provider carga vacío y la pantalla parece "sin datos".
+
+**Impacto**: `lib/screens/notes/notes_screen.dart`, docs.
+
 ## [2026-08-31] - BUGFIX - APK release: flutter clean + fix notes_screen (muchos cambios no se aplicaban)
 
 **Resumen**: El usuario reportó que muchos cambios hechos en el código no aparecían en la app APK instalada. Causa raíz: el build incremental de Flutter no refresca el `app.so` en release — cada cambio de Dart exige `flutter clean` + rebuild completo. Además había un error de compilación en `notes_screen.dart` (método fuera de clase) que impedía generar el APK.

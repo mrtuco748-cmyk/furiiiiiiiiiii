@@ -347,11 +347,13 @@ class ChatProvider extends ChangeNotifier {
           'user_id': myId,
         },
       );
-      final authoritative = Message.parseReactions(res);
-      final li = _messages.indexWhere((m) => m.id == msg.id);
-      if (li >= 0) {
-        _messages[li] = _messages[li].copyWith(reactions: authoritative);
-        notifyListeners();
+      if (res != null) {
+        final authoritative = Message.parseReactions(res);
+        final li = _messages.indexWhere((m) => m.id == msg.id);
+        if (li >= 0) {
+          _messages[li] = _messages[li].copyWith(reactions: authoritative);
+          notifyListeners();
+        }
       }
     } catch (e) {
       if (idx >= 0) {

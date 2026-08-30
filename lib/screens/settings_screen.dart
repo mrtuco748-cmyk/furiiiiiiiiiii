@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../router.dart';
@@ -20,20 +19,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _autoPlaySwap = false;
-  double _blockWeight = 1.0;
-  bool _zenMode = false;
-  double _bgVolume = 0.5;
-  double _sfxVolume = 1.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _autoPlaySwap = Provider.of<SettingsService>(context, listen: false).autoPlaySwap;
-    _blockWeight = 1.0;
-    _zenMode = false;
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = appThemes[widget.mode]!;
@@ -50,129 +35,117 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (context.mounted) context.go(RouterRoutes.login);
         },
       ),
-      // Selector de tema: ciclo por modos F.U.R.I
+      // Selector de tema: ciclo por modos F.U.R.I + persistencia
       LocaEntry(
         icon: Icons.palette,
         color: t.a,
-        label: 'Tema',
+        label: 'Tema: ${widget.mode.name}',
         onTap: () {
+          HapticFeedback.heavyImpact();
           final current = widget.mode;
           final all = AppMode.values;
           final nextIdx = all.indexOf(current) + 1;
           final nextMode = nextIdx < all.length ? all[nextIdx] : AppMode.values.first;
+          settings.setAppMode(nextMode);
           if (context.mounted) {
             context.goNamed(RouterRoutes.settings, extra: nextMode);
           }
         },
       ),
-      // Volumen música (toggle between 0.0 and 1.0)
+      // Volumen música (cicla entre 0.0 / 0.5 / 1.0)
       LocaEntry(
         icon: Icons.volume_up,
         color: t.c,
         label: 'Vol. Música: ${settings.bgVolume.toStringAsFixed(1)}',
         onTap: () {
           HapticFeedback.lightImpact();
-          setState(() {
-            _bgVolume = settings.bgVolume <= 0.3 ? 0.5 : 0.0;
-          });
-          settings.setBgVolume(_bgVolume);
+          final next = settings.bgVolume <= 0.1 ? 0.5
+              : settings.bgVolume <= 0.5 ? 1.0 : 0.0;
+          settings.setBgVolume(next);
         },
       ),
-      // Volumen SFX (toggle between 0.0 and 1.0)
+      // Volumen efectos (cicla entre 0.0 / 0.5 / 1.0)
       LocaEntry(
-        icon: Icons.volume_up,
+        icon: Icons.record_voice_over,
         color: t.d,
         label: 'Vol. Efectos: ${settings.sfxVolume.toStringAsFixed(1)}',
         onTap: () {
           HapticFeedback.lightImpact();
-          setState(() {
-            _sfxVolume = settings.sfxVolume <= 0.3 ? 1.0 : 0.0;
-          });
-          settings.setSfxVolume(_sfxVolume);
+          final next = settings.sfxVolume <= 0.1 ? 0.5
+              : settings.sfxVolume <= 0.5 ? 1.0 : 0.0;
+          settings.setSfxVolume(next);
         },
       ),
-      // Háptics / sonido toggle
+      // Sonidos on/off (persistido)
       LocaEntry(
-        icon: Icons.volume_off,
+        icon: settings.enableSound ? Icons.volume_up : Icons.volume_off,
         color: t.e,
-        label: settings.enableSound ? 'Háptics on' : 'Háptics off',
+        label: settings.enableSound ? 'Sonidos on' : 'Sonidos off',
         onTap: () {
           HapticFeedback.lightImpact();
           settings.setEnableSound(!settings.enableSound);
         },
       ),
-      // Notificaciones de tareas → pantalla de notificaciones
+      // Notificaciones → pantalla de notificaciones
       LocaEntry(
         icon: Icons.notifications_none,
         color: t.b,
-        label: 'Notif. Tareas',
+        label: 'Notificaciones',
         onTap: () {
           HapticFeedback.lightImpact();
           if (context.mounted) context.push(RouterRoutes.notifications);
         },
       ),
-      // Notificaciones de favoritos → pantalla de favoritos
+      // Favoritos → pantalla de favoritos
       LocaEntry(
         icon: Icons.favorite,
         color: t.e,
-        label: 'Notif. Favoritos',
+        label: 'Favoritos',
         onTap: () {
           HapticFeedback.lightImpact();
           if (context.mounted) context.push(RouterRoutes.favoritos);
         },
       ),
-      // Modo Zen: ocultar balances/rachas
+      // Modo Zen: ocultar balances/rachas (persistido)
       LocaEntry(
-        icon: Icons.zoom_out,
+        icon: settings.zenMode ? Icons.zoom_in : Icons.zoom_out,
         color: t.a,
-        label: _zenMode ? 'Zen ON' : 'Modo Zen',
+        label: settings.zenMode ? 'Zen ON' : 'Modo Zen',
         onTap: () {
-          HapticFeedback.lightImpact();
-          setState(() {
-            _zenMode = !_zenMode;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_zenMode ? 'Modo Zen activado' : 'Modo Zen desactivado',
-                style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
-              backgroundColor: const Color(0xFF0A0A0A),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              duration: const Duration(seconds: 1),
-            ),
-          );
+          HapticFeedback.heavyImpact();
+          settings.setZenMode(!settings.zenMode);
         },
       ),
-      // Swap automático
+      // Swap automático (persistido)
       LocaEntry(
-        icon: _autoPlaySwap ? Icons.stop : Icons.autorenew,
+        icon: settings.autoPlaySwap ? Icons.stop : Icons.autorenew,
         color: t.c,
-        label: _autoPlaySwap ? 'Swap desactivado' : 'Swap automático',
+        label: settings.autoPlaySwap ? 'Swap auto ON' : 'Swap automático',
         onTap: () {
           HapticFeedback.lightImpact();
-          setState(() {
-            _autoPlaySwap = !_autoPlaySwap;
-          });
-          settings.setAutoPlaySwap(_autoPlaySwap);
+          settings.setAutoPlaySwap(!settings.autoPlaySwap);
         },
-        autoPlaySwap: _autoPlaySwap,
-        iconDuration: Duration(milliseconds: _autoPlaySwap ? 200 : 700),
-        swapDuration: Duration(milliseconds: _autoPlaySwap ? 200 : 700),
+        autoPlaySwap: settings.autoPlaySwap,
+        iconDuration: Duration(milliseconds: settings.autoPlaySwap ? 200 : 700),
+        swapDuration: Duration(milliseconds: settings.autoPlaySwap ? 200 : 700),
       ),
-      // Tamaño de bloques
+      // Tamaño de bloques (persistido)
       LocaEntry(
         icon: Icons.format_size,
         color: t.d,
-        label: 'Tamaño bloque: $_blockWeight',
+        label: 'Bloques: ${settings.blockWeight.toStringAsFixed(1)}',
         onTap: () {
           HapticFeedback.lightImpact();
-          setState(() {
-            _blockWeight = _blockWeight >= 2.0 ? 0.5 : _blockWeight + 0.5;
-          });
+          final next = settings.blockWeight >= 1.8 ? 0.5 : settings.blockWeight + 0.5;
+          settings.setBlockWeight(next);
         },
       ),
     ];
-    return LocaScreen(seed: 43, theme: t, entries: entries);
+    return LocaScreen(
+      seed: 43,
+      theme: t,
+      entries: entries,
+      blockWeight: settings.blockWeight,
+    );
   }
 }

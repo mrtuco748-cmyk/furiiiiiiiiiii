@@ -69,6 +69,7 @@ class LocaScreen extends StatefulWidget {
   final ThemeSet theme;
   final bool showBack;
   final bool showHearts;
+  final double blockWeight;
 
   const LocaScreen({
     super.key,
@@ -79,6 +80,7 @@ class LocaScreen extends StatefulWidget {
     required this.theme,
     this.showBack = true,
     this.showHearts = true,
+    this.blockWeight = 1.0,
   });
 
   /// Envoltura brutalista estándar para el contenido de un panel swink.
@@ -89,12 +91,12 @@ class LocaScreen extends StatefulWidget {
     int bw = 4,
   }) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(28),
       child: Container(
         decoration: BoxDecoration(
           color: color,
           border: Border.all(color: borderColor, width: bw.toDouble()),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(28),
           boxShadow: const [
             BoxShadow(color: Color(0xFF000000), offset: Offset(8, 8), blurRadius: 0),
           ],
@@ -315,8 +317,8 @@ class _LocaScreenState extends State<LocaScreen>
   double _entryWeight(LocaEntry e) {
     if (e.weight != null) return e.weight!;
     final l = e.label;
-    if (l == null || l.isEmpty) return 1;
-    return (1 + l.length / 14).clamp(1.0, 8.0).toDouble();
+    final base = (l == null || l.isEmpty) ? 1.0 : (1 + l.length / 14).clamp(1.0, 8.0).toDouble();
+    return (base * widget.blockWeight).clamp(0.5, 8.0);
   }
 
 Widget _buildBlock(

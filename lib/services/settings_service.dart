@@ -13,6 +13,8 @@ class SettingsService extends ChangeNotifier {
   static const _keyAppMode = 'appMode';
   static const _keyHomeShortcut = 'homeShortcut';
   static const _keyAutoPlaySwap = 'autoPlaySwap';
+  static const _keyZenMode = 'zenMode';
+  static const _keyBlockWeight = 'blockWeight';
 
   bool _enableSound = true;
   double _bgVolume = 0.5;
@@ -20,6 +22,8 @@ class SettingsService extends ChangeNotifier {
   AppMode _appMode = AppMode.dark;
   String _homeShortcut = 'Mazos';
   bool _autoPlaySwap = false;
+  bool _zenMode = false;
+  double _blockWeight = 1.0;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -32,6 +36,8 @@ class SettingsService extends ChangeNotifier {
     }
     _homeShortcut = prefs.getString(_keyHomeShortcut) ?? 'Mazos';
     _autoPlaySwap = prefs.getBool(_keyAutoPlaySwap) ?? false;
+    _zenMode = prefs.getBool(_keyZenMode) ?? false;
+    _blockWeight = prefs.getDouble(_keyBlockWeight) ?? 1.0;
     notifyListeners();
   }
 
@@ -41,6 +47,8 @@ class SettingsService extends ChangeNotifier {
   AppMode get appMode => _appMode;
   String get homeShortcut => _homeShortcut;
   bool get autoPlaySwap => _autoPlaySwap;
+  bool get zenMode => _zenMode;
+  double get blockWeight => _blockWeight;
 
   Future<void> setEnableSound(bool value) async {
     _enableSound = value;
@@ -81,6 +89,20 @@ class SettingsService extends ChangeNotifier {
     _autoPlaySwap = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyAutoPlaySwap, value);
+    notifyListeners();
+  }
+
+  Future<void> setZenMode(bool value) async {
+    _zenMode = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyZenMode, value);
+    notifyListeners();
+  }
+
+  Future<void> setBlockWeight(double value) async {
+    _blockWeight = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_keyBlockWeight, value);
     notifyListeners();
   }
 }

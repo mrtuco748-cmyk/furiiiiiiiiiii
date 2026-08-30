@@ -34,7 +34,7 @@ class TapTileState extends State<TapTile> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () { SoundService().click(); widget.onTap(); _ctrl.forward(from: 0); },
+      onTap: () { SoundService().swoosh(); widget.onTap(); _ctrl.forward(from: 0); },
       child: AnimatedBuilder(
         animation: _scale,
         builder: (context, child) {

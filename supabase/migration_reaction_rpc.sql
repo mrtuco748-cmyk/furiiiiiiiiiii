@@ -19,19 +19,20 @@ CREATE FUNCTION toggle_reaction(
     reaction_key text,
     user_id text
 )
-RETURNS void
+RETURNS jsonb
 LANGUAGE plpgsql
 STRICT
 AS $$
 DECLARE
-    is_whitelisted boolean := false;
-    allowed_tables jsonb := '["board_elements_v2","messages"]'::jsonb;
+    target_exists boolean := false;
+    allowed_tables text[] := ARRAY['board_elements_v2','messages','gallery','workout_logs','workout_routines','workout_challenges'];
     target_in_whitelist boolean := false;
     current_json jsonb;
     new_key text := reaction_key;
     existing_uids text[];
     remaining_uids text[];
     new_data jsonb;
+    key_count integer;
 BEGIN
     -- Verificar que la tabla esté en la whitelist
     target_in_whitelist := target_table = ANY(allowed_tables);
@@ -41,21 +42,23 @@ BEGIN
     END IF;
 
     -- Verificar que el elemento existe (con lock row para race condition)
-    EXECUTE format('SELECT 1 INTO target_exists FROM %I WHERE id = %L FOR UPDATE', target_table, row_id);
+    EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I WHERE id = %L FOR UPDATE)', target_table, row_id) INTO target_exists;
 
     IF NOT target_exists THEN
-        RETURN;
+        RETURN NULL::jsonb;
     END IF;
 
     -- Obtener datos actuales
-    EXECUTE format('SELECT %I INTO current_json FROM %I WHERE id = %L FOR UPDATE', target_col, target_table, row_id);
+    EXECUTE format('SELECT %I FROM %I WHERE id = %L', target_col, target_table, row_id) INTO current_json;
 
     IF current_json IS NULL THEN
-        RETURN;
+        RETURN '{}'::jsonb;
     END IF;
 
     -- Extraer la lista de user_ids para la key actual
-    existing_uids := (current_json->>new_key)::text[];
+    -- IMPORTANTE: usar jsonb_array_elements_text, NO el cast ::text[]
+    -- porque ->> devuelve formato JSON ["uid1","uid2"] y ::text[] espera {uid1,uid2}
+    existing_uids := ARRAY(SELECT jsonb_array_elements_text(current_json->new_key));
 
     -- LÓGICA DE TOGGLE:
     -- Si el usuario ya reaccionó con esta key, removerlo.
@@ -68,26 +71,27 @@ BEGIN
             new_data := jsonb_strip_nulls(current_json - new_key);
         ELSE
             -- Reconstruir JSONB con la lista restante
-            new_data := jsonb_set(current_json, '{' || new_key || '}', (SELECT jsonb_agg(elem) FROM unnest(remaining_uids) AS t(elem)));
+            new_data := jsonb_set(current_json, ARRAY[new_key], (SELECT jsonb_agg(elem) FROM unnest(remaining_uids) AS t(elem)));
         END IF;
     ELSE
-        -- USUARIO NUEVO: verificar límite de 5 keys computando inline
-        IF (SELECT CARDINALITY(jsonb_object_keys(current_json)))::integer >= 5 THEN
-            -- Límite alcanzado: retornar sin modificar
-            RETURN;
+        -- USUARIO NUEVO: verificar límite de 5 keys usando COUNT
+        SELECT COUNT(*) INTO key_count FROM jsonb_object_keys(current_json);
+
+        IF key_count >= 5 THEN
+            -- Límite alcanzado: retornar data sin modificar
+            RETURN current_json;
         END IF;
 
         -- Agregar nueva key con este user_id
-        new_data := jsonb_set(current_json, '{' || new_key || '}', (SELECT jsonb_agg(DISTINCT elem) FROM unnest(string_to_array(user_id, ',')) AS t(elem)));
+        new_data := jsonb_set(current_json, ARRAY[new_key], (SELECT jsonb_agg(DISTINCT elem) FROM unnest(string_to_array(user_id, ',')) AS t(elem)));
     END IF;
 
-    -- Actualizar fila con nuevo data y bump de updated_at
-    -- Solo actualizar si new_data es distinto de current_json
+    -- Actualizar fila con nuevo data (sin updated_at para compatibilidad con todas las tablas)
     IF new_data IS DISTINCT FROM current_json THEN
-        EXECUTE format('UPDATE %I SET %I = %L, updated_at = NOW() WHERE id = %L', target_table, target_col, new_data, row_id);
+        EXECUTE format('UPDATE %I SET %I = %L WHERE id = %L', target_table, target_col, new_data, row_id);
     END IF;
 
-    RETURN;
+    RETURN COALESCE(new_data, '{}'::jsonb);
 END;
 $$;
 
@@ -118,15 +122,19 @@ BEGIN
     -- Parse reactions actuales (formato {uid:emoji})
     current_reactions := current_data->'reactions';
 
+    IF current_reactions IS NULL THEN
+        current_reactions := '{}'::jsonb;
+    END IF;
+
     -- Si ya tiene reacción de este usuario → quitarla
     IF current_reactions ? user_key THEN
-        new_reactions := jsonb_strip_nulls(current_reactions #>> '{' || user_key || '}');
-        IF jsonb_typeof(new_reactions) = 'null' THEN
+        new_reactions := current_reactions - user_key;
+        IF jsonb_typeof(new_reactions) = 'null' OR new_reactions = 'null'::jsonb THEN
             new_reactions := '{}'::jsonb;
         END IF;
     ELSE
-        -- Nueva reacción: verificar límite de 5 keys
-        key_count := (SELECT CARDINALITY(jsonb_object_keys(current_reactions)))::integer;
+        -- Nueva reacción: verificar límite de 5 keys usando COUNT
+        SELECT COUNT(*) INTO key_count FROM jsonb_object_keys(current_reactions);
 
         IF key_count >= 5 THEN
             -- Límite alcanzado: retornar data sin modificar
@@ -134,7 +142,7 @@ BEGIN
         END IF;
 
         -- Agregar nueva key: {user_id: emoji}
-        new_reactions := jsonb_set(current_reactions, '{' || user_key || '}', (reaction || '::jsonb'), true);
+        new_reactions := jsonb_set(current_reactions, ARRAY[user_key], to_jsonb(reaction));
     END IF;
 
     -- Actualizar fila
@@ -154,5 +162,5 @@ GRANT EXECUTE ON FUNCTION react_deck_card TO anon;
 GRANT EXECUTE ON FUNCTION react_deck_card TO authenticated;
 
 -- 4. Comentario explicativo
-COMMENT ON FUNCTION toggle_reaction(text, text, bigint, text, text) IS 'Merge atómico de reacciones JSONB con row-level lock. Cubre board_elements_v2, messages y tablas workout*. Whitelist de tablas permitidas. Max 5 keys, 1 reacción por usuario por key.';
+COMMENT ON FUNCTION toggle_reaction(text, text, bigint, text, text) IS 'Merge atómico de reacciones JSONB con row-level lock. Devuelve el mapa de reacciones actualizado (JSONB). Cubre board_elements_v2, messages y tablas workout*. Whitelist de tablas permitidas. Max 5 keys, 1 reacción por usuario por key.';
 COMMENT ON FUNCTION react_deck_card(bigint, text, text) IS 'RPC dedicada para tarjetas del mazo: forma {uid:emoji}. Toggle on/off, límite 5 keys. Devuelve el estado autoritativo.';

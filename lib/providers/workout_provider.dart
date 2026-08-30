@@ -377,6 +377,7 @@ class WorkoutProvider extends ChangeNotifier {
             'user_id': myId,
           })
           .timeout(const Duration(seconds: 10));
+      if (res == null) return null;
       return WorkoutSocial.fromMap({'reactions': res}).reactions;
     } catch (e) {
       developer.log('WorkoutProvider._reactViaRpc error: $e');

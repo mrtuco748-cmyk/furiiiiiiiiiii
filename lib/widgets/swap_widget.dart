@@ -7,6 +7,7 @@ class SwapWidget extends StatefulWidget {
   final Widget iconChild;
   final Widget swapChild;
   final bool autoPlay;
+  final bool playSound;
   final Duration iconDuration;
   final Duration swapDuration;
   final Duration initialDelay;
@@ -18,6 +19,7 @@ class SwapWidget extends StatefulWidget {
     required this.iconChild,
     required this.swapChild,
     this.autoPlay = true,
+    this.playSound = true,
     this.iconDuration = const Duration(seconds: 4),
     this.swapDuration = const Duration(seconds: 7),
     this.initialDelay = const Duration(seconds: 4),
@@ -65,7 +67,7 @@ class _SwapWidgetState extends State<SwapWidget> {
   void _showSwapContent() {
     if (!mounted) return;
     setState(() => _showingSwap = true);
-    SoundService().swoosh();
+    if (widget.playSound) SoundService().swoosh();
     widget.onSwapShow?.call();
     _timer = Timer(widget.swapDuration, () {
       if (!mounted) return;

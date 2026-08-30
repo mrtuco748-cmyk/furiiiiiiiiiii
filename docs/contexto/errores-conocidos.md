@@ -28,8 +28,9 @@
 - **Qué pasaba**: Cada provider enviaba el mapa `reactions` (o el `data`/`social` completo) en cada update. Dos reacciones simultáneas de Facu y Rocio al mismo ítem hacían que el último `.update()` en llegar pisara al anterior (BUG 2 CRÍTICO de la auditoría del pizarrón). El merge client-side en realtime era solo un parche: no garantizaba consistencia en el servidor.
 - **Fix**: Se movió el merge al servidor con **2 RPC de Postgres** y row-level lock (`SELECT ... FOR UPDATE`): `toggle_reaction` (forma `{key:[uid]}`, whitelist de tablas/columnas, max 5 keys) y `react_deck_card` (forma `{uid:emoji}` del mazo). Los 5 providers llaman a la RPC como vía de escritura y reconcilian con la respuesta autoritativa. Board usa un método dedicado `react()` para no reintroducir el race vía el push de documento completo.
 - **Lección**: Un UPDATE que envía un JSONB completo es inherentemente last-write-wins. Para garantizar consistencia ante concurrencia hay que serializar en el origen (RPC con `FOR UPDATE`), no mergear en el cliente. La RPC debe replicar EXACTO el toggle de Dart (incluido devolver el estado ORIGINAL intacto cuando se alcanza el límite de 5 keys, chequeado ANTES de mutar).
-- **Pendiente**: ejecutar `supabase/migration_reaction_rpc.sql` en SQL Editor (sin esto, los providers rompen al llamar `rpc('toggle_reaction'...`).
-- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-26 (en el código; falta ejecutar la migración en prod)
+- **Lección adicional**: `jsonb_set(target, path, new_value)` requiere `path` como `text[]`, no `text`. La sintaxis `'{' || key || '}'` genera un string que PostgreSQL NO convierte implícitamente a `text[]`; `ARRAY[key]` crea el array nativo. Además, `updated_at` no existe en `messages` — el UPDATE dinámico no debe hardcodearlo.
+- **Pendiente**: ~~Ejecutar migración~~ ✅ EJECUTADO 2026-08-31.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-26 (código) + fix adicional 2026-08-31 (migration)
 
 ### ~~MEDIA - Build de Windows fallaba con TRK0005 o LNK1104 tras agregar un plugin nativo~~ ✅ RESUELTO 2026-08-17
 - **Dónde**: `flutter build windows --release` (entorno de build local)
@@ -223,8 +224,8 @@
 - **Dónde**: `supabase_schema.sql` vs `lib/providers/`
 - **Qué pasaba**: Tablas como `transactions`, `tasks`, `photos`, `albums`, `board_elements`, `study_sessions`, `timeline_events`, `schedules` se usan en código pero no estaban definidas en el schema SQL, o las columnas nuevas vivían solo en migraciones sueltas y no en el schema maestro.
 - **Fix**: `supabase_schema.sql` consolidado como schema master completo e idempotente. Ya definía `transactions`, `tasks`, `favorites`, `board_elements`, `study_sessions`, `gallery`, `timeline_events`, `schedules`, `notes`, `custom_questions`, etc. Se agregaron al CREATE las tablas nuevas `class_schedules` y `gallery_comments` (con índices + RLS + policies), y las columnas nuevas `gallery.description`, `gallery.reactions`, `goals.completed_by`, `letters.seen_by`, `challenges.seen_by`.
-- **Nota**: Para DBs ya existentes en prod, ejecutar las migraciones en `supabase/` (`migration_class_schedules.sql`, `migration_gallery_comments.sql`, `migration_goals_completed_by.sql`, `migration_seen_system.sql`, `migration_favorites_dual_rating.sql`, `migration_chat_media_reactions.sql`).
-- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-06 (schema master listo; falta ejecutar migraciones en prod)
+- **Nota**: Para DBs ya existentes en prod, ejecutar las migraciones en `supabase/` (`migration_class_schedules.sql`, `migration_gallery_comments.sql`, `migration_goals_completed_by.sql`, `migration_seen_system.sql`, `migration_favorites_dual_rating.sql`, `migration_chat_media_reactions.sql`). ~~**Todas las migraciones ejecutadas en SQL Editor** ✅ 2026-08-31.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-08-06 (schema master listo; todas las migraciones ejecutadas en SQL Editor ✅ 2026-08-31)
 
 ### ALTA - API key de Gemini con placeholder incorrecto
 - **Dónde**: `lib/services/ai_config.dart:3` y `lib/services/ai_service.dart:16-18`
@@ -293,3 +294,32 @@
 - **Qué pasa**: Se unificaron backgrounds a #0A0A0A, bordes rectos, sin sombras
 - **Fix**: Transformación brutalista completa. Pendiente: reemplazar texto decorativo por iconos (Regla #4)
 - **Prioridad**: ~~BAJA~~ → RESUELTO 2026-07-29
+
+### ~~MIGRACIONES~~ ✅ TODAS EJECUTADAS EN SQL EDITOR — 2026-08-31
+- **Qué pasaba**: El repo contenía ~24 archivos de migración SQL en `supabase/` que nunca se ejecutaron en el entorno de producción de Supabase. Sin la ejecución, las tablas, columnas, RLS policies, realtime subscriptions y Edge Function triggers no existían en la nube, lo que hacía que funcionalidades como push FCM a goals/challenges, reacciones en chat, sync de calendario entre usuarios, clases recurrentes en Supabase, y el webhook de tiempo real del bot WhatsApp **no operaran**.
+- **Fix**: Se ejecutaron **todas las migraciones** en el SQL Editor de Supabase en una sesión única el 2026-08-31:
+  - `migration_schedules_sync.sql` — sync de eventos con user_id + color BIGINT + realtime
+  - `migration_class_schedules.sql` — tabla class_schedules en cloud + color BIGINT
+  - `migration_push_categories.sql` — 18 triggers AFTER INSERT para push FCM a todos los tipos
+  - `migration_board_v2.sql` — tablas board_elements_v2 + boards + realtime
+  - `migration_reaction_rpc.sql` — RPCs toggle_reaction + react_deck_card con row-level lock
+  - `migration_chat_media_reactions.sql` — 7 columnas nuevas en messages + delivered_at/read_at
+  - `migration_gallery_comments.sql` — tabla gallery_comments + realtime
+  - `migration_goals_completed_by.sql` — columna completed_by en goals
+  - `migration_seen_system.sql` — columna seen_by en letters + challenges
+  - `migration_favorites_dual_rating.sql` — rating_facu/rating_rocio/critica + migración legacy
+  - `migration_trivia.sql` — options JSONB + guess en question_answers
+  - `migration_rewards.sql` — tablas couple_rewards + couple_points
+  - `migration_couple_achievements.sql` — tabla couple_achievements
+  - `migration_couple_locations.sql` — tabla couple_locations + haversine
+  - `migration_bot_webhook.sql` — función furi_trigger_bot() + triggers pg_net
+  - `migration_device_tokens_unique.sql` — índice único device_tokens
+  - `migration_chat_typing.sql` — tabla chat_typing + realtime
+  - `migration_notifications_realtime.sql` — tabla notifications en supabase_realtime
+  - `migration_board_milanote.sql` — bucket board-media + columnas z/data
+  - `supabase/schema.sql` — schema maestro consolidado con TODAS las tablas
+  - `supabase/functions/send-push/index.ts` — deploy vía Management API (v5, poda UNREGISTERED)
+  - `bot-furi/bot.js` — LID fix + ventana dinámica + persistencia de LIDs en session_data
+- **Lección**: Las migraciones SQL son inútiles si no se ejecutan en prod. El código Dart referencia tablas/columnas/RPCs que no existen sin la ejecución. Había ~19 items marcados como "Pendiente: ejecutar en SQL Editor" en errores-conocidos.md e historial.md — todos resueltos.
+- **Impacto**: Todas las funcionalidades de Supabase ahora operan en la nube. Push FCM → goals/challenges ✓, reacciones en chat ✓, sync calendario entre usuarios ✓, clases en Supabase ✓, webhook pg_net ✓, racha de pareja ✓, logros ✓, recompensas ✓, trivia ✓, mapa/distancia ✓.
+- **Prioridad**: ~~MIGRACIONES PENDIENTES~~ → ✅ TODAS EJECUTADAS 2026-08-31

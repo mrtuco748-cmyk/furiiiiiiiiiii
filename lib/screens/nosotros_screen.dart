@@ -640,6 +640,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       btnBlock(lay.retosX, lay.r1Y, lay.retosW * 1.35, lay.r1H, t.e,
         SwapWidget(
           autoPlay: _partnerRetos.isNotEmpty,
+          playSound: false,
           initialDelay: const Duration(seconds: 2),
           swapDuration: const Duration(seconds: 3),
           iconDuration: const Duration(seconds: 4),
@@ -655,6 +656,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       btnBlock(lay.cartasX, lay.cartasY, lay.cartasW, lay.cartasH, t.b,
         SwapWidget(
           autoPlay: _partnerLetter != null,
+          playSound: false,
           initialDelay: const Duration(seconds: 1),
           swapDuration: const Duration(seconds: 4),
           iconDuration: const Duration(seconds: 2),

@@ -143,10 +143,21 @@ Future<void> _loadRetos() async {
 
   bool _done(Map<String, dynamic> r) => (r['completed'] as bool? ?? false);
 
+  static const _randomColors = [
+    Color(0xFFFF6B00), Color(0xFFFF00FF), Color(0xFF00D4FF),
+    Color(0xFF39FF14), Color(0xFF9D00FF), Color(0xFFFF1493),
+    Color(0xFFFFD700), Color(0xFF00FF88), Color(0xFFFF4444),
+    Color(0xFF4488FF), Color(0xFFFF88CC), Color(0xFF88FF44),
+  ];
+
+  Color _retoColor(Map<String, dynamic> reto) {
+    final id = reto['id'] as int? ?? 0;
+    return _randomColors[id % _randomColors.length];
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = getTheme(widget.mode);
-    final palette = [t.a, t.b, t.c, t.d, t.e];
     // Mosaico: solo los 5 retos más recientes. El resto se ve desde "historial".
     final shownRetos = _retos.take(5).toList();
     final entries = <LocaEntry>[
@@ -155,7 +166,7 @@ Future<void> _loadRetos() async {
       for (var i = 0; i < shownRetos.length; i++)
         LocaEntry(
           icon: _done(shownRetos[i]) ? Icons.check_circle : Icons.radio_button_unchecked,
-          color: _done(shownRetos[i]) ? t.c : palette[i % palette.length],
+          color: _done(shownRetos[i]) ? t.c : _retoColor(shownRetos[i]),
           label: shownRetos[i]['title'] as String? ?? '',
           panel: i,
         ),

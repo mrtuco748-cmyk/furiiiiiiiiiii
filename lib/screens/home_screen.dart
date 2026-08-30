@@ -13,6 +13,7 @@ import '../widgets/mode_btn.dart';
 import '../widgets/concrete_painter.dart';
 import '../widgets/responsive_wrapper.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
 import '../providers/deck_provider.dart';
 import '../providers/couple_provider.dart';
 import '../providers/rewards_provider.dart';
@@ -456,6 +457,8 @@ final raw = getTheme(_mode);
             bg(w, h),
             Consumer<CoupleProvider>(
               builder: (context, couplePv, _) {
+                final zenMode = Provider.of<SettingsService>(context, listen: false).zenMode;
+                if (zenMode) return const SizedBox.shrink();
                 return Positioned(right: c4 * 0.15, top: 4,
                   child: coupleTile(couplePv, t, onTap: () => _openLogros()));
               },
@@ -829,8 +832,6 @@ class _NotificationPanelState extends State<_NotificationPanel> {
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           child: Row(children: [
             Icon(Icons.notifications, color: t.a, size: 24),
-            const SizedBox(width: 8),
-            Text('Notificaciones', style: GoogleFonts.bangers(color: t.light, fontSize: 18, fontWeight: FontWeight.w900)),
             const Spacer(),
             if (_items.isNotEmpty)
               TapTile(onTap: _markAllRead, child: Padding(
@@ -865,8 +866,6 @@ class _NotificationPanelState extends State<_NotificationPanel> {
     if (_items.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.notifications_none, color: Colors.white38, size: 56),
-        const SizedBox(height: 8),
-        Text('Sin notificaciones', style: GoogleFonts.bangers(color: Colors.white38, fontSize: 14)),
       ]));
     }
     return ListView.builder(
@@ -933,8 +932,6 @@ class _ShortcutPanel extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           child: Row(children: [
             Icon(Icons.shortcut, color: t.a, size: 24),
-            const SizedBox(width: 8),
-            Text('Crear', style: GoogleFonts.bangers(color: t.light, fontSize: 18, fontWeight: FontWeight.w900)),
             const Spacer(),
             TapTile(onTap: onConfig, child: Padding(
               padding: const EdgeInsets.all(6),
