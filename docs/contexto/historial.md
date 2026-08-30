@@ -1,5 +1,61 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-08-30] - BUGFIX - Botón de volumen de música no funcionaba en tiempo real
+
+**Resumen**: El botón de volumen de música en Settings no aplicaba el cambio al AudioPlayer en tiempo real. Al tocar el botón, `SettingsService.setBgVolume()` guardaba el valor en SharedPreferences y notificaba la UI, pero nunca llamaba a `SoundService().updateBgVolume()` para cambiar el volumen del `_bgPlayer`. El mismo problema existía para el toggle de sonidos on/off: `setEnableSound()` guardaba el valor pero no iniciaba/detenía la música de fondo.
+
+**Cambios realizados**:
+- `lib/screens/settings_screen.dart`: import de `SoundService` agregado. En el `onTap` del volumen de música, se agregó `SoundService().updateBgVolume(next)` después de `settings.setBgVolume(next)`. En el `onTap` del toggle sonidos on/off, se agregó `SoundService().startBackgroundMusic()` al activar y `SoundService().stopBackgroundMusic()` al desactivar.
+
+**Lecciones**: `SettingsService` y `SoundService` son singletones independientes; el primero persiste y notifica UI, el segundo controla el AudioPlayer. Al cambiar una configuración que afecta audio en vivo, hay que llamar explícitamente al servicio de sonido — `SettingsService` no tiene referencia a `SoundService` y viceversa, así que la "pegadura" vive en la UI (el screen que ejecuta la acción).
+
+**Impacto**: `lib/screens/settings_screen.dart`.
+
+---
+
+## [2026-08-30] - BUGFIX - Atajo "Nota" del Home navegaba a Cartas en vez de Notas
+
+**Resumen**: El atajo "Nota" del panel de accesos rápidos del HomeScreen navegaba a `RouterRoutes.letters` (pantalla de Cartas) en vez de `RouterRoutes.notes` (pantalla de Notas). Cada vez que el usuario tocaba "Nota", se abría la pantalla de Cartas.
+
+**Cambios realizados**:
+- `lib/screens/home_screen.dart:250`: `case 'create_note':` cambiado de `context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode})` a `context.push(RouterRoutes.notes)`.
+
+**Lecciones**: Un copy-paste del caso `create_letter` al crear `create_note` copió la ruta incorrecta. El `NotesScreen` no acepta parámetros `extra` (a diferencia de `LettersScreen` que sí recibe `extra`), así que el parámetro también se eliminó. Antes de commit, verificar que la ruta en el `switch` apunte al screen correcto, no al que se copió.
+
+**Impacto**: `lib/screens/home_screen.dart`.
+
+---
+
+## [2026-08-31] - BUGFIX - Home: botones inferiores tocando botones de modos de color
+
+**Resumen**: Los botones de la fila inferior (Ejercicios/Finanzas/Favoritos) y los mini-iconos (Mazo/Trivia/Poemas) estaban pegados a los botones de cambiar color del tema en la columna derecha. Se agregó un gap de separación entre ambos.
+
+**Cambios realizados**:
+- `lib/screens/home_screen.dart`: el ancho de los bloques de mini-iconos (y4) y de botones inferiores (y5) se redujo de `x4 - x2` a `x4 - x2 - gap`, creando un espacio de `gap` (2.5% del ancho de pantalla) entre la fila y los bloques de modos (flower/green/dark/blue/heart) en la columna derecha.
+
+**Lección**: En un layout de grilla con columnas adyacentes, si la fila de un lado llega justo al borde de la columna del otro, hay que restar un gap explícito para evitar que se toquen. El `gap` ya existente como variable del layout es el valor correcto para esta separación.
+
+**Impacto**: `lib/screens/home_screen.dart`
+
+---
+
+## [2026-08-31] - BUILD - APK release v1.0.3 compilado y publicado en GitHub
+
+**Resumen**: Se commitearon 18 archivos modificados + 1 nuevo, se compiló el APK release universal (72.8 MB, arm64-v8a + armeabi-v7a + x86_64), se pusheó todo a GitHub y se creó el release v1.0.3 con el APK descargable.
+
+**Cambios realizados**:
+- Commit `d172af2`: sonido fix, reacciones RPC, cache offline, UI polish y fixes multiples (19 archivos, 1562 insertions, 587 deletions)
+- Push a `origin/main`
+- APK build: `flutter clean` + `flutter pub get` + `flutter build apk --release` (72.8 MB)
+- Release GitHub `v1.0.3` creado y publicado con el APK descargable
+- Link de descarga: https://github.com/mrtuco748-cmyk/furiiiiiiiiiii/releases/tag/v1.0.3
+
+**Lecciones**: La subida del APK (72.8 MB) vía `gh release upload` colgaba por timeout. La alternativa vía API REST (`uploads.github.com`) con multipart form data funciona pero requiere construir el body manualmente con boundary y encoding iso-8859-1. `Invoke-RestMethod -InFile` no funciona para multipart; hay que leer el archivo como bytes, convertirlo a string iso-8859-1, y armar el body con el boundary.
+
+**Impacto**: Repo GitHub, releases, APK instalable.
+
+---
+
 ## [2026-08-31] - MIGRACIONES - Todas las migraciones SQL ejecutadas en SQL Editor de Supabase
 
 **Resumen**: Se ejecutaron las ~24 migraciones SQL pendientes en el entorno de producción de Supabase. El código Dart referencia tablas, columnas, RLS policies, realtime subscriptions y Edge Function triggers que no existían en la nube sin la ejecución de estas migraciones.

@@ -48,9 +48,8 @@ class _BrutalGridState extends State<_BrutalGrid>
   bool _showPoemas = false;
   bool _notifDrawer = false;
   bool _shortcutPanelOpen = false;
-  late final AnimationController _drawerCtrl;
-  late final Animation<Offset> _drawerSlide;
-  late final Animation<double> _drawerFade;
+  late final AnimationController _notifCtrl;
+  late final AnimationController _shortcutCtrl;
 
   Future<void> _loadMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -76,10 +75,8 @@ class _BrutalGridState extends State<_BrutalGrid>
     super.initState();
     NotificationService.startListening();
     _loadMode();
-    _drawerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 320));
-    _drawerSlide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _drawerCtrl, curve: Curves.easeOutCubic));
-    _drawerFade = CurvedAnimation(parent: _drawerCtrl, curve: Curves.easeInOut);
+    _notifCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 320));
+    _shortcutCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 320));
     WidgetsBinding.instance.addPostFrameCallback((_) => _initDeck());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CoupleProvider>().load();
@@ -88,7 +85,8 @@ class _BrutalGridState extends State<_BrutalGrid>
 
   @override
   void dispose() {
-    _drawerCtrl.dispose();
+    _notifCtrl.dispose();
+    _shortcutCtrl.dispose();
     super.dispose();
   }
 
@@ -97,17 +95,16 @@ class _BrutalGridState extends State<_BrutalGrid>
   void _openNotificationDrawer() {
     if (_shortcutPanelOpen) {
       _closeShortcutPanel();
-      return;
     }
     setState(() => _notifDrawer = true);
-    _drawerCtrl.forward(from: 0);
+    _notifCtrl.forward(from: 0);
     Future.delayed(const Duration(milliseconds: 50), () {
       _notifPanelKey.currentState?.refresh();
     });
   }
 
   void _closeNotificationDrawer() {
-    _drawerCtrl.reverse().then((_) {
+    _notifCtrl.reverse().then((_) {
       if (mounted) setState(() => _notifDrawer = false);
     });
   }
@@ -115,14 +112,13 @@ class _BrutalGridState extends State<_BrutalGrid>
   void _openShortcutPanel() {
     if (_notifDrawer) {
       _closeNotificationDrawer();
-      return;
     }
     setState(() => _shortcutPanelOpen = true);
-    _drawerCtrl.forward(from: 0);
+    _shortcutCtrl.forward(from: 0);
   }
 
   void _closeShortcutPanel() {
-    _drawerCtrl.reverse().then((_) {
+    _shortcutCtrl.reverse().then((_) {
       if (mounted) setState(() => _shortcutPanelOpen = false);
     });
   }
@@ -130,24 +126,27 @@ class _BrutalGridState extends State<_BrutalGrid>
   /// Panel de notificaciones que se desliza desde la izquierda con animación.
   /// Se posiciona a la altura del botón superior izquierdo.
   Widget _notificationDrawer(ThemeSet t, double panelHeight, double left, double panelWidth) {
-    final visible = _notifDrawer || _drawerCtrl.isAnimating;
+    final visible = _notifDrawer || _notifCtrl.isAnimating;
     if (!visible) return const SizedBox.shrink();
     return Positioned(
       left: left, top: 0,
       width: panelWidth, height: panelHeight,
       child: AnimatedBuilder(
-        animation: _drawerCtrl,
+        animation: _notifCtrl,
         builder: (context, _) {
+          final slide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+              .animate(CurvedAnimation(parent: _notifCtrl, curve: Curves.easeOutCubic));
+          final fade = CurvedAnimation(parent: _notifCtrl, curve: Curves.easeInOut);
           return IgnorePointer(
-            ignoring: !(_notifDrawer || _drawerCtrl.isAnimating),
+            ignoring: !_notifDrawer,
             child: Stack(children: [
               GestureDetector(
                 onTap: _closeNotificationDrawer,
                 behavior: HitTestBehavior.opaque,
-                child: Container(color: Colors.black.withValues(alpha: 0.5 * _drawerFade.value)),
+                child: Container(color: Colors.black.withValues(alpha: 0.5 * fade.value)),
               ),
               SlideTransition(
-                position: _drawerSlide,
+                position: slide,
                 child: _NotificationPanel(key: _notifPanelKey, theme: t, onClose: _closeNotificationDrawer),
               ),
             ]),
@@ -160,24 +159,27 @@ class _BrutalGridState extends State<_BrutalGrid>
   /// Panel de accesos rápidos que se desliza desde la izquierda.
   /// Se posiciona a la altura del botón inferior izquierdo.
   Widget _shortcutPanelDrawer(ThemeSet t, double panelHeight, double left, double panelWidth) {
-    final visible = _shortcutPanelOpen || _drawerCtrl.isAnimating;
+    final visible = _shortcutPanelOpen || _shortcutCtrl.isAnimating;
     if (!visible) return const SizedBox.shrink();
     return Positioned(
       left: left, top: panelHeight,
       width: panelWidth, height: panelHeight,
       child: AnimatedBuilder(
-        animation: _drawerCtrl,
+        animation: _shortcutCtrl,
         builder: (context, _) {
+          final slide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+              .animate(CurvedAnimation(parent: _shortcutCtrl, curve: Curves.easeOutCubic));
+          final fade = CurvedAnimation(parent: _shortcutCtrl, curve: Curves.easeInOut);
           return IgnorePointer(
-            ignoring: !(_shortcutPanelOpen || _drawerCtrl.isAnimating),
+            ignoring: !_shortcutPanelOpen,
             child: Stack(children: [
               GestureDetector(
                 onTap: _closeShortcutPanel,
                 behavior: HitTestBehavior.opaque,
-                child: Container(color: Colors.black.withValues(alpha: 0.5 * _drawerFade.value)),
+                child: Container(color: Colors.black.withValues(alpha: 0.5 * fade.value)),
               ),
               SlideTransition(
-                position: _drawerSlide,
+                position: slide,
                 child: _ShortcutPanel(theme: t, onClose: _closeShortcutPanel, onAction: _executeShortcutAction, onConfig: _openShortcutConfig),
               ),
             ]),
@@ -245,7 +247,7 @@ class _BrutalGridState extends State<_BrutalGrid>
         context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode});
         break;
       case 'create_note':
-        context.push(RouterRoutes.letters, extra: {'create': true, 'mode': _mode});
+        context.push(RouterRoutes.notes);
         break;
       case 'create_favorite':
         context.push(RouterRoutes.favoritos, extra: {'create': true});
@@ -492,7 +494,7 @@ final raw = getTheme(_mode);
                 child: Padding(padding: EdgeInsets.all(w * 0.02),
                   child: Container(decoration: BoxDecoration(color: t.dark, borderRadius: BorderRadius.circular(14)), child: fillIcon(Icons.camera_alt, t.b))),
               ), _openGaleria, borderWidth: 4),
-            block(x2, y4, x4 - x2, rh[4], t.dark,
+            block(x2, y4, x4 - x2 - gap, rh[4], t.dark,
               Row(children: [
                 Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.style, t.c, t: t, onTap: () => _openMazo(0, 0), onDown: _confettiGlobal))),
                 gapW(6),
@@ -500,7 +502,7 @@ final raw = getTheme(_mode);
                 gapW(6),
                 Expanded(child: Padding(padding: EdgeInsets.all(w * 0.01), child: miniIcon(Icons.auto_stories, t.a, t: t, onTap: () => _openPoemas(0, 0), onDown: _confettiGlobal))),
               ]), (x, y) {}, borderWidth: 5),
-            Positioned(left: x2, top: y5, width: x4 - x2, height: rh[5],
+            Positioned(left: x2, top: y5, width: x4 - x2 - gap, height: rh[5],
               child: Row(children: [
                 Expanded(flex: 6, child: bottomBtn(const Color(0xFF39FF14), Icons.fitness_center, const Color(0xFF062B06), 5, _openEjercicios, _confettiGlobal)),
                 gapW(6),
@@ -826,27 +828,37 @@ class _NotificationPanelState extends State<_NotificationPanel> {
     final t = widget.theme;
     return Material(
       color: const Color(0xFF101010),
-      child: SafeArea(child: Column(children: [
-        Container(height: 1, color: t.d),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Row(children: [
-            Icon(Icons.notifications, color: t.a, size: 24),
-            const Spacer(),
-            if (_items.isNotEmpty)
-              TapTile(onTap: _markAllRead, child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Icon(Icons.done_all, color: t.c, size: 22),
-              )),
-            const SizedBox(width: 4),
-            TapTile(onTap: widget.onClose, child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: const Icon(Icons.close, color: Colors.white, size: 24),
-            )),
-          ]),
+      borderRadius: const BorderRadius.only(
+        topRight: Radius.circular(20),
+        bottomRight: Radius.circular(20),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
         ),
-        Expanded(child: _body(t)),
-      ])),
+        child: SafeArea(child: Column(children: [
+          Container(height: 1, color: t.d),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            child: Row(children: [
+              Icon(Icons.notifications, color: t.a, size: 24),
+              const Spacer(),
+              if (_items.isNotEmpty)
+                TapTile(onTap: _markAllRead, child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(Icons.done_all, color: t.c, size: 22),
+                )),
+              const SizedBox(width: 4),
+              TapTile(onTap: widget.onClose, child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: const Icon(Icons.close, color: Colors.white, size: 24),
+              )),
+            ]),
+          ),
+          Expanded(child: _body(t)),
+        ])),
+      ),
     );
   }
 
@@ -926,47 +938,57 @@ class _ShortcutPanel extends StatelessWidget {
     final t = theme;
     return Material(
       color: const Color(0xFF101010),
-      child: SafeArea(child: Column(children: [
-        Container(height: 1, color: t.d),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Row(children: [
-            Icon(Icons.shortcut, color: t.a, size: 24),
-            const Spacer(),
-            TapTile(onTap: onConfig, child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Icon(Icons.settings, color: t.dark, size: 24),
-            )),
-            const SizedBox(width: 4),
-            TapTile(onTap: onClose, child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Icon(Icons.close, color: t.dark, size: 24),
-            )),
-          ]),
+      borderRadius: const BorderRadius.only(
+        topRight: Radius.circular(20),
+        bottomRight: Radius.circular(20),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
         ),
-        Expanded(
-          child: GridView.count(
-            crossAxisCount: 3,
-            padding: const EdgeInsets.all(12),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            children: [
-              _scItem(Icons.edit, 'Carta', t.a, () => onAction('create_letter')),
-              _scItem(Icons.note_add, 'Nota', t.c, () => onAction('create_note')),
-              _scItem(Icons.add_circle, 'Favorito', t.c, () => onAction('create_favorite')),
-              _scItem(Icons.event, 'Evento', t.b, () => onAction('create_event')),
-              _scItem(Icons.flag, 'Reto', t.d, () => onAction('create_challenge')),
-              _scItem(Icons.emoji_events, 'Meta', t.e, () => onAction('create_goal')),
-              _scItem(Icons.account_balance_wallet, 'Finanzas', t.d, () => onAction('create_transaction')),
-              _scItem(Icons.chat_bubble_outline, 'Pregunta', t.a, () => onAction('create_question')),
-              _scItem(Icons.photo_camera_front, 'Galería', t.b, () => onAction('create_gallery')),
-              _scItem(Icons.task_alt, 'Tarea', t.c, () => onAction('create_task')),
-              _scItem(Icons.school, 'Clase', t.b, () => onAction('create_class')),
-              _scItem(Icons.alarm, 'Recordator', t.a, () => onAction('create_reminder')),
-            ],
+        child: SafeArea(child: Column(children: [
+          Container(height: 1, color: t.d),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            child: Row(children: [
+              Icon(Icons.shortcut, color: t.a, size: 24),
+              const Spacer(),
+              TapTile(onTap: onConfig, child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(Icons.settings, color: t.dark, size: 24),
+              )),
+              const SizedBox(width: 4),
+              TapTile(onTap: onClose, child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(Icons.close, color: t.dark, size: 24),
+              )),
+            ]),
           ),
-        ),
-      ])),
+          Expanded(
+            child: GridView.count(
+              crossAxisCount: 3,
+              padding: const EdgeInsets.all(12),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              children: [
+                _scItem(Icons.edit, 'Carta', t.a, () => onAction('create_letter')),
+                _scItem(Icons.note_add, 'Nota', t.c, () => onAction('create_note')),
+                _scItem(Icons.add_circle, 'Favorito', t.c, () => onAction('create_favorite')),
+                _scItem(Icons.event, 'Evento', t.b, () => onAction('create_event')),
+                _scItem(Icons.flag, 'Reto', t.d, () => onAction('create_challenge')),
+                _scItem(Icons.emoji_events, 'Meta', t.e, () => onAction('create_goal')),
+                _scItem(Icons.account_balance_wallet, 'Finanzas', t.d, () => onAction('create_transaction')),
+                _scItem(Icons.chat_bubble_outline, 'Pregunta', t.a, () => onAction('create_question')),
+                _scItem(Icons.photo_camera_front, 'Galería', t.b, () => onAction('create_gallery')),
+                _scItem(Icons.task_alt, 'Tarea', t.c, () => onAction('create_task')),
+                _scItem(Icons.school, 'Clase', t.b, () => onAction('create_class')),
+                _scItem(Icons.alarm, 'Recordator', t.a, () => onAction('create_reminder')),
+              ],
+            ),
+          ),
+        ])),
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../router.dart';
 import '../services/settings_service.dart';
+import '../services/sound_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/loca_screen.dart';
 
@@ -62,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final next = settings.bgVolume <= 0.1 ? 0.5
               : settings.bgVolume <= 0.5 ? 1.0 : 0.0;
           settings.setBgVolume(next);
+          SoundService().updateBgVolume(next);
         },
       ),
       // Volumen efectos (cicla entre 0.0 / 0.5 / 1.0)
@@ -83,7 +85,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         label: settings.enableSound ? 'Sonidos on' : 'Sonidos off',
         onTap: () {
           HapticFeedback.lightImpact();
-          settings.setEnableSound(!settings.enableSound);
+          final next = !settings.enableSound;
+          settings.setEnableSound(next);
+          if (next) {
+            SoundService().startBackgroundMusic();
+          } else {
+            SoundService().stopBackgroundMusic();
+          }
         },
       ),
       // Notificaciones → pantalla de notificaciones

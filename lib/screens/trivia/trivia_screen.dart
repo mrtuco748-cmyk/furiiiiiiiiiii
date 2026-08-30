@@ -774,6 +774,8 @@ class _AddQuestionScreenState extends State<_AddQuestionScreen> {
             controller: _qCtrl,
             maxLines: 3,
             maxLength: 200,
+            autocorrect: false,
+            enableSuggestions: false,
             decoration: _dec(t, 'Pregunta'),
             style: GoogleFonts.bangers(color: Colors.white, fontSize: 14),
           ),
@@ -784,6 +786,8 @@ class _AddQuestionScreenState extends State<_AddQuestionScreen> {
             TextField(
               controller: _optCtrls[i],
               maxLength: 60,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: _dec(t, 'Opción ${i + 1}'),
               style: GoogleFonts.bangers(color: Colors.white, fontSize: 13),
             ),
