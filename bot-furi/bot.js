@@ -347,11 +347,22 @@ async function enviarMensaje(sock, phone, mensaje) {
 // status directo. Se soportan ambos formatos por compatibilidad.
 function esperarAck(sock, timeoutMs) {
   const esperas = [];
+  let cleaned = false;
   // El event buffer de Baileys retiene messages.update durante
   // AwaitingInitialSync; flush periodico libera los ACKs acumulados.
   const flushInt = setInterval(() => {
     try { sock.ev.flush?.(); } catch { /* noop */ }
   }, 2000);
+
+  // Quita el listener y el timer una vez que no quedan esperas pendientes
+  // (evita acumular listeners messages.update por cada envio).
+  const limpiar = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearInterval(flushInt);
+    try { sock.ev.off('messages.update', handler); } catch { /* noop */ }
+  };
+
   const handler = (updates) => {
     for (const u of updates) {
       const status = u.update?.status ?? u.status;
@@ -366,19 +377,20 @@ function esperarAck(sock, timeoutMs) {
         }
       }
     }
+    if (esperas.length === 0) limpiar();
   };
   sock.ev.on('messages.update', handler);
 
   return (id) => new Promise((resolve) => {
     const e = { id, resolve, done: false, timer: null };
-    if (!id) { clearInterval(flushInt); resolve(false); return; }
+    if (!id) { limpiar(); resolve(false); return; }
     e.timer = setTimeout(() => {
       if (!e.done) {
         e.done = true;
         const idx = esperas.indexOf(e);
         if (idx >= 0) esperas.splice(idx, 1);
-        clearInterval(flushInt);
         resolve(false);
+        if (esperas.length === 0) limpiar();
       }
     }, timeoutMs);
     esperas.push(e);
@@ -516,6 +528,7 @@ function diasConsecutivos(fechas) {
 }
 
 // Emoji + titulo para el aviso de un logro de pareja desbloqueado.
+// Mapea TODOS los códigos de lib/models/couple_achievement.dart.
 function descripcionLogro(code) {
   const map = {
     first_mood: '🌅 *Primer día* (ambos con estado de ánimo)',
@@ -526,8 +539,49 @@ function descripcionLogro(code) {
     best_streak_14: '🌟 *Medio mes* (mejor racha 14+)',
     messages_100: '💬 *Conversadores* (100 mensajes)',
     messages_1000: '💬 *No se callan nada* (1000 mensajes)',
+    messages_500: '💬 *Charla larga* (500 mensajes)',
+    messages_2000: '💬 *Devotos* (2000 mensajes)',
+    messages_5000: '💬 *Inseparables* (5000 mensajes)',
+    mood_streak_7: '😊 *Ánimo en pareja* (7 días de ánimo ambos)',
+    mood_streak_14: '😊 *Quince días* (14 días de ánimo ambos)',
+    mood_streak_30: '😊 *Mes completo* (30 días de ánimo ambos)',
+    workouts_50: '🏋️ *En racha* (50 sesiones entre ambos)',
+    workout_100: '🏋️ *Cien veces* (100 sesiones entre ambos)',
+    workout_200: '🏋️ *Doscientas* (200 sesiones entre ambos)',
+    location_shared: '📍 *Cerca tuyo* (ambos compartieron ubicación)',
+    reward_fulfilled: '🎁 *Deseo cumplido* (primera recompensa de la cajita)',
+    first_reward: '🎁 *Deseo #1* (primera recompensa cumplida)',
+    rewards_3: '🎁 *Cajita llena* (3 recompensas cumplidas)',
+    trivia_day: '🎯 *Se conocen* (ambos respondieron la trivia del día)',
+    trivia_7: '🎯 *Semana de sabios* (7 días respondiendo ambos)',
+    trivia_30: '🎯 *Maestros* (30 días respondiendo ambos)',
+    trivia_100: '🎯 *Genios* (100 respuestas de trivia entre ambos)',
+    first_letter: '💌 *Primera carta* (enviaron su primera carta)',
+    letters_10: '💌 *Decálogo* (10 cartas entre ambos)',
+    letters_50: '💌 *Epistolario* (50 cartas entre ambos)',
+    first_challenge: '🚩 *Reto nacido* (primer reto juntos)',
+    challenges_3: '🚩 *Triunfadores* (3 retos completados entre ambos)',
+    first_goal: '🏅 *Primera meta* (primera meta completada juntos)',
+    goals_5: '🏅 *Cinco estrellas* (5 metas completadas entre ambos)',
+    furi_3: '🃏 *Tres FURI* (3 matches del mazo)',
+    furi_10: '🃏 *Diez FURI* (10 matches del mazo)',
+    points_100: '⭐ *Cien puntos* (100 puntos de pareja)',
+    points_500: '⭐ *Quinientos* (500 puntos de pareja)',
+    points_1000: '⭐ *Mil puntos* (1000 puntos de pareja)',
+    first_photo: '🖼️ *Primera foto* (primera foto en la galería)',
+    photos_10: '🖼️ *Álbum pequeño* (10 fotos en la galería)',
+    first_favorite: '⭐ *Favorito* (primer favorito guardado)',
+    favorites_10: '⭐ *Coleccionistas* (10 favoritos entre ambos)',
+    distance_1km: '📍 *Cerca* (se separaron al menos 1 km)',
+    distance_100km: '📍 *Lejos pero juntos* (se separaron al menos 100 km)',
+    first_activity_both: '🏃 *En movimiento* (ambos con mood y entrenados el mismo día)',
   };
-  return map[code];
+  if (map[code]) return map[code];
+  // Fallback legible para códigos futuros: snake_case -> Capitalizado
+  const readable = String(code || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return readable ? `🏅 *${readable}*` : '🏅 *Logro desbloqueado*';
 }
 
 // ─── VERIFICAR EVENTOS ────────────────────────────────────────
@@ -577,8 +631,7 @@ async function verificarYNotificar(sock) {
               `📅 *${s.title}*\n` +
               `⏰ ${formatHora(s.startTime)} - ${formatHora(s.endTime)}\n` +
               `📍 ${s.location || 'Sin ubicacion'}\n` +
-              `⏳ En ${minutos} minutos`,
-              'schedules', key, 'proximo', s.title);
+              `⏳ En ${minutos} minutos`);
             await marcarNotificado('schedules', key, 'proximo', phone, s.title);
           }
         }
@@ -610,7 +663,7 @@ async function verificarYNotificar(sock) {
         const destinos = destinosPara(usuarios, c.user_id);
         for (const phone of destinos) {
           if (!(await yaNotificado('class_schedules', key, phone))) {
-            encolar(phone, texto, 'class_schedules', key, 'proximo', c.title);
+            encolar(phone, texto);
             await marcarNotificado('class_schedules', key, 'proximo', phone, c.title);
           }
         }
@@ -633,7 +686,7 @@ async function verificarYNotificar(sock) {
         if (ahoraHora >= 8 && ahoraHora <= 10) {
           for (const phone of destinos) {
             if (!(await yaNotificado('anniversaries', key, phone))) {
-              encolar(phone, `🎉 *Hoy es ${a.title}!*`, 'anniversaries', key, 'hoy', a.title);
+              encolar(phone, `🎉 *Hoy es ${a.title}!*`);
               await marcarNotificado('anniversaries', key, 'hoy', phone, a.title);
             }
           }
@@ -642,7 +695,7 @@ async function verificarYNotificar(sock) {
         const key = `anniversary-${a.id}-${manana}-aviso`;
         for (const phone of destinos) {
           if (!(await yaNotificado('anniversaries', key, phone))) {
-            encolar(phone, `📢 *Recordatorio: manana es ${a.title}*`, 'anniversaries', key, 'manana', a.title);
+            encolar(phone, `📢 *Recordatorio: manana es ${a.title}*`);
             await marcarNotificado('anniversaries', key, 'manana', phone, a.title);
           }
         }
@@ -664,7 +717,7 @@ async function verificarYNotificar(sock) {
       for (const phone of destinos) {
         if (!(await yaNotificado('moods', key, phone))) {
           const nombre = m.profiles?.name || 'Alguien';
-          encolar(phone, `😊 *${nombre}* registro una emocion: ${m.mood}${m.note ? ' - ' + m.note : ''}`, 'moods', key, 'nueva', m.mood);
+          encolar(phone, `😊 *${nombre}* registro una emocion: ${m.mood}${m.note ? ' - ' + m.note : ''}`);
           await marcarNotificado('moods', key, 'nueva', phone, m.mood);
         }
       }
@@ -674,7 +727,7 @@ async function verificarYNotificar(sock) {
   // ── 4. LETTERS (cartas nuevas) ──
   const { data: letters } = await supabase
     .from('letters')
-    .select('*, from_user:profiles!from_user(name)')
+    .select('*, sender:profiles!from_user(name)')
     .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
@@ -686,8 +739,8 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, l.from_user);
       for (const phone of destinos) {
         if (!(await yaNotificado('letters', key, phone))) {
-          const nombre = l.from_user?.name || 'Alguien';
-          encolar(phone, `💌 *${nombre}* te envio una carta: "${l.title}"`, 'letters', key, 'nueva', l.title);
+          const nombre = l.sender?.name || 'Alguien';
+          encolar(phone, `💌 *${nombre}* te envio una carta: "${l.title}"`);
           await marcarNotificado('letters', key, 'nueva', phone, l.title);
         }
       }
@@ -698,7 +751,7 @@ async function verificarYNotificar(sock) {
   // Cuando el momento de apertura llega, el bot "entrega" la carta con impacto.
   const { data: aabrirse } = await supabase
     .from('letters')
-    .select('*, from_user:profiles!from_user(name)')
+    .select('*, sender:profiles!from_user(name)')
     .gte('scheduled_open', desde)
     .lte('scheduled_open', ahora.toISOString())
     .order('scheduled_open', { ascending: false });
@@ -710,8 +763,8 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, l.from_user);
       for (const phone of destinos) {
         if (!(await yaNotificado('letters', key, phone))) {
-          const nombre = l.from_user?.name || 'Alguien';
-          encolar(phone, `💌 *${nombre}* tu carta "${l.title}" acaba de abrirse. Andá a leerla 🥹`, 'letters', key, 'apertura', l.title);
+          const nombre = l.sender?.name || 'Alguien';
+          encolar(phone, `💌 *${nombre}* tu carta "${l.title}" acaba de abrirse. Andá a leerla 🥹`);
           await marcarNotificado('letters', key, 'apertura', phone, l.title);
         }
       }
@@ -732,7 +785,7 @@ async function verificarYNotificar(sock) {
       for (const phone of destinos) {
         if (!(await yaNotificado('challenges', key, phone))) {
           const tipo = c.completed ? 'completado' : c.started ? 'iniciado' : 'creado';
-          encolar(phone, `🚩 Reto *${tipo}*: "${c.title}"`, 'challenges', key, tipo, c.title);
+          encolar(phone, `🚩 Reto *${tipo}*: "${c.title}"`);
           await marcarNotificado('challenges', key, tipo, phone, c.title);
         }
       }
@@ -753,7 +806,7 @@ async function verificarYNotificar(sock) {
       for (const phone of destinos) {
         if (!(await yaNotificado('goals', key, phone))) {
           const tipo = g.completed ? 'completada' : 'creada';
-          encolar(phone, `🏅 Meta *${tipo}*: "${g.title}"`, 'goals', key, tipo, g.title);
+          encolar(phone, `🏅 Meta *${tipo}*: "${g.title}"`);
           await marcarNotificado('goals', key, tipo, phone, g.title);
         }
       }
@@ -773,7 +826,7 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, t.created_by);
       for (const phone of destinos) {
         if (!(await yaNotificado('tasks', key, phone))) {
-          encolar(phone, `✅ Nueva tarea: "${t.title}"${t.due_date ? ' | Vence: ' + t.due_date : ''}`, 'tasks', key, 'nueva', t.title);
+          encolar(phone, `✅ Nueva tarea: "${t.title}"${t.due_date ? ' | Vence: ' + t.due_date : ''}`);
           await marcarNotificado('tasks', key, 'nueva', phone, t.title);
         }
       }
@@ -794,7 +847,7 @@ async function verificarYNotificar(sock) {
       for (const phone of destinos) {
         if (!(await yaNotificado('transactions', key, phone))) {
           const tipo = t.type === 'income' ? '💰 Ingreso' : '💸 Gasto';
-          encolar(phone, `${tipo}: $${t.amount} en *${t.category}*${t.description ? ' - ' + t.description : ''}`, 'transactions', key, t.type, t.description || t.category);
+          encolar(phone, `${tipo}: $${t.amount} en *${t.category}*${t.description ? ' - ' + t.description : ''}`);
           await marcarNotificado('transactions', key, t.type, phone, t.description || t.category);
         }
       }
@@ -814,7 +867,7 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, f.user_id);
       for (const phone of destinos) {
         if (!(await yaNotificado('favorites', key, phone))) {
-          encolar(phone, `⭐ Nuevo favorito: "${f.title}" (${f.category})`, 'favorites', key, 'nuevo', f.title);
+          encolar(phone, `⭐ Nuevo favorito: "${f.title}" (${f.category})`);
           await marcarNotificado('favorites', key, 'nuevo', phone, f.title);
         }
       }
@@ -835,7 +888,7 @@ async function verificarYNotificar(sock) {
       for (const phone of destinos) {
         if (!(await yaNotificado('notes', key, phone))) {
           const preview = n.content.length > 80 ? n.content.slice(0, 80) + '...' : n.content;
-          encolar(phone, `📝 Nueva nota: "${preview}"`, 'notes', key, 'nueva', preview);
+          encolar(phone, `📝 Nueva nota: "${preview}"`);
           await marcarNotificado('notes', key, 'nueva', phone, preview);
         }
       }
@@ -855,7 +908,7 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, g.user_id);
       for (const phone of destinos) {
         if (!(await yaNotificado('gallery', key, phone))) {
-          encolar(phone, `🖼️ Nueva foto${g.label ? ': "' + g.label + '"' : ''} en ${g.album || 'galeria'}`, 'gallery', key, 'nueva', g.label || 'foto');
+          encolar(phone, `🖼️ Nueva foto${g.label ? ': "' + g.label + '"' : ''} en ${g.album || 'galeria'}`);
           await marcarNotificado('gallery', key, 'nueva', phone, g.label || 'foto');
         }
       }
@@ -875,7 +928,7 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, e.user_id);
       for (const phone of destinos) {
         if (!(await yaNotificado('timeline_events', key, phone))) {
-          encolar(phone, `${e.emoji || '🕐'} ${e.content || 'Nuevo evento en la linea de tiempo'}`, 'timeline_events', key, 'nuevo', e.content);
+          encolar(phone, `${e.emoji || '🕐'} ${e.content || 'Nuevo evento en la linea de tiempo'}`);
           await marcarNotificado('timeline_events', key, 'nuevo', phone, e.content);
         }
       }
@@ -885,7 +938,7 @@ async function verificarYNotificar(sock) {
   // ── 13. CUSTOM_QUESTIONS (preguntas del boton ❓ de Nosotros) ──
   const { data: preguntas } = await supabase
     .from('custom_questions')
-    .select('*, from_user:profiles!from_user(name)')
+    .select('*, sender:profiles!from_user(name)')
     .gte('created_at', desde)
     .order('created_at', { ascending: false });
 
@@ -895,13 +948,12 @@ async function verificarYNotificar(sock) {
       const destinos = destinosPara(usuarios, q.from_user);
       for (const phone of destinos) {
         if (!(await yaNotificado('custom_questions', key, phone))) {
-          const nombre = q.from_user?.name || 'Alguien';
+          const nombre = q.sender?.name || 'Alguien';
           const conRespuesta = q.answer != null && q.answer !== '';
           encolar(phone,
             conRespuesta
               ? `❓ *${nombre}* respondio una pregunta`
-              : `❓ *${nombre}* te hizo una pregunta nueva`,
-            'custom_questions', key, conRespuesta ? 'respondida' : 'nueva', q.question);
+              : `❓ *${nombre}* te hizo una pregunta nueva`);
           await marcarNotificado('custom_questions', key, conRespuesta ? 'respondida' : 'nueva', phone, q.question);
         }
       }
@@ -931,8 +983,7 @@ async function verificarYNotificar(sock) {
           const preview = (c.content || '').slice(0, 90);
           encolar(phone,
             `🃏 *Nueva tarjeta en el mazo* (${cat})\n` +
-            `"${preview}${c.content && c.content.length > 90 ? '...' : ''}"`,
-            'deck_cards', key, 'nueva', c.content);
+            `"${preview}${c.content && c.content.length > 90 ? '...' : ''}"`);
           await marcarNotificado('deck_cards', key, 'nueva', phone, c.content);
         }
       }
@@ -959,8 +1010,7 @@ async function verificarYNotificar(sock) {
           const preview = (c.content || '').slice(0, 90);
           encolar(phone,
             `🃏 *FURI!!* Ambos dieron me encanta a la misma tarjeta:\n` +
-            `"${preview}${c.content && c.content.length > 90 ? '...' : ''}"`,
-            'deck_cards', key, 'match', c.content);
+            `"${preview}${c.content && c.content.length > 90 ? '...' : ''}"`);
           await marcarNotificado('deck_cards', key, 'match', phone, c.content);
         }
       }
@@ -985,8 +1035,7 @@ async function verificarYNotificar(sock) {
             l.weight ? `${l.weight}kg` : null,
           ].filter(Boolean).join(' ');
           encolar(phone,
-            `💪 *Nuevo ejercicio:* ${l.exercise_name}${detalle ? ' (' + detalle + ')' : ''}`,
-            'workout_logs', key, 'nuevo', l.exercise_name);
+            `💪 *Nuevo ejercicio:* ${l.exercise_name}${detalle ? ' (' + detalle + ')' : ''}`);
           await marcarNotificado('workout_logs', key, 'nuevo', phone, l.exercise_name);
         }
       }
@@ -1008,8 +1057,7 @@ async function verificarYNotificar(sock) {
         if (!(await yaNotificado('workout_completions', key, phone))) {
           const dia = String(c.completed_on || '').slice(0, 10);
           encolar(phone,
-            `🏋️ *Sesion de entrenamiento completada*${dia ? ' (' + dia + ')' : ''}`,
-            'workout_completions', key, 'completada', dia || hoy);
+            `🏋️ *Sesion de entrenamiento completada*${dia ? ' (' + dia + ')' : ''}`);
           await marcarNotificado('workout_completions', key, 'completada', phone, dia || hoy);
         }
       }
@@ -1033,8 +1081,7 @@ async function verificarYNotificar(sock) {
       for (const phone of destinos) {
         if (!(await yaNotificado('workout_challenges', key, phone))) {
           encolar(phone,
-            `🏆 Reto de ejercicio *${tipo}*: "${c.title}"`,
-            'workout_challenges', key, tipo, c.title);
+            `🏆 Reto de ejercicio *${tipo}*: "${c.title}"`);
           await marcarNotificado('workout_challenges', key, tipo, phone, c.title);
         }
       }
@@ -1072,8 +1119,7 @@ async function verificarYNotificar(sock) {
       if (!(await yaNotificado('workout_completions', key, phone))) {
         const nombreLindo = nombre === 'facu' ? 'Facu' : 'Rocio';
         encolar(phone,
-          `🔥 *La racha de entrenamiento de ${nombreLindo} se corto* (${streak} dias seguidos)`,
-          'workout_completions', key, 'racha_rota', nombre);
+          `🔥 *La racha de entrenamiento de ${nombreLindo} se corto* (${streak} dias seguidos)`);
         await marcarNotificado('workout_completions', key, 'racha_rota', phone, nombre);
       }
     }
@@ -1094,7 +1140,7 @@ async function verificarYNotificar(sock) {
         if (!(await yaNotificado('couple_achievements', key, phone))) {
           const codigo = lg.achievement_code || '';
           const emojiYDesc = descripcionLogro(codigo) || '';
-          encolar(phone, `🏅 *Nuevo logro de pareja!* ${emojiYDesc}`, 'couple_achievements', key, 'logro', codigo);
+          encolar(phone, `🏅 *Nuevo logro de pareja!* ${emojiYDesc}`);
           await marcarNotificado('couple_achievements', key, 'logro', phone, codigo);
         }
       }
@@ -1114,7 +1160,7 @@ async function verificarYNotificar(sock) {
     const key = `trivia-${hoy}`;
     for (const phone of [FACU_NUMERO, ROCIO_NUMERO].filter(Boolean)) {
       if (!(await yaNotificado('question_answers', key, phone))) {
-        encolar(phone, `🎯 *Trivia de pareja lista!* Los dos respondieron. ¿Quién conoce más a quién? Mirá el marcador en la app`, 'question_answers', key, 'ambos', hoy);
+        encolar(phone, `🎯 *Trivia de pareja lista!* Los dos respondieron. ¿Quién conoce más a quién? Mirá el marcador en la app`);
         await marcarNotificado('question_answers', key, 'ambos', phone, hoy);
       }
     }
