@@ -1,5 +1,708 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-09-10] - BUGFIX - Bot notificaba al autor su propia acción (cartas y preguntas)
+
+**Resumen**: El bot de WhatsApp enviaba al mismo usuario la notificación de lo que él mismo acababa de hacer (cartas y preguntas). Ahora solo notifica a la pareja, como en el resto de categorías.
+
+**Causa raíz**: `bot-furi/bot.js` hacía `select('*, from_user:profiles!from_user(name)')` en `letters` (nueva + entrega ceremonial) y `custom_questions`. Ese alias pisaba la columna `from_user` (UUID del creador) con un objeto `{name}`. Al llamar `destinosPara(usuarios, l.from_user)` llegaba `"[object Object]"`, nunca matcheaba Facu/Rocio y caía en el fallback "a ambos" — el autor se auto-notificaba.
+
+**Cambios realizados**:
+- `bot-furi/bot.js`: 3 queries cambiadas a `sender:profiles!from_user(name)` para preservar `from_user`/`to_user` como UUID y usar `sender.name` para el texto. `destinosPara` ahora resuelve correctamente (Facu→solo Rocio, Rocio→solo Facu). Commit `d983b44` pusheado a `main`.
+
+**Lección**: en Supabase JS un alias `col:foreign!fk(...)` reemplaza la columna original en el row. Si necesitas el UUID y el join, aliasa el join (`sender:profiles!fk`), no la columna.
+
+**Archivos impactados**: `bot-furi/bot.js`, `historial.md`.
+
+---
+
+## [2026-09-01] - FEATURE - Tocar una notificación navega a la pantalla correspondiente
+
+**Resumen**: Se mapeó el `data.type` de las notificaciones push a una ruta canónica, y el panel de
+notificaciones (drawer del Home y pantalla Notificaciones) ahora ofrece un botón "ir" (icono
+`open_in_new`) para saltar al contenido al que se refiere el aviso. Antes tocar una notificación solo
+mostraba el detalle sin ninguna acción. `flutter analyze` 0 errores y `flutter test` **254 verdes**.
+
+**Cambios realizados**:
+- `lib/router.dart`: nuevo helper `routeForNotificationType(String type)` que mapea los tipos usados
+  por los triggers de push (message→chat, mood/letter/custom_question/timeline→nosotros, goal→metas,
+  challenge→retos, note→notes, transaction→finanzas, favorite→favoritos, gallery→galeria,
+  schedule/class_schedule/anniversary→calendar, achievement→logros, workout_*→ejercicios). Devuelve
+  `null` para tipos sin pantalla propia.
+- `lib/screens/home_screen.dart` (`_open` del drawer): el diálogo de detalle de la notificación muestra
+  un botón `open_in_new` (color tema b) que cierra el diálogo y hace `context.push(route)` cuando el
+  tipo tiene ruta.
+- `lib/screens/notifications_screen.dart` (`_notifPanel`): mismo botón "ir" al pie del panel swink
+  (cierra el panel con `close()` y navega por `panelContext.push`). Imports de `go_router`/`router`/`tap_tile`.
+
+**Lección**: la ruta a la que lleva una notificación devuelve `null` para tipos sin pantalla (no
+inventar navegación); y para navegar desde un overlay/dialog hay que capturar un contexto con vida
+(el `ctx` del builder o `panelContext`) y hacer `push`, no `go`, para no reemplazar toda la app.
+
+**Pendiente (decisión de producto)**: `onNotificationTap` del FCM (push en primer plano / app
+cerrada→lanzamiento) no navega aún; requiere decidir mapping de `data.type` en arranque y esperar login.
+
+**Archivos impactados**: `router.dart`, `home_screen.dart`, `notifications_screen.dart`, `historial.md`.
+
+---
+
+## [2026-09-01] - BUGFIX - Tanda de consistencia/edge (atribución push + cachés y realtime)
+
+**Resumen**: Cierre del bloque de fixes (pendientes del `diagnostico-2026-09-01.md`). 4 arreglos
+autocontenidos en Dart. `flutter analyze` 0 errores y `flutter test` **254 verdes**.
+
+**Cambios realizados**:
+- **`_storePushNotification` atribuía el push a `from_user: myId`** (`notification_service.dart`):
+  la bandeja de notificaciones mostraba "de mí para mí". Como todo push lo genera la actividad de la
+  pareja (triggers DB → Edge Function), ahora `from_user: AppState.partnerId`. Corrección sin tocar
+  el servidor.
+- **`LocationProvider` recreaba el canal realtime en cada `load()`** (`location_provider.dart`):
+  `_subscribeRealtime` no tenía guarda `_realtimeUp` (a diferencia del resto), causando churn de
+  canales/brechas. Ahora subscribe una sola vez. Además `updateMyLocation` ya refresca el cache
+  local `cache_locations` tras el upsert.
+- **`RewardsProvider` sembraba el cache mal** (`rewards_provider.dart`): `if (cachedR.isNotEmpty ||
+  cachedP.isNotEmpty)` reseteaba la lista que no tuviera cache (`_entries` quedaba vacío y balance 0
+  hasta el fetch). Ahora cada lista se siembra con su propio cache (independiente).
+
+**Archivos impactados**: `notification_service.dart`, `location_provider.dart`, `rewards_provider.dart`,
+`historial.md`.
+
+---
+
+## [2026-09-01] - BUGFIX+REFACTOR - Tanda del bloque 🟥 Difícil (SQL/infra + merge de clases)
+
+**Resumen**: Tercera tanda del diagnóstico (bloque 🟥 fuertemente autocontenido). Se alineó el schema
+maestro con la realidad de prod (realtime + `notes`), se blindó el trigger de notas, y se eliminó el
+último-write-gana del sync de clases con `updatedAt` (SQLite v12 + modelo + provider), espejando el
+merge de `schedules`. `flutter analyze` 0 errores y `flutter test` **254 verdes**.
+
+**Cambios realizados**:
+- **`supabase_schema.sql` (master) ya no diverge de prod para `notes`**: `user_id` pasa de
+  `UUID REFERENCES profiles(id)` a `TEXT NOT NULL DEFAULT ''` (coincide con `migration_notes_sync`
+  y con lo que ejecutó prod) y se eliminó la columna `pinned` que solo existía ahí (drift). Mataba el
+  riesgo de que un INSERT a `notes` rompiera con 42883 si se reconstruía una DB desde el master.
+- **Publicación realtime completa en el master**: nueva sección al final que agrega a
+  `supabase_realtime` las ~22 tablas que la app escucha con `RealtimeChannel` (messages, moods,
+  letters, goals, challenges, daily_questions/question_answers, custom_questions, transactions,
+  favorites, gallery/gallery_comments, schedules, class_schedules, deck_cards, couple_achievements/
+  rewards/points/locations, workout_logs/routines/completions/challenges). Antes solo se publicaban
+  `notifications`, `chat_typing` y `notes` → una DB reconstruida solo con el master quedaba sin sync
+  en vivo. Empaquetado en un `DO $$ ... FOREACH t IN ARRAY [...] $$` idempotente (duplicate_object).
+- **`notify_note_insert` gana `::text`** (`migration_push_categories.sql:221`): pasa `NEW.user_id::text`
+  a `furi_notify_partner` como moods/workout/goals/challenges. Nueva migración
+  `supabase/migration_fix_note_push_cast.sql` (CREATE OR REPLACE, red de seguridad opcional en prod).
+- **Merge de clases con `updatedAt` (fin del último-write-gana)** — `class_schedule.dart`,
+  `database_helper.dart`, `class_schedule_provider.dart`:
+  - Modelo: campo `updatedAt` (DateTime?) en `toMap`/`fromMap`/`fromCloudRow`/`toSupabaseMap`/`copyWith`.
+  - SQLite v12: `ALTER TABLE class_schedules ADD COLUMN updatedAt TEXT DEFAULT ''` + en el CREATE.
+  - `_pushToSupabase`: antes de subir un UPDATE consulta `updated_at` de la fila cloud; si la cloud es
+    más nueva que la local, NO la sobrescribe (la pull la aplica). Evita pisar la edición de la pareja.
+  - `_pullFromCloud` y el realtime UPDATE: solo sobrescriben la local cuando la cloud es más nueva
+    (o la local no tiene timestamp aún), preservando una edición offline local más reciente.
+  - `addSchedule`/`updateSchedule` fijan `updatedAt = now` para que la fila local y la cloud queden
+    con timestamp nuevo al crear/editar.
+
+**Lecciones**: una tabla cloud puede tener `updated_at` aunque el modelo Dart no la mapee; al
+comparar timestamps entre SQLite (ISO string) y cloud hay que parsear con `DateTime.tryParse` y
+normalizar el caso "aún sin columna" de migración (local `null`) → cuando la local no tiene
+timestamp, la cloud gana (se popula la columna al primer pull). El `maybeSingle()` de Supabase
+devuelve `Map?`: para promover el null en Dart hay que chequear `cur != null` antes de indexar
+(`cur is Map` no promueve contra `Map<String,dynamic>?`). El patrón `cloudId + synced + updatedAt +
+merge por recencia` de `schedules` es el estándar del proyecto; `class_schedules` quedó a la par.
+
+**Pendiente (producto/SQL, no tocado)**: `_storePushNotification` atribuye `from_user: myId` (falta
+propagar el autor en el payload); `onNotificationTap` sin navegación por `data.type`; contadores de
+Logros con `.count()`; aviso "nueva tarjeta + match" del bot el mismo día (UX aceptada).
+
+**Archivos impactados**: `supabase_schema.sql`, `supabase/migration_push_categories.sql`,
+`supabase/migration_fix_note_push_cast.sql` (nuevo), `class_schedule.dart`,
+`database_helper.dart`, `class_schedule_provider.dart`, `historial.md`.
+
+---
+
+## [2026-09-01] - BUGFIX - Tanda de fixes de bajo riesgo del diagnóstico (bloque 🟧 Media)
+
+**Resumen**: Segunda tanda del diagnóstico (bloque 🟧 autocontenido en Dart, sin SQL/router). Se
+corrigió el doble tap del historial de Metas que nunca abría el panel, el realtime de galería que
+refetchaba todo, el `_buildSnapshot` de Logros que encadenaba ~20 queries seriales, y las mutaciones
+de notas que recalzaban el sync completo (flash + red redundante). `flutter analyze` 0 errores y
+`flutter test` **254 verdes**.
+
+**Cambios realizados**:
+- **Doble tap del historial de Metas nunca abría el panel** (`metas_screen.dart`): la rama "primer
+  tap" hacía `setState(() => _tapMetaId = 0)` en vez de `_tapMetaId = meta['id']`, así la condición
+  `_tapMetaId == meta['id']` era siempre false y el panel de detalle era inalcanzable; además cada
+  tap conmutaba la meta al instante. Fix: patrón correcto "primer tap arma el toggle con Timer de
+  500ms; si llega un segundo tap, se cancela el toggle y se abre el panel (sin cambiar el estado)".
+  El timer se cancela en `dispose()`.
+- **Realtime de galería hacía `load()` completo por cada evento** (`gallery_provider.dart`): ahora
+  mergea por fila (insert/update en `_items` por id) y para reacciones une user_ids por key
+  (`_mergeReactions`) para no pisar la reacción local optimista antes de la confirmación del
+  servidor. Elimina el flash de `_loading` y el refetch total que pisaba tu reaction.
+- **`_buildSnapshot` corría ~20 queries de red SECUENCIALES** (`couple_achievements_provider.dart`):
+  todas las consultas son independientes → ahora `Future.wait` en paralelo (de decenas de segundos a
+  ~el round-trip más lento al entrar a Logros).
+- **Notas: `add/update/delete/deleteAll` ya no llaman `load()` completo** (`notes_provider.dart`):
+  tras la mutación local+cloud hacían push+pull total volviendo a setear `_loading` (flash) y
+  refetchando la red. Ahora solo actualizan la lista en memoria desde SQLite local
+  (`_reloadFromLocal() + notifyListeners()`); el realtime sigue cubriendo los cambios de la pareja.
+
+**Lecciones**: un doble-tap que decide el accionar en el segundo toque NO puede conmutar en el
+primer toque: hay que retrasar la acción simple con un Timer y cancelarlo ante el segundo tap. El
+realtime que hace `load()` total ante cualquier evento es una carrera con el propio estado
+optimista; el merge por PK (id) + unión de reacciones es el patrón del proyecto (favorites/chat).
+`Future.wait` convierte queries independientes seriales en paralelas sin cambiar semántica.
+
+**Pendiente (no tocado, requiere decisiones de producto/SQL)**: `_storePushNotification` atribuye
+`from_user: myId` (falta propagar el autor en el payload del push desde los triggers); `onNotificationTap`
+no tiene target de navegación mapeado por `data.type`; aviso "nueva tarjeta + match" del bot el mismo día
+(UX aceptada); `.count()` en los contadores de Logros que traen todas las filas.
+
+**Archivos impactados**: `metas_screen.dart`, `gallery_provider.dart`,
+`couple_achievements_provider.dart`, `notes_provider.dart`, `historial.md`.
+
+---
+
+## [2026-09-01] - BUGFIX - Tanda de fixes de bajo riesgo del diagnóstico (bloque 🟨/⚪)
+
+**Resumen**: Auditoría completa cruzando la documentación con el código real (ver
+`diagnostico-2026-09-01.md` y el análisis realizado en esta sesión). Se corrigieron 14 bugs de
+lógica/comportamiento de bajo riesgo (sin tocar SQL, bot ni router): 3 bugs de uso centrales y
+varios de consistencia, limpieza de código muerto y dead code. `flutter analyze` bajó de 35 a 26
+issues (todos info/warning preexistentes, 0 errores) y `flutter test` quedó en **254 verdes**.
+
+**Cambios realizados**:
+- **`_loadPartnerLetter` de Nosotros retornaba SIEMPRE null** (`nosotros_screen.dart`): llamaba
+  `_markSeen()` ANTES de chequear `seen_by`, y `_markSeen` agrega `myId` al mapa local → el chequeo
+  posterior siempre veía `myId` → la carta de la pareja nunca se presentaba en el swap. Se invirtió
+  el orden (chequear `seen_by` primero, marcar solo si aún no está leída).
+- **Toggle de día entrenado no podía desmarcarse** (`workout_provider.toggleCompletion` +
+  `workout_completion.dart`): el filtro usaba `c.routineId == routineId` pero el call-site llama sin
+  `routineId` (`null`) mientras `toMap()` persiste `routine_id: 0` y `fromMap` lee `0` → `0 == null`
+  es false → la rama de delete nunca corría y el día quedaba entrenado para siempre. Fix: normalizar
+  con `(c.routineId ?? 0) == (routineId ?? 0)`.
+- **Al editar una nota se veían 2 botones de confirmar** (`notes_screen.dart`): el botón check
+  (que hace `add()`) estaba incondicional → al editar y tocar check se DUPLICABA la nota. El botón
+  add ahora se muestra solo con `note == null`.
+- **Supabase init tragaba errores** (`supabase_config.dart`): `catch { debugPrint }` sin re-lanzar →
+  el guard de arranque de `main.dart` (`initError`) nunca se disparaba. Ahora `rethrow` (main ya lo
+  captura) → si Supabase falla, la app muestra pantalla de error en vez de arrancar "rota" en silencio.
+- **Selector de categoría en Finanzas** (`finanzas_screen.dart`): todas las transacciones nuevas
+  quedaban con `category: 'other'` (no había selector). Agregada fila de chips con 7 categorías
+  (other/comida/transporte/ocio/hogar/salud/sueldo), estilo skill_visual (fondo=borde, redondo).
+- **Galería fullscreen no escuchaba realtime** (`galeria_screen.dart`): `_detailPanel` usaba
+  `context.read` → comentarios/reacciones de la pareja no se veían hasta reabrir. Ahora el panel
+  vive dentro de un `Consumer<GalleryProvider>` (recibe el provider por parámetro).
+- **`markIncomingDelivered` O(n²)** (`chat_provider.dart`): por cada mensaje entrante re-batchaba
+  TODOS los no-entregados. Nuevo param `onlyThese` — el callback de realtime marca SOLO el mensaje
+  nuevo.
+- **Debounce de sonidos compartido entre sonidos distintos** (`sound_service.dart`): `pop()`/
+  `success()`/`alert()`/`swoosh()` compartían `_lastSwooshTime` → un `swoosh` suprimía un `success`
+  posterior y viceversa. Marcas separadas por sonido (`_lastPopTime`, `_lastSuccessTime`).
+- **Leak de `TextEditingController` en `ClassSetupWizard`** (`class_setup_wizard.dart`):
+  `_ClassForm.dispose()` nuevo; se disponen los controllers al avanzar de paso y en `dispose()`.
+- **`_onScroll` del chat disparaba `loadOlderMessages` con lista vacía** (`chat_screen.dart`): guard
+  `messages.isEmpty` antes de paginar.
+- **`menu_plans` huérfana eliminada** (`database_helper.dart`): quedaba del `MenuProvider` borrado;
+  se removió el CREATE del bloque v2 y de `_createTables`.
+- **`EventType` sin case `restaurant_menu`** (`event_type.dart`): el tipo "Práctico" se mostraba con
+  `Icons.event`; agregado el case.
+- **Checks `!= null` siempre-verdaderos** (`letters_screen.dart`, `retos_screen.dart`):
+  `LocalCache.getList` es no-nulable → los checks eran dead code. En cartas además se aprovechó para
+  que el estado `data` con listas vacías SOLO se setee cuando hay cache real (evita el "flash de
+  vacío" en el primer abierto).
+- **Código muerto eliminado**: `sound_service._bgVolume`, `nosotros_screen._emojis`,
+  `notification_service.sendPushNotification`/`storeNotification`/`_refreshNotificationsCache`
+  (verificado con `rg`: 0 referencias).
+
+**Lecciones**:
+- Un `_markSeen` que muta el mapa local puede invalidar el chequeo que lo sigue: el orden
+  "chequear estado → marcar" es el correcto cuando la mutación es a la vez el "effecto" y la
+  condición.
+- Un `toMap()` que normaliza `null` a `0` desincroniza la comparación en memoria (`fromMap` devuelve
+  `0`, no `null`): cualquier lookup por igualdad debe normalizar AMBOS operandos.
+- `SupabaseConfig.initialize()` que traga errores invisibiliza el guard de arranque de `main.py`
+  (patrón del proyecto era mostrar pantalla de error con `initError`); el catch debe re-lanzar.
+- `LocalCache.getList` devolviendo no-nulable (`[]` con error) convierte los checks `!= null` en
+  dead code; el guard correcto es `.isNotEmpty`.
+
+**Pendiente**: tests dedicados de provider para `toggleCompletion` y `_loadPartnerLetter` requieren
+mock de `SupabaseConfig.client` (no hay infra de mocks en el repo — se documenta, no se agrega en
+esta tanda). Los bugs restantes del diagnóstico (bloque 🟥/🟧) quedan sin tocar.
+
+**Archivos impactados**: `nosotros_screen.dart`, `workout_provider.dart`, `notes_screen.dart`,
+`finanzas_screen.dart`, `galeria_screen.dart`, `chat_provider.dart`, `chat_screen.dart`,
+`sound_service.dart`, `class_setup_wizard.dart`, `database_helper.dart`, `event_type.dart`,
+`letters_screen.dart`, `retos_screen.dart`, `supabase_config.dart`, `notification_service.dart`,
+`historial.md`.
+
+---
+
+## [2026-09-01] - REFACTOR - Equipo 3: comentarios workouts atómicos, notas compartidas con Supabase, sync de clases y fixes de consistencia
+
+**Resumen**: Tanda del Equipo 3 (`documentacion/plan-3-equipos.md`, "Consistencia de datos en la app + Estilo visual"). Se
+eliminó la race condition de "último write gana" en los comentarios de workouts con RPC server-side, se compartieron las
+notas con la pareja (sync Supabase offline-first), se corrigió el reset de `synced` en clases, se removieron los `.limit()`
+que truncaban, y se aplicaron fixes bajos de consistencia. El cumplimiento `skill_visual` masivo se difirió a sesión aparte
+(decisión del usuario). 254 tests en verde, `flutter analyze` sin errores nuevos (solo baseline preexistente).
+
+**Cambios realizados**:
+- **Comentarios de workouts con merge atómico** (`workout_provider.dart` + `supabase/migration_workout_comments_rpc.sql` nuevo):
+  los comentarios ya NO se envían con el documento `social` completo (`.update(next.toMap())`, que reintroducía el race que
+  la RPC de reacciones ya resolvió). Nuevas RPC `add_workout_comment` / `delete_workout_comment` (row-level lock
+  `SELECT ... FOR UPDATE`, whitelist `workout_*`, `updated_at`, devuelven el `social` completo autoritativo). El provider
+  hace optimistic + reconciliación: `addLogComment`/`deleteLogComment`/`addRoutineComment`/`deleteRoutineComment`/
+  `addChallengeComment`/`deleteChallengeComment` ahora pasan por `_commentViaRpc` y `_applyCommentLog/Routine/Challenge`
+  (rollback a prev en fallo; conserva reacciones locales + comentarios autoritativos del server). Se eliminó `_saveLog` y
+  `_saveRoutineSocial` (código muerto). `_saveChallenge` se conserva para approval/completado. La migración SQL es una
+  PROPUESTA para que el Equipo 1 la integre al schema maestro (sección 29).
+- **Notas compartidas con Supabase** (`notes_provider.dart` reescrito, `note.dart`, `database_helper.dart`, `supabase/migration_notes_sync.sql` nuevo):
+  las notas vivían SOLO en SQLite local (cada dispositivo veía solo las suyas). Ahora se sincronizan con la tabla cloud
+  `notes` con el patrón de `ScheduleProvider`: SQLite v11 agrega `cloud_id`, `synced`, `user_id`; el provider hace
+  `load()` = push unsynced + pull todas + merge por `cloudId` + realtime, `add/update/delete` escriben local + cloud
+  (con dirty flag `synced` y re-push offline). `Note` gana `cloudId`, `userId`, `toSupabaseMap()`, `fromCloudRow()`.
+  La migración SQL garantiza columnas (la tabla ya existía por el trigger de push) + RLS full_access + realtime.
+  **Decisión del usuario**: sincronizar (antes: solo-local, documentado como gap).
+- **`class_schedule_provider.updateSchedule`**: ahora resetea `synced=1` después de un push exitoso a Supabase (antes no
+  lo hacía → la fila quedaba "dirty" y se re-subía redundantemente en cada `load()`).
+- **`.limit()` que truncaban silenciosamente**: removidos en `deck_provider` (200, en `_reloadSilent` y `load`),
+  `favorites_provider` (200) y `gallery_provider` (50). Los `.limit(1)` de `couple_achievements_provider` se conservan
+  (son lookups legítimos de existencia, no truncan).
+- **`metas_screen`**: fix del `Expanded` con altura no acotada dentro de `SingleChildScrollView` (`_showMetaPanel:253`);
+  eliminado el SnackBar ROJO de éxito "¡Meta completada!" en el tap del historial (duplicaba el feedback de `_toggle` y usaba
+  el color de error para un éxito); `_addOrEdit` ahora es `Future<void>` y dispone de `titleCtrl`/`descCtrl`; warning
+  `unnecessary_null_comparison` corregido (cache).
+- **Catch `(_) {}` de cache/sharedprefs** (letters/metas/retos): se conservan INTENCIONALMENTE silenciosos porque son
+  lecturas de `LocalCache`/`SharedPreferences` que son la mitigación de pantallas blancas (ver PANTALLAS_BLANCAS_Y_BUILD_ANDROID).
+  Los catches de Supabase ya tenían `developer.log`.
+- **Bajos**: `notes_screen` GlobalKey `_fabKey` inútil eliminada; `login_screen` ya no pisa `AppState.identity` antes de
+  confirmar el perfil en Supabase (se setea dentro del branch de éxito); `rewards_screen` costo ya NO hardcodeado (campo
+  "Costo en puntos" configurable, `_costCtrl`, default 10); `nosotros_screen` comentario colgado al final del archivo borrado.
+- **skill_visual compliance**: DIFERIDO a sesión aparte (decisión del usuario). El sweep toca ~30 archivos con cientos de
+  ocurrencias y choca con el estilo "brutalista modificado" establecido (sombras negras duras del estilo Nosotros, según
+  historial). Se documenta como pendiente, no se toca en esta tanda para no arriesgar la identidad visual ni romper analyze.
+
+**Lecciones**:
+- Un comentario que se envía con el documento `social` completo tiene exactamente el mismo bug de race que tenían las
+  reacciones: el merge client-side en realtime es solo un parche; la defensa real es la RPC con `FOR UPDATE`. Al rewirear,
+  hay que reconciliar con el estado AUTORITATIVO del server (comentarios) preservando las reacciones locales optimistas
+  (`WorkoutSocial(reactions: local, comments: auth.comments)`).
+- Al activar el `null-aware elements` de Dart 3.12 (`'comment': ?comment`) se evita el `use_null_aware_elements` del analyzer
+  sin recurrir a `if (...)` en map literals.
+- El patrón `cloudId` + `synced` + merge por cloudId de `ScheduleProvider` es reutilizable para CUALQUIER entidad que deba
+  sincronizarse entre pareja: notas lo copiaron 1:1 (push unsynced → pull → realtime → add/update/delete local+cloud).
+- Cuando una entidad vive en SQLite con columnas camelCase pero la nube usa snake_case (o viceversa), hay que armar mapas
+  locales EXPLÍCITOS (snake_case) y NO reusar `toMap()` directo contra la DB local, o sqflite tira "column not found".
+  `Note.toMap()` ahora se usa solo para debug/lógica; los writes locales usan un mapa dedicado.
+- CRITICAL apunte: una tabla cloud puede existir sin estar definida en el schema maestro (la `notes` solo se mencionaba en
+  triggers de push). Antes de sincronizar contra una tabla que "no está en el repo", verificar sus columnas reales (vía los
+  triggers/CREATE) y usar `ADD COLUMN IF NOT EXISTS` + `CREATE TABLE IF NOT EXISTS` para no romper la existente.
+
+**Verificación**: `flutter analyze` → 0 errores (baseline 5 warnings/info preexistentes: `_emojis` y cast en nosotros,
+deprecated red/green/blue en notes). `flutter test` → **254 tests en verde** (suite completa).
+
+**Pendiente (coordinación mejorada)**: (1) sweep `skill_visual` en sesión dedicada con validación
+visual en celular; (2) `couple_achievements_provider` con ~15 queries pesadas por `load()` (optimización, no bug).
+
+**Deploy en prod (Management API)**: ambas migraciones (`migration_workout_comments_rpc.sql` y
+`migration_notes_sync.sql`) se **integraron al schema maestro** (`supabase_schema.sql`: sección 14
+`notes` con `title` + RLS `full_access_notes` + GRANT + publicación realtime; sección 29c con las 2
+RPC de comentarios) y se **ejecutaron en prod** vía la Management API (`POST /v1/projects/{ref}/database/query`,
+con el PAT de `scripts/.env`). Verificado en vivo: `notes.title` presente, `notes` en
+`supabase_realtime`, policy `full_access_notes` creada, y las RPC `add_workout_comment` /
+`delete_workout_comment` registradas en `pg_proc`.
+
+**Lección de deploy**: el endpoint `database/query` de la Management API **rechaza con 400 (body
+vacío)** los SQL que contienen acentos/UTF-8 en los comentarios si el body se envía sin forzar la
+codificación (PowerShell lo manda con encoding default y el servidor rompe el JSON → 400). La cura
+es enviar el JSON como **bytes UTF-8 explícitos**
+(`[System.Text.Encoding]::UTF8.GetBytes($json)` como `-Body`). El endpoint sí soporta multi-statement
+y `DO $$` blocks; cada sentencia individual también se puede ejecutar por separado.
+
+**Archivos impactados**: `workout_provider.dart`, `supabase/migration_workout_comments_rpc.sql` (nuevo), `notes_provider.dart`,
+`note.dart`, `database_helper.dart`, `supabase/migration_notes_sync.sql` (nuevo), `supabase_schema.sql`,
+`class_schedule_provider.dart`, `deck_provider.dart`, `favorites_provider.dart`, `gallery_provider.dart`,
+`metas_screen.dart`, `rewards_screen.dart`, `login_screen.dart`, `notes_screen.dart`, `nosotros_screen.dart`,
+`historial.md`.
+
+---
+
+## [2026-09-01] - REFACTOR - Equipo 2: código muerto eliminado (C3 + 4 providers + deps sin uso) + fixes de navegación y Home
+
+**Resumen**: Tanda del Equipo 2 (`documentacion/plan-3-equipos.md`, "Código muerto / Arquitectura de pantallas"). Se
+borró el código muerto completo (C3, 4 providers sin consumidores, dependencias sin uso), se corrigió el `goNamed`
+roto de Settings y se limpiaron 3 problemas del Home. Los 2 monolitos (ejercicios y trivia) se partieron en widgets
+(entradas propias arriba/abajo).
+
+**Cambios realizados**:
+- **C3**: borrado `lib/screens/letters_screen_backup.dart` (24 KB, 0 imports verificado con `rg`).
+- **4 providers muertos eliminados**: `sync_provider.dart`, `study_provider.dart`, `menu_provider.dart`,
+  `theme_provider.dart` (verificado con `rg` que solo se referenciaban a sí mismos + `main.dart`; sin consumidores
+  por símbolo en pantallas/widgets). Se quitaron sus imports y registros de `lib/main.dart` (17 providers quedaron)
+  y se borraron los 3 tests de `ThemeProvider`/`MenuProvider` de `test/providers_test.dart` (más el import `material`
+  que quedó huérfano).
+- **Dependencias sin uso**: removidas de `pubspec.yaml`: `font_awesome_flutter`, `flutter_svg`,
+  `material_design_icons_flutter`, `phosphor_flutter`, `table_calendar`, `url_launcher` (todas verificadas con
+  `rg` = 0 usos en Dart). `flutter_launcher_icons` movida a `dev_dependencies` (solo se usa en builders).
+  `flutter pub get` confirmó que ya no se dependen (`vector_graphics_*`, `path_parsing`, `simple_gesture_detector`
+  salieron del lock).
+- **`goNamed` roto**: `settings_screen.dart` usaba `context.goNamed(RouterRoutes.settings, ...)` pero NINGUNA ruta
+  del router registra `name:` (solo `path:`) → lanzaba "no route named". Cambiado a `context.go(RouterRoutes.settings,
+  extra: nextMode)` (el path + `extra` ya es leído por el builder vía `_mode(state)`). Verificado: 0 `goNamed` restantes.
+- **Home** (`home_screen.dart`): (1) `_onModeTap` disparaba `_confettiAt(0, 0)` (confeti en la esquina) → ahora recibe
+  la posición global del toque vía un `ModeBtn` actualizado (`mode_btn.dart`) que captura `d.globalPosition` en
+  `onTapDown` y lo reporta; usa `_confettiGlobal`. (2) Se eliminó el alias redundante `final raw = getTheme(_mode);
+  final t = raw;` → `final t = getTheme(_mode);`. (3) Dedupe de los **12 shortcuts** que estaban duplicados en 2
+  arrays: ahora una única lista top-level `_homeShortcuts` (`_ShortcutDef`) + helper `_shortcutColor(t, i)`; tanto el
+  panel de configuración (`_openShortcutConfig`) como el `_ShortcutPanel` iteran la misma fuente.
+
+**Lecciones**:
+- Para decidir si un provider es "código muerto" el `rg` por símbolo alcanza: si solo aparece en sí mismo y en el
+  registro de `main.dart` (y tests que lo ejercitan), es muerto. Al borrarlo hay que limpiar los tests que lo
+  referencian o el `flutter test` no compila.
+- `goNamed` exige que la ruta esté registrada con `name:`; si el router solo usa `path:`, el call correcto es
+  `context.go(path, extra: ...)`.
+- El `rg -l` de un paquete en `pubspec.yaml` da falso "1 archivo" si se midió mal el pipe; confirmar con un grep
+  limpio del símbolo (`SvgPicture`, `TableCalendar`) antes de remover la dep.
+- Duplicar una lista de 12 elementos en 2 lugares garantiza que se desincronicen: una lista única top-level con
+  `(label, icon, action)` + color por índice es la fuente de verdad.
+
+**Verificación**: `flutter analyze` → **0 errores** (36 issues info/warning preexistentes en otros archivos,
+ninguno nuevo en los tocados). `flutter test` → **254 tests en verde**. `flutter pub get` OK.
+
+**Archivos impactados**: `lib/screens/letters_screen_backup.dart` (borrado), 4 providers (borrados),
+`lib/main.dart`, `lib/screens/settings_screen.dart`, `lib/screens/home_screen.dart`, `lib/widgets/mode_btn.dart`,
+`pubspec.yaml`, `test/providers_test.dart`, `historial.md`.
+
+---
+
+## [2026-09-01] - REFACTOR - Ejercicios: `ejercicios_screen.dart` partido en widgets presentacionales (2206 → 1390 líneas)
+
+**Resumen**: Se extrajeron los widgets presentacionales de `lib/screens/ejercicios/ejercicios_screen.dart`
+(las 4 pestañas Hoy/Ejercicios/Retos/Stats y sus cards, badges, chips, stats, el bloque de mejora, la barra de
+reacciones y el bloque de comentarios) a `lib/screens/ejercicios/widgets/`, siguiendo el patrón ya aplicado al
+chat y a la trivia (screen con lógica+layout + widgets separados). Los dialogs/sheets con mucho estado del State
+(controllers, llamadas a provider) se quedaron en el screen, como permitía la consigna. Se creó además un estilo
+compartido `ejercicios_style.dart` con las constantes de color y los helpers de decoración/inputs.
+
+**Cambios realizados**:
+- `lib/screens/ejercicios/ejercicios_style.dart` (nuevo): clase `EjerciciosStyle` con las constantes de color
+  (`bg`, `cyan`, `panel`, `panelLight`, `darkText`, `white`, `red`, `facuColor`, `rocioColor`), `dayNames`,
+  `defaultReactions` y los helpers `panelDeco()` y `inputDeco()` (movidos desde el State).
+- `lib/screens/ejercicios/widgets/common.dart` (nuevo): `StreakCard`, `DoneBadge`, `ReactionChip`, `ReactionBar`,
+  `Stat`, `StatCard`, `ImproveRow`, `ActionButton` (antes `_streakCard`, `_doneBadge`, `_reactionChip`,
+  `_reactionBar`, `_stat`, `_statCard`, `_improveRow`, `_actionBtn`). Constructores posicionales manteniendo la
+  firma de los métodos originales.
+- `lib/screens/ejercicios/widgets/hoy_tab.dart` (nuevo): `HoyTab` + `DayCard` + `MarkButton` + `RoutineItemRow`
+  (antes `_hoyTab`, `_dayCard`, `_markBtn`, `_routineItemRow`). Los helpers `_mondayOf`/`_weekDays`/`_today`/
+  `_facuId`/`_rocioId` pasaron a funciones top-level del archivo.
+- `lib/screens/ejercicios/widgets/ejercicios_tab.dart` (nuevo): `EjerciciosTab` + `LogCard` (antes
+  `_ejerciciosTab`/`_logCard`).
+- `lib/screens/ejercicios/widgets/retos_tab.dart` (nuevo): `RetosTab` + `ChallengeCard` (antes
+  `_retosTab`/`_challengeCard`).
+- `lib/screens/ejercicios/widgets/stats_tab.dart` (nuevo): `StatsTab` (antes `_statsTab`).
+- `lib/screens/ejercicios/widgets/improvement_block.dart` (nuevo): `ImprovementBlock` (antes `_improvementBlock`).
+- `lib/screens/ejercicios/widgets/comments_block.dart` (nuevo): `CommentsBlock` (antes `_commentsBlock`) como
+  StatefulWidget con `TextEditingController` persistente + `dispose()` (el método original creaba un controller en
+  cada build).
+- `lib/screens/ejercicios/ejercicios_screen.dart`: quedó solo con `EjerciciosScreen`/`_EjerciciosScreenState`
+  (layout, header, tabs, fab, estados error/loading, y todos los dialogs/sheets). Las 4 pestañas pasaron a
+  construir los widgets extraídos pasando closures como callbacks (p. ej. `onToggleDay` corre toda la lógica de
+  marca + `rewards.awardOnce`, `onLogTap`/`onLogLongPress` abren los sheets). La funcionalidad es idéntica.
+
+**Lecciones**:
+- Al convertir métodos privados del State en widgets públicos, los constructores pueden ser posicionales con la
+  misma firma del método original: minimiza los cambios en call sites y preserva la semántica del move.
+- Los helpers que mezclan provider + `AppState` (`_facuId`/`_rocioId`) se replican como funciones top-level en el
+  widget que las usa, para no filtrar dependencias del State al widget.
+- Un campo `key` en un StatelessWidget choca con el parámetro `key` de `Widget` (`invalid_override`): renombrar
+  (`ReactionChip.label`).
+- El import relativo a `ejercicios_style.dart` desde `widgets/` es `../ejercicios_style.dart` (un nivel arriba) —
+  el path equivocado rompe todo el subárbol en cascade.
+- `flutter analyze lib/screens/ejercicios` (0 issues) es la verificación rápida antes del analyze global.
+
+**Verificación**: `flutter analyze` global sin errores (36 warnings/info preexistentes en otros archivos, ninguno
+en `ejercicios/`). `flutter test` → **254 tests en verde** (suite completa).
+
+**Impacto**: `ejercicios_screen.dart` (2206 → 1390 líneas), `ejercicios_style.dart` (nuevo),
+`widgets/` (7 archivos nuevos), `historial.md`.
+
+---
+
+## [2026-09-01] - REFACTOR - Trivia: `trivia_screen.dart` partido en widgets presentacionales (~1090 → 121 líneas)
+
+**Resumen**: Se extrajeron los widgets presentacionales de `lib/screens/trivia/trivia_screen.dart` (mazo de
+preguntas, paneles de agregar/historial, estados loading/error/empty, marcador y botones) a
+`lib/screens/trivia/widgets/`, siguiendo el mismo patrón que ya se aplicó al chat (screen con lógica+layout +
+widgets separados). El screen de 1090 líneas quedó en 121 solo con `TriviaScreen` + su State (flujo add/history,
+estados, Stack del mazo + action buttons + scoreboard).
+
+**Cambios realizados**:
+- `lib/screens/trivia/widgets/trivia_deck.dart` (nuevo): `TriviaDeck` (mazo swipe top-level, antes público) +
+  helpers privados `_SwipeHint` y `_OptionChips`.
+- `lib/screens/trivia/widgets/add_question_screen.dart` (nuevo): `AddQuestionScreen` (antes `_AddQuestionScreen`).
+- `lib/screens/trivia/widgets/history_screen.dart` (nuevo): `HistoryScreen` (antes `_HistoryScreen`) +
+  `HistoryItem` + `HistoryRow`.
+- `lib/screens/trivia/widgets/trivia_status_screens.dart` (nuevo): `LoadingScreen`, `ErrorScreen`,
+  `EmptyScreen`, `Scoreboard`, `ActionButton` (equivalentes públicos de los privados).
+- `lib/screens/trivia/trivia_screen.dart`: reducido a lógica + layout; importa los widgets extraídos.
+  `TriviaDeck` no se re-exporta (solo `router.dart` usa `TriviaScreen`).
+
+**Lecciones**: NO mover lógica: cada widget es una copia exacta (constructores, params, colores, textos) solo
+con prefijo `_` → público y relocation. El import de `models/trivia.dart` quedó sin uso en el screen tras la
+extracción (el tipo `TriviaQuestion` solo se referencia en el deck) → el analyzer lo detecta y hay que removerlo.
+
+**Verificación**: `flutter analyze lib/screens/trivia` → 0 issues. `flutter analyze` global: los únicos errores
+están en `lib/screens/ejercicios/widgets/` (carpeta untracked del Equipo 2, mono-refactor de ejercicios en
+progreso, ajeno a esta tarjeta). `flutter test` → 254 tests en verde.
+
+**Impacto**: `trivia_screen.dart`, `widgets/` (4 archivos nuevos), `historial.md`.
+
+---
+
+## [2026-09-01] - BUILD/DEPLOY - send-push desplegada vía Management API + secretos fuera del repo
+
+**Resumen**: Se completó el deploy de la Edge Function `send-push` usando la **Management API** (sin
+CLI de supabase) tras el refactor del Equipo 1 que sacó los secretos del código. El service account de
+Firebase (clave privada) ahora vive como secreto de la Edge Function (`FIREBASE_SERVICE_ACCOUNT`), y
+el PAT de Supabase se guardó en GitHub Secrets + `scripts/.env` local.
+
+**Cambios realizados**:
+- **Secretos guardados**:
+  - `SUPABASE_ACCESS_TOKEN` (PAT de Supabase, `sbp_...`) → **GitHub Secret** (`gh secret set
+    SUPABASE_ACCESS_TOKEN`) para uso en CI, y → **`scripts/.env`** (local, gitignoreado por `.env`)
+    para reusarlo en deploys sin re-passar.
+  - Service account de Firebase recuperado del `index.ts` original (el que funcionaba) → guardado en
+    **`scripts/.env.firebase`** (local, gitignoreado por `.env.*`) como `FIREBASE_SERVICE_ACCOUNT`.
+- **`scripts/deploy-send-push.ps1`** (nuevo): helper sin CLI que (1) setea `FIREBASE_SERVICE_ACCOUNT`
+  en la Edge Function vía `POST /v1/projects/{ref}/secrets` y (2) hace deploy del `index.ts` vía
+  `POST /v1/projects/{ref}/functions/deploy?slug=send-push` (multipart manual, PS 5.1).
+- **Deploy ejecutado** (ref `nruyjpvoplkilcxqnees`): `FIREBASE_SERVICE_ACCOUNT` seteado OK y la función
+  quedó **`status=ACTIVE`, `version=7`**.
+- **Verificación**: GET de la función (ACTIVE v7) y listado de secretos de la Edge Function →
+  presentes `FIREBASE_SERVICE_ACCOUNT`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` (estos últimos dos los
+  inyecta Supabase automáticamente). La función ya tiene todo para firmar el JWT y mandar FCM.
+
+**Lecciones**:
+- El endpoint **bulk create secrets** de la Management API espera un **array JSON** (`[{name,value}]`),
+  no un objeto envuelto.
+- En PowerShell 5.1, `ConvertTo-Json` sobre un array de **1 elemento lo desenvuelve a objeto**
+  (`@($obj) | ConvertTo-Json` da `{...}`): hay que usar `ConvertTo-Json -InputObject @($obj)` para que
+  emita `[...]`.
+- La Management API necesita el **PAT** (`sbp_`, con formato JWT), no la API key legacy `sbp_` sin
+  puntos del lado de DB (`database/query` da 401 con legacy). `functions/deploy` y `secrets` sí
+  aceptan el PAT.
+- `SUPABASE_URL` / `SUPABASE_ANON_KEY` **no hay que setearlos** en la Edge Function: Supabase los
+  inyecta solos en `Deno.env`. Solo hace falta el secreto custom (`FIREBASE_SERVICE_ACCOUNT`).
+- `pwsh` (PowerShell 7) **no está instalado** en esta máquina; hay que invocar `.ps1` con PowerShell
+  5.1 (`& script.ps1` o `powershell -File`).
+
+**Archivos impactados**: `scripts/deploy-send-push.ps1` (nuevo), `scripts/.env` (nuevo, gitignored),
+`scripts/.env.firebase` (nuevo, gitignored), GH Secret `SUPABASE_ACCESS_TOKEN`, Edge Function
+`send-push` (deploy v7), `historial.md`.
+
+---
+
+## [2026-09-01] - REFACTOR - Equipo 1: Cloud/Infra (C1 RPC, chat_typing schema, migraciones calendario, secretos, bot, CI, scripts)
+
+**Resumen**: Tandas del Equipo 1 (Cloud/Infra) del `documentacion/plan-3-equipos.md`. Unifica los RPC de
+reacciones en una única fuente de verdad, incluye `chat_typing` en el schema maestro, consolida las 4
+migraciones de calendario en una, saca los secretos del repo (Firebase a `Deno.env`, anon key a Vault),
+arregla `bot.js` (`encolar()` + `descripcionLogro()` + listeners ACK) y robustece CI/scripts de build.
+
+**Cambios realizados**:
+- `supabase/migration_reaction_rpc.sql`: reescrito para **espejar el schema maestro (sección 29)**.
+  `toggle_reaction` ahora es `SECURITY INVOKER` con whitelist inline (messages/gallery/workout_*), usa
+  `USING $1/$2` (no `%L`) para los valores y hace bump de `updated_at` en las tablas workout.
+  `react_deck_card` opera sobre `deck_cards.reactions` (C1 — la pizarra había quedado fuera). Ambos con
+  `public.` y GRANT a anon/authenticated. Comentario marca el archivo como fuente de verdad que DEBE
+  espejar `supabase_schema.sql`.
+- `supabase_schema.sql`: **`chat_typing` añadida al schema maestro** (CREATE + RLS enable + policy
+  `full_access_chat_typing` + GRANT + publicación realtime). **Limpieza de restos de la pizarra**: se
+  quitaron las 4 referencias huérfanas a `board_elements` (índice `idx_board_elements_user_id`,
+  `ALTER TABLE ... ENABLE RLS`, `DROP POLICY full_access_board_elements`, `CREATE POLICY
+  full_access_board_elements`) que rompían la ejecución del schema maestro tras el borrado del pizarrón.
+- **Secretos**: `send-push/index.ts` ya NO hardcodea el service account de Firebase; lee
+  `FIREBASE_SERVICE_ACCOUNT` (JSON con client_email/private_key/token_uri/project_id) de `Deno.env`
+  (se setea con `supabase secrets set`). `notify_new_message()` (schema) y `furi_push()`
+  (`migration_push_categories.sql`) leen `SUPABASE_URL`/`SUPABASE_ANON_KEY` de **Vault**
+  (`vault.decrypted_secrets`, mismo patrón que el webhook del bot); fallback de URL y RAISE claro si
+  falta la anon key. Nuevo `supabase/migration_vault_secrets.sql` con el seeding (placeholders, sin
+  keys en el repo).
+- **Migraciones de calendario consolidadas**: `migration_calendar_full.sql` queda como **fuente de
+  verdad única** (absorbe `migration_schedules_sync.sql`, `migration_schedule_class_sync.sql` y
+  `migration_class_schedules.sql`, que se **eliminaron**). Header actualizado.
+- `bot-furi/bot.js`: (1) **`descripcionLogro()`** ampliado a TODOS los ~40 códigos de
+  `couple_achievement.dart` + fallback legible (snake_case → Capitalizado) para no notificar vacío;
+  (2) **~20 call sites de `encolar()`** limpiados de los 4 args muertos (los trackeaba
+  `marcarNotificado()` aparte) → ahora `encolar(phone, texto)`; (3) **`esperarAck()`** ahora remueve
+  su listener `messages.update` y su flush timer cuando no quedan esperas pendientes (antes acumulaba
+  listeners por cada envío).
+- `.github/workflows/bot-whatsapp.yml`: `npm install` → **`npm ci`** (con cache), agregado
+  `timeout-minutes: 15`.
+- `scripts/`: `build-all.ps1` invoca los sub-builds como **subprocesos** (`pwsh -File`) para que el
+  `exit N` se propague como `$LASTEXITCODE` y el resumen se compute siempre (antes un `exit` interno
+  terminaba el script sin resumen); `upload-apk.ps1` ahora **falla (exit 1)** si falla cualquier subida
+  de APK o la verificación de assets.
+
+**Lecciones**:
+- La "fuente de verdad" de una RPC debe vivir en un solo lugar (schema maestro) y la migración
+  espejarlo 1:1; la divergencia es lo que genera riesgos de datos cruzados (C1).
+- Al borrar una tabla del schema maestro hay que rastrear TODAS sus referencias derivadas (índices,
+  `ENABLE RLS`, drop/create policy), no solo el `CREATE TABLE`: la pizarra dejó 4 líneas rotas.
+- Los listeners de eventos (Baileys) y los timers de un helper unitario deben self-cleanearse cuando
+  terminan; dejar `on()` sueltos acumula memoria/eventos en cada invocación.
+- `exit` dentro de un `.ps1` invocado con `&` desde otro termina el script padre en el mismo
+  runspace; para agregar código (resumen) hay que invocarlo como subproceso (`pwsh -File`).
+- Un `.replace('-----BEGIN PRIVATE KEY-----', '')` en el helper de firma JWT es un marker de strip,
+  NO una fuga de la key: al auditar "secretos", distinguir markers de los literales reales.
+
+**Pendiente (manual, SQL Editor / supabase CLI)**: ✅ **EJECUTADO 2026-09-01 por el usuario.**
+1. ~~Ejecutar `supabase/migration_reaction_rpc.sql` (DROP+CREATE de ambas RPC) para alinear prod~~ ✅
+2. ~~Ejecutar `supabase/migration_vault_secrets.sql` reemplazando `TU_ANON_KEY_AQUI`~~ ✅ (anon key real seteada en Vault)
+3. ~~`supabase secrets set FIREBASE_SERVICE_ACCOUNT='{...}'` + redeploy de `send-push`~~ ✅ (secretos de la Edge Function + redeploy)
+4. ~~Añadir `chat_typing` a la publicación realtime~~ ✅ (BD alineada con el schema maestro)
+
+**Impacto**: `supabase/migration_reaction_rpc.sql`, `supabase_schema.sql`, `supabase/migration_push_categories.sql`,
+`supabase/functions/send-push/index.ts`, `supabase/migration_calendar_full.sql`,
+`supabase/migration_vault_secrets.sql` (nuevo), `bot-furi/bot.js`, `.github/workflows/bot-whatsapp.yml`,
+`scripts/build-all.ps1`, `scripts/upload-apk.ps1`, `historial.md`.
+
+---
+
+## [2026-09-01] - BUGFIX - No se podían crear retos ni metas (trigger push FCM rompe el INSERT)
+
+**Resumen**: El usuario no podía agregar retos (challenges). Se reprodujo el INSERT contra la API REST
+de prod y el error real (que la app traga con catch) era PostgreSQL `42883`:
+`function furi_notify_partner(uuid, unknown, text, jsonb) does not exist`.
+
+**Causa raíz**: los triggers `AFTER INSERT` de push FCM `notify_challenge_insert()` y
+`notify_goal_insert()` (en `migration_push_categories.sql`) llaman
+`furi_notify_partner(NEW.couple_id, ...)`. `NEW.couple_id` es `uuid` y la función espera `text`;
+PostgreSQL NO hace cast implícito `uuid→text` para resolver el overload → el trigger lanzaba → todo
+`INSERT` a `challenges` (y `goals`) fallaba. moods/workout ya usaban `::text` (por eso funcionaban).
+
+**Cambios realizados**:
+- `supabase/migration_push_categories.sql`: `furi_notify_partner(NEW.couple_id::text, ...)` en
+  `notify_goal_insert()` y `notify_challenge_insert()` (cast explícito, igual que moods/workout).
+- `supabase/migration_fix_goal_challenge_push_cast.sql` (nuevo, idempotente): mini-migración para pegar
+  en el SQL Editor de prod (`CREATE OR REPLACE` de ambos triggers).
+
+**Verificación ad hoc**: el INSERT de prueba contra `rest/v1/challenges` devolvía 404/42883 antes del
+fix; con el cast aplicado en prod el trigger deja de romper el INSERT.
+
+**Lecciones**: pasar un UUID a una función con parámetro `text` no resuelve el overload en PostgreSQL
+(requiere cast explícito `::text`). Cualquier trigger que pase una columna `uuid` a un helper de texto
+debe usar el cast. Los "catch" de la app ocultan el error SQL real: reproducir el INSERT por REST con
+la anon key es la forma rápida de ver el error del servidor.
+
+**Pendiente (manual, SQL Editor)**: ~~ejecutar `supabase/migration_fix_goal_challenge_push_cast.sql` en prod~~ ✅ EJECUTADO 2026-09-01 por el usuario en SQL Editor. Retos y metas vuelven a insertar correctamente.
+
+**Impacto**: `migration_push_categories.sql`, `migration_fix_goal_challenge_push_cast.sql` (nuevo),
+`historial.md`.
+
+---
+
+## [2026-09-01] - REFACTOR - Pizarrón eliminado: la sección "Notas" lo reemplaza (decisión del usuario)
+
+**Resumen**: El usuario decidió que "el pizarrón ahora es la sección de notas". Se limpió por completo
+el pizarrón v2 (y el v1), que NO existía en el código real pero del que quedaban restos en la doc,
+las tablas SQLite y las RPCs de Supabase. El botón "Pizarra" del Home ahora navega a `/notes`.
+
+**Cambios realizados**:
+- `lib/screens/home_screen.dart`: `_openPizarra` → `_openNotas` (renombrado) y navega a `RouterRoutes.notes`
+  en vez de `RouterRoutes.letters` (`/letters` no tenía GoRoute → resolvía el CRÍTICO C2 del diagnóstico).
+- `lib/router.dart`: eliminada la const muerta `RouterRoutes.letters`.
+- `lib/database/database_helper.dart`: eliminadas las tablas SQLite huérfanas del pizarrón
+  (`board_elements_v2`, `board_activity`, `board_tags`) del `onCreate` y de los bloques de migración v7/v9
+  (se conservan `schedules.synced`/`class_schedules.synced` del v9).
+- `lib/services/board_media_service.dart`: **borrado** (código muerto, sin consumidor).
+- `lib/services/ai_service.dart`: eliminado el método muerto `boardTip()`.
+- `supabase/migration_reaction_rpc.sql`: `react_deck_card` corregido para operar sobre `deck_cards.reactions`
+  (antes apuntaba a `board_elements_v2.data` → resolvía el CRÍTICO C1); `board_elements_v2` removido de la
+  whitelist de `toggle_reaction`.
+- `supabase_schema.sql`: removidas las tablas `board_elements`, `board_elements_v2` y `boards`
+  (sección 18/18a/18b), y `board_elements_v2` fuera de `toggle_reaction`.
+- `supabase/migration_board_v2.sql` y `supabase/migration_board_milanote.sql`: **eliminadas**.
+
+**Verificación**: `flutter analyze` sin errores (solo 43 issues info/warning pre-existentes, ninguno nuevo).
+
+**Lecciones**: borrar una feature implica limpiar en 4 capas — código Dart (métodos/refs), SQLite
+(tablas + migraciones), Supabase (tablas + RPC + whitelist) y documentación. El C1 (react_deck_card
+apuntando a la tabla equivocada) era un riesgo real de datos cruzados que quedó resuelto al unificar
+ambas definiciones sobre `deck_cards.reactions`.
+
+**Pendiente (manual, SQL Editor)**: si la BD de prod todavía tiene las tablas `board_elements`,
+`board_elements_v2`, `boards`, `board_activity`, `board_tags` huérfanas, se pueden dropear:
+`DROP TABLE IF EXISTS board_activity, board_tags, boards, board_elements_v2, board_elements;`
+Ya no las usa ningún código ni RPC.
+
+**Impacto**: `home_screen.dart`, `router.dart`, `database_helper.dart`, `ai_service.dart`,
+`migration_reaction_rpc.sql`, `supabase_schema.sql`, `board_media_service.dart` (borrado),
+`migration_board_v2.sql` (borrado), `migration_board_milanote.sql` (borrado), `historial.md`.
+
+---
+
+## [2026-09-01] - DOCUMENTACION - Diagnóstico completo de la app + plan de trabajo en 3 equipos
+
+**Resumen**: Se realizó una auditoría estática de TODO el código (cimientos, capa de datos, pantallas,
+sistemas transversales) y se documentó en `documentacion/diagnostico-2026-09-01.md`. Luego se dividió
+el trabajo en 3 equipos con propiedad exclusiva de archivos en `documentacion/plan-3-equipos.md`,
+para que 3 IAs trabajen en paralelo sin colisiones de merge.
+
+**Hallazgo mayor**: documentación ↔ código desincronizados. El **Pizarrón v2** (`screens/pizarra_v2/`,
+`board_provider_v2.dart`) NO existe en el código real aunque `arquitectura.md`, `historial.md`,
+`auditoria-pizarron-v2.md` y `prompt-debugging-pizarron-v2.md` lo describen como vivo. Quedan solo
+restos: tablas SQLite huérfanas (`database_helper.dart:65-293`), `services/board_media_service.dart`
+(muerto), y la RPC `react_deck_card` apuntando a `board_elements_v2` (CRÍTICO C1).
+
+**CRÍTICOS detectados**:
+- C1: `react_deck_card` opera sobre la tabla equivocada (`migration_reaction_rpc.sql:100-156` →
+  `board_elements_v2.data` vs `supabase_schema.sql:789-812` → `deck_cards.reactions`).
+- C2: bloque "Pizarra" del Home navega a `/letters` sin GoRoute (`home_screen.dart:365-367`,
+  `router.dart:52`).
+- C3: `letters_screen_backup.dart` es código muerto completo (0 imports).
+
+**ALTOS**: comentarios de workouts con last-write-wins, `chat_typing` ausente del schema maestro,
+`updateSchedule` sin reset `synced=1`, 4 migraciones de calendario superpuestas, clave privada de
+Firebase + anon key hardcodeadas, bot con `encolar()` y `descripcionLogro()` rotos, IA inactiva,
+`goNamed` sin `name:`, 4 providers muertos, monolitos de ejercicios/trivia.
+
+**Equipos definidos**:
+- 🟦 **Equipo 1 — Cloud/Infra**: C1, `chat_typing` schema, migraciones calendario, secretos, bot, CI, scripts.
+- 🟨 **Equipo 2 — Código muerto/arquitectura**: C3, C2, 4 providers muertos, `board_media_service`,
+  deps sin uso, monolitos, `goNamed`, shortcuts Home.
+- 🟩 **Equipo 3 — Datos/estilo**: comentarios workouts, `synced` flag, `.limit()`, `notes_provider`,
+  `metas_screen`, `catch` silenciosos, cumplimiento `skill_visual`.
+
+**Lecciones**: el "pizarrón v2" es la feature más documentada del repo pero no existe en el código;
+cualquier auditoría futura debe cruzar la doc contra el código real antes de asumir que algo existe.
+Antes de dividir trabajo en paralelo, asignar propiedad EXCLUSIVA de archivos por equipo para no
+colisionar en el merge.
+
+**Pendiente**: decidir el destino del pizarrón v2 (resucitar o limpiar) antes de arrancar los 3 equipos.
+
+**Impacto**: `documentacion/diagnostico-2026-09-01.md` (nuevo), `documentacion/plan-3-equipos.md` (nuevo), `docs/contexto/historial.md`.
+
+---
+
+## [2026-08-31] - BUILD - APKs split-per-abi (3 APKs ~30 MB en vez de universal 72 MB)
+
+**Resumen**: El APK universal de 72.8 MB fallaba al instalarse en varios celulares porque WhatsApp/Drive lo corrompían o renombraban al transferirlo. Se cambió a `--split-per-abi` que genera 3 APKs separados por arquitectura (~30 MB c/u), menos de la mitad del universal. Se creó script `upload-apk.ps1` y se publicó release v1.0.5 en GitHub con los 3 APKs.
+
+**Cambios realizados**:
+- `scripts/build-apk.ps1`: cambiado de `flutter build apk --release` (universal 72 MB) a `flutter build apk --release --split-per-abi` (3 APKs ~30 MB). Limpieza de APKs viejos antes del build. Reporte de tamaño total.
+- `scripts/upload-apk.ps1` (nuevo): crea release en GitHub (si no existe) con notas explicando qué APK descargar por arquitectura, y sube los 3 APKs. Si el release ya existe, sube los assets uno por uno con `--clobber`.
+- `scripts/build-all.ps1`: nuevo parámetro `-Upload` que ejecuta `upload-apk.ps1` después del build.
+- `docs/contexto/flujo-de-trabajo.md`: documentación actualizada con los 3 APKs y el script de upload.
+- `documentacion/GUIA_INSTALACION_APK.md`: reescrita para explicar las 3 arquitecturas, cómo saber cuál descargar.
+- Release v1.0.5 publicado en GitHub: `https://github.com/mrtuco748-cmyk/furiiiiiiiiiii/releases/tag/v1.0.5`
+
+**Lecciones**: Un APK universal de 72 MB es propenso a corromperse en WhatsApp/Drive (archivos renombrados a `.apk.1`, truncados, o con bytes faltantes). APKs de ~30 MB se transfieren mejor. `--split-per-abi` genera un APK por arquitectura; el usuario descarga solo el que necesita. Los tamaños reales (~30 MB) son más pesados de lo estimado (~20 MB) porque el tree-shaking de iconos no reduce tanto en split-per-abi. `gh release create` acepta múltiples archivos como assets pero puede tardar (>5 min con 3 APKs de ~30 MB); subir release vacío y luego `gh release upload --clobber` por separado es más fiable.
+
+**Impacto**: `scripts/build-apk.ps1`, `scripts/upload-apk.ps1` (nuevo), `scripts/build-all.ps1`, docs, release GitHub v1.0.5.
+
+---
+
 ## [2026-08-31] - BUGFIX - Atajos "Nota" y "Carta" del Home mostraban "página no encontrada"
 
 **Resumen**: Los botones de acceso rápido "Nota" y "Carta" del panel de shortcuts del Home navigaban a rutas sin GoRoute. "Nota" apuntaba a `RouterRoutes.letters` (`/letters`) que no tenía ruta definida (solo existía `/cartas` para `LettersScreen`). La fix previa (ce3b924) ya había corregido "Nota" a `RouterRoutes.notes` (`/notes`), pero el fix no llegó al APK v1.0.3 porque se commiteó después del build. "Carta" seguía roto apuntando a `/letters`. Ambos fixeados en esta tanda + rebuild completo.
