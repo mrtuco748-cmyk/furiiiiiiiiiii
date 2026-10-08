@@ -14,13 +14,10 @@
 
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
--- Anon key (publishable) inyectada como Bearer al invocar send-push.
--- Misma que usa notify_new_message().
-DO $$
-BEGIN
-  -- no-op si ya existe la extensión
-  NULL;
-END $$;
+-- ---------------------------------------------------------------------------
+-- Credenciales de Supabase desde Vault (no hardcodeadas en el código).
+-- Se setean UNA VEZ con supabase/migration_vault_secrets.sql en el SQL Editor.
+-- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
 -- Helper: enviar push a un UUID concreto (si no es null)
@@ -31,15 +28,27 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  supa_anon TEXT := 'sb_publishable_JP4QgTreyVi-Mm3EYyiQtQ_YuvAxguu';
+  supa_url TEXT;
+  supa_anon TEXT;
 BEGIN
   IF recipient IS NULL THEN
     RETURN;
   END IF;
 
+  SELECT decrypted_secret INTO supa_url
+    FROM vault.decrypted_secrets WHERE name = 'SUPABASE_URL';
+  SELECT decrypted_secret INTO supa_anon
+    FROM vault.decrypted_secrets WHERE name = 'SUPABASE_ANON_KEY';
+  IF supa_url IS NULL OR supa_url = '' THEN
+    supa_url := 'https://nruyjpvoplkilcxqnees.supabase.co';
+  END IF;
+  IF supa_anon IS NULL OR supa_anon = '' THEN
+    RAISE EXCEPTION 'SUPABASE_ANON_KEY no esta configurada en Vault. Ejecuta migration_vault_secrets.sql.';
+  END IF;
+
   PERFORM
     net.http_post(
-      url := 'https://nruyjpvoplkilcxqnees.supabase.co/functions/v1/send-push',
+      url := supa_url || '/functions/v1/send-push',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'Authorization', concat('Bearer ', supa_anon)
@@ -164,7 +173,7 @@ CREATE TRIGGER on_mood_insert_send_push
 CREATE OR REPLACE FUNCTION notify_goal_insert()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  PERFORM furi_notify_partner(NEW.couple_id, 'Nueva meta', NEW.title, jsonb_build_object('type', 'goal', 'id', NEW.id));
+  PERFORM furi_notify_partner(NEW.couple_id::text, 'Nueva meta', NEW.title, jsonb_build_object('type', 'goal', 'id', NEW.id));
   RETURN NEW;
 END;
 $$;
@@ -178,7 +187,7 @@ CREATE TRIGGER on_goal_insert_send_push
 CREATE OR REPLACE FUNCTION notify_challenge_insert()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  PERFORM furi_notify_partner(NEW.couple_id, 'Nuevo reto', NEW.title, jsonb_build_object('type', 'challenge', 'id', NEW.id));
+  PERFORM furi_notify_partner(NEW.couple_id::text, 'Nuevo reto', NEW.title, jsonb_build_object('type', 'challenge', 'id', NEW.id));
   RETURN NEW;
 END;
 $$;
@@ -209,7 +218,7 @@ CREATE TRIGGER on_custom_question_insert_send_push
 CREATE OR REPLACE FUNCTION notify_note_insert()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  PERFORM furi_notify_partner(NEW.user_id, 'Nueva nota', left(NEW.content, 120), jsonb_build_object('type', 'note', 'id', NEW.id));
+  PERFORM furi_notify_partner(NEW.user_id::text, 'Nueva nota', left(NEW.content, 120), jsonb_build_object('type', 'note', 'id', NEW.id));
   RETURN NEW;
 END;
 $$;

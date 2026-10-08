@@ -83,9 +83,4 @@ class AiService {
   Future<String?> nosotrosTip() async {
     return 'Hoy hace 3 meses que visitaron... 💭';
   }
-
-  Future<String?> boardTip(int elements) async {
-    if (elements == 0) return 'Pizarra vacía, creá algo ✏️';
-    return '$elements elementos en pizarra 📋';
-  }
 }

@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   UNIQUE(user_id, token)
 );
 
+ -- 10b. CHAT TYPING (indicador "escribiendo..." del chat, una fila por usuario)
+CREATE TABLE IF NOT EXISTS chat_typing (
+  user_id TEXT PRIMARY KEY,
+  is_typing BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
  -- 11. NOTIFICATIONS (in-app history)
  CREATE TABLE IF NOT EXISTS notifications (
    id BIGSERIAL PRIMARY KEY,
@@ -137,10 +144,15 @@ CREATE TABLE IF NOT EXISTS device_tokens (
    read BOOLEAN DEFAULT false,
    created_at TIMESTAMPTZ DEFAULT NOW()
  );
- DO $$
+   DO $$
 BEGIN
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE chat_typing;
   EXCEPTION WHEN duplicate_object THEN
     NULL
   END;
@@ -176,15 +188,29 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  supa_anon TEXT := 'sb_publishable_JP4QgTreyVi-Mm3EYyiQtQ_YuvAxguu';
+  supa_url TEXT;
+  supa_anon TEXT;
   sender_name TEXT;
 BEGIN
+  -- Credenciales de Supabase desde Vault (no hardcodeadas en el código).
+  -- Se setean una sola vez con el helper migration_vault_secrets.sql.
+  SELECT decrypted_secret INTO supa_url
+    FROM vault.decrypted_secrets WHERE name = 'SUPABASE_URL';
+  SELECT decrypted_secret INTO supa_anon
+    FROM vault.decrypted_secrets WHERE name = 'SUPABASE_ANON_KEY';
+  IF supa_url IS NULL OR supa_url = '' THEN
+    supa_url := 'https://nruyjpvoplkilcxqnees.supabase.co';
+  END IF;
+  IF supa_anon IS NULL OR supa_anon = '' THEN
+    RAISE EXCEPTION 'SUPABASE_ANON_KEY no esta configurada en Vault. Ejecuta migration_vault_secrets.sql.';
+  END IF;
+
   SELECT name INTO sender_name FROM profiles WHERE id = NEW.from_user;
   IF sender_name IS NULL THEN sender_name := 'Alguien'; END IF;
 
   PERFORM
     net.http_post(
-      url := 'https://nruyjpvoplkilcxqnees.supabase.co/functions/v1/send-push',
+      url := supa_url || '/functions/v1/send-push',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'Authorization', concat('Bearer ', supa_anon)
@@ -235,8 +261,10 @@ ALTER TABLE daily_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE question_answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE couple_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE device_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_typing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE custom_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
 
 -- Policies: allow full access for now (simplified)
 DO $$ BEGIN
@@ -251,6 +279,7 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "full_access_question_answers" ON question_answers;
   DROP POLICY IF EXISTS "full_access_couple_data" ON couple_data;
   DROP POLICY IF EXISTS "full_access_device_tokens" ON device_tokens;
+  DROP POLICY IF EXISTS "full_access_chat_typing" ON chat_typing;
   DROP POLICY IF EXISTS "full_access_notifications" ON notifications;
   DROP POLICY IF EXISTS "full_access_custom_questions" ON custom_questions;
 END $$;
@@ -266,19 +295,32 @@ CREATE POLICY "full_access_daily_questions" ON daily_questions FOR ALL USING (tr
 CREATE POLICY "full_access_question_answers" ON question_answers FOR ALL USING (true);
 CREATE POLICY "full_access_couple_data" ON couple_data FOR ALL USING (true);
 CREATE POLICY "full_access_device_tokens" ON device_tokens FOR ALL USING (true);
+CREATE POLICY "full_access_chat_typing" ON chat_typing FOR ALL USING (true);
 CREATE POLICY "full_access_notifications" ON notifications FOR ALL USING (true);
+
+GRANT ALL ON TABLE chat_typing TO anon;
+GRANT ALL ON TABLE chat_typing TO authenticated;
 CREATE POLICY "full_access_custom_questions" ON custom_questions FOR ALL USING (true);
 
--- 14. NOTES
+-- 14. NOTES (sección "Notas" — desde 2026-09-01 compartidas con Supabase,
+--     sync offline-first tipo schedules: cloudId + dirty flag + realtime)
 CREATE TABLE IF NOT EXISTS notes (
   id BIGSERIAL PRIMARY KEY,
-  user_id UUID NOT NULL,
-  content TEXT NOT NULL,
-  color TEXT DEFAULT '#7000FF',
-  pinned BOOLEAN DEFAULT false,
+  user_id TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT DEFAULT '',
+  color TEXT NOT NULL DEFAULT '#FFF9C4',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE notes;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;
 
 -- 15. TASKS
 CREATE TABLE IF NOT EXISTS tasks (
@@ -320,85 +362,6 @@ CREATE TABLE IF NOT EXISTS favorites (
   favorited BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
--- 18. BOARD ELEMENTS
-CREATE TABLE IF NOT EXISTS board_elements (
-  id BIGSERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  type TEXT NOT NULL DEFAULT 'note',
-  content TEXT DEFAULT '',
-  x DOUBLE PRECISION DEFAULT 20,
-  y DOUBLE PRECISION DEFAULT 20,
-  width DOUBLE PRECISION DEFAULT 100,
-  height DOUBLE PRECISION DEFAULT 80,
-  rotation DOUBLE PRECISION DEFAULT 0,
-  color TEXT,
-  z INTEGER DEFAULT 0,
-  data JSONB DEFAULT '{}'::jsonb,
-  board_id BIGINT NOT NULL DEFAULT 1,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_board_elements_board_id ON board_elements(board_id);
-
--- 18a. BOARD ELEMENTS V2 (espejo del schema SQLite local; el cloud_id es
---      columna solo-local de SQLite, no existe en la nube)
-CREATE TABLE IF NOT EXISTS board_elements_v2 (
-  id BIGSERIAL PRIMARY KEY,
-  type TEXT NOT NULL DEFAULT 'note',
-  title TEXT DEFAULT '',
-  content TEXT DEFAULT '',
-  x DOUBLE PRECISION NOT NULL DEFAULT 0,
-  y DOUBLE PRECISION NOT NULL DEFAULT 0,
-  width DOUBLE PRECISION,
-  height DOUBLE PRECISION,
-  rotation DOUBLE PRECISION NOT NULL DEFAULT 0,
-  color TEXT,
-  text_color TEXT,
-  font_family TEXT,
-  font_size DOUBLE PRECISION,
-  text_align TEXT DEFAULT 'left',
-  is_bold BOOLEAN NOT NULL DEFAULT false,
-  is_italic BOOLEAN NOT NULL DEFAULT false,
-  is_underline BOOLEAN NOT NULL DEFAULT false,
-  emoji_header TEXT,
-  tags JSONB DEFAULT '[]'::jsonb,
-  priority TEXT DEFAULT 'normal',
-  assigned_to TEXT,
-  user_id TEXT DEFAULT '',
-  status TEXT DEFAULT 'draft',
-  is_collapsed BOOLEAN NOT NULL DEFAULT false,
-  is_locked BOOLEAN NOT NULL DEFAULT false,
-  is_archived BOOLEAN NOT NULL DEFAULT false,
-  board_id BIGINT NOT NULL DEFAULT 1,
-  z INTEGER NOT NULL DEFAULT 0,
-  data JSONB DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  is_new BOOLEAN NOT NULL DEFAULT true,
-  synced INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE INDEX IF NOT EXISTS idx_board_elements_v2_board_id
-  ON board_elements_v2(board_id);
-
-ALTER TABLE board_elements_v2 ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "full_access_board_elements_v2" ON board_elements_v2;
-CREATE POLICY "full_access_board_elements_v2" ON board_elements_v2 FOR ALL USING (true);
-GRANT ALL ON board_elements_v2 TO authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE board_elements_v2_id_seq TO authenticated, service_role;
-
--- 18b. BOARDS (tableros anidables, proyecto a proyecto)
-CREATE TABLE IF NOT EXISTS boards (
-  id BIGSERIAL PRIMARY KEY,
-  name TEXT NOT NULL DEFAULT 'Pizarra',
-  parent_id BIGINT REFERENCES boards(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE boards ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "full_access_boards" ON boards;
-CREATE POLICY "full_access_boards" ON boards FOR ALL USING (true);
 
 -- 19. STUDY SESSIONS
 CREATE TABLE IF NOT EXISTS study_sessions (
@@ -597,7 +560,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
-CREATE INDEX IF NOT EXISTS idx_board_elements_user_id ON board_elements(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_user_id ON study_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_type ON study_sessions(type);
 CREATE INDEX IF NOT EXISTS idx_gallery_user_id ON gallery(user_id);
@@ -617,7 +579,6 @@ CREATE INDEX IF NOT EXISTS idx_couple_points_user ON couple_points(user_id);
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
-ALTER TABLE board_elements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gallery ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gallery_comments ENABLE ROW LEVEL SECURITY;
@@ -639,7 +600,6 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "full_access_tasks" ON tasks;
   DROP POLICY IF EXISTS "full_access_transactions" ON transactions;
   DROP POLICY IF EXISTS "full_access_favorites" ON favorites;
-  DROP POLICY IF EXISTS "full_access_board_elements" ON board_elements;
   DROP POLICY IF EXISTS "full_access_study_sessions" ON study_sessions;
   DROP POLICY IF EXISTS "full_access_gallery" ON gallery;
   DROP POLICY IF EXISTS "full_access_gallery_comments" ON gallery_comments;
@@ -655,12 +615,12 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "full_access_couple_rewards" ON couple_rewards;
   DROP POLICY IF EXISTS "full_access_couple_points" ON couple_points;
   DROP POLICY IF EXISTS "full_access_couple_locations" ON couple_locations;
+  DROP POLICY IF EXISTS "full_access_notes" ON notes;
 END $$;
 
 CREATE POLICY "full_access_tasks" ON tasks FOR ALL USING (true);
 CREATE POLICY "full_access_transactions" ON transactions FOR ALL USING (true);
 CREATE POLICY "full_access_favorites" ON favorites FOR ALL USING (true);
-CREATE POLICY "full_access_board_elements" ON board_elements FOR ALL USING (true);
 CREATE POLICY "full_access_study_sessions" ON study_sessions FOR ALL USING (true);
 CREATE POLICY "full_access_gallery" ON gallery FOR ALL USING (true);
 CREATE POLICY "full_access_gallery_comments" ON gallery_comments FOR ALL USING (true);
@@ -676,13 +636,16 @@ CREATE POLICY "full_access_couple_achievements" ON couple_achievements FOR ALL U
 CREATE POLICY "full_access_couple_rewards" ON couple_rewards FOR ALL USING (true);
 CREATE POLICY "full_access_couple_points" ON couple_points FOR ALL USING (true);
 CREATE POLICY "full_access_couple_locations" ON couple_locations FOR ALL USING (true);
+CREATE POLICY "full_access_notes" ON notes FOR ALL USING (true);
+
+GRANT ALL ON public.notes TO anon, authenticated;
+GRANT ALL ON SEQUENCE public.notes_id_seq TO anon, authenticated;
 
 -- 29. RPC DE MERGE ATÓMICO DE REACCIONES (Fase 0 — mismos orígenes que
 --     supabase/migration_reaction_rpc.sql). Eliminan el race de "último write
 --     gana" haciendo el merge dentro de Postgres con row-level lock.
 --     29a. toggle_reaction: forma {key: [userIds]}, max 5 keys, toggle on/off.
---          Cubre messages.reactions, gallery.reactions, workout_*.social y
---          board_elements_v2.data.
+--          Cubre messages.reactions, gallery.reactions, workout_*.social.
 --     29b. react_deck_card: forma {userId: emoji} (mazo), reemplazo atómico.
 CREATE OR REPLACE FUNCTION public.toggle_reaction(
   target_table TEXT,
@@ -712,7 +675,6 @@ BEGIN
      OR (target_table = 'workout_logs'       AND target_col = 'social')
      OR (target_table = 'workout_routines'   AND target_col = 'social')
      OR (target_table = 'workout_challenges' AND target_col = 'social')
-     OR (target_table = 'board_elements_v2'  AND target_col = 'data')
   ) THEN
     RAISE EXCEPTION 'tabla/columna no permitida: %.%', target_table, target_col;
   END IF;
@@ -776,7 +738,7 @@ BEGIN
     w := reac;
   END IF;
 
-  IF target_table IN ('workout_logs','workout_routines','workout_challenges','board_elements_v2') THEN
+  IF target_table IN ('workout_logs','workout_routines','workout_challenges') THEN
     EXECUTE format('UPDATE %I SET %I = $1, updated_at = NOW() WHERE id = $2', target_table, target_col) USING w, row_id;
   ELSE
     EXECUTE format('UPDATE %I SET %I = $1 WHERE id = $2', target_table, target_col) USING w, row_id;
@@ -813,3 +775,119 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.toggle_reaction(TEXT, TEXT, BIGINT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.react_deck_card(BIGINT, TEXT, TEXT) TO anon, authenticated;
+
+-- 29c. add_workout_comment / delete_workout_comment (Equipo 3 — comentarios
+--      de workouts con merge atómico server-side). Mismos orígenes que
+--      supabase/migration_workout_comments_rpc.sql. Elimina el race de los
+--      comentarios enviados con el documento social completo.
+CREATE OR REPLACE FUNCTION public.add_workout_comment(
+  target_table TEXT,
+  row_id       BIGINT,
+  comment      JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+DECLARE
+  doc      JSONB;
+  social   JSONB;
+  comments JSONB;
+  w        JSONB;
+BEGIN
+  IF target_table NOT IN ('workout_logs','workout_routines','workout_challenges') THEN
+    RAISE EXCEPTION 'tabla no permitida: %', target_table;
+  END IF;
+  IF comment IS NULL OR jsonb_typeof(comment) != 'object' THEN
+    RAISE EXCEPTION 'comment es un JSONB de objeto requerido';
+  END IF;
+
+  EXECUTE format('SELECT %I FROM %I WHERE id = $1 FOR UPDATE', 'social', target_table)
+    INTO doc USING row_id;
+  IF doc IS NULL THEN
+    RAISE EXCEPTION 'registro no encontrado: %', row_id;
+  END IF;
+
+  social   := doc;
+  comments := COALESCE(social -> 'comments', '[]'::jsonb);
+  comments := comments || comment;
+  w        := jsonb_set(social, ARRAY['comments'], comments);
+
+  EXECUTE format('UPDATE %I SET social = $1, updated_at = NOW() WHERE id = $2', target_table)
+    USING w, row_id;
+  RETURN w;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.delete_workout_comment(
+  target_table TEXT,
+  row_id       BIGINT,
+  comment_id   TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+DECLARE
+  doc          JSONB;
+  social       JSONB;
+  comments     JSONB;
+  new_comments JSONB;
+  w            JSONB;
+BEGIN
+  IF target_table NOT IN ('workout_logs','workout_routines','workout_challenges') THEN
+    RAISE EXCEPTION 'tabla no permitida: %', target_table;
+  END IF;
+  IF comment_id IS NULL OR comment_id = '' THEN
+    RAISE EXCEPTION 'comment_id es requerido';
+  END IF;
+
+  EXECUTE format('SELECT %I FROM %I WHERE id = $1 FOR UPDATE', 'social', target_table)
+    INTO doc USING row_id;
+  IF doc IS NULL THEN
+    RAISE EXCEPTION 'registro no encontrado: %', row_id;
+  END IF;
+
+  social := doc;
+  comments := COALESCE(social -> 'comments', '[]'::jsonb);
+  new_comments := (
+    SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+    FROM jsonb_array_elements(comments) AS e
+    WHERE (e ->> 'id') <> comment_id AND (e ->> 'replyToId') <> comment_id
+  );
+  w := jsonb_set(social, ARRAY['comments'], new_comments);
+
+  EXECUTE format('UPDATE %I SET social = $1, updated_at = NOW() WHERE id = $2', target_table)
+    USING w, row_id;
+  RETURN w;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.add_workout_comment(TEXT, BIGINT, JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_workout_comment(TEXT, BIGINT, TEXT) TO anon, authenticated;
+
+-- ============================================================
+-- PUBLICACIÓN REALTIME (sync en vivo para TODAS las tablas que
+-- la app escucha con RealtimeChannel). El master DEBE espejar lo
+-- que cada migración suelta publica, o una DB reconstruida solo
+-- con este archivo quedaría sin actualizaciones en vivo.
+-- ============================================================
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'messages','moods','letters','goals','challenges',
+    'daily_questions','question_answers','custom_questions',
+    'transactions','favorites','gallery','gallery_comments',
+    'schedules','class_schedules','deck_cards',
+    'couple_achievements','couple_rewards','couple_points','couple_locations',
+    'workout_logs','workout_routines','workout_completions','workout_challenges'
+  ]
+  LOOP
+    BEGIN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
+    EXCEPTION WHEN duplicate_object THEN
+      NULL; -- ya estaba publicada
+    END;
+  END LOOP;
+END $$;

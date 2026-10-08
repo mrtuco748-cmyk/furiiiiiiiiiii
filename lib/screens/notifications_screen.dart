@@ -1,10 +1,13 @@
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/loca_screen.dart';
+import '../widgets/tap_tile.dart';
 import '../services/notification_service.dart';
+import '../router.dart';
 
 const _c = Color(0xFFFFFF00);
 const _dark = Color(0xFF0D0D0D);
@@ -125,6 +128,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
       const SizedBox(height: 10),
+      const SizedBox(height: 4),
+      Align(
+        alignment: Alignment.centerRight,
+        child: Builder(builder: (panelContext) {
+          final type = (n['data'] is Map) ? (n['data'] as Map)['type'] as String? : null;
+          final route = type == null ? null : routeForNotificationType(type);
+          if (route == null) return const SizedBox.shrink();
+          return TapTile(onTap: () { close(); panelContext.push(route); }, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(10), border: Border.all(color: _c, width: 2)),
+            child: const Icon(Icons.open_in_new, color: _dark, size: 20),
+          ));
+        }),
+      ),
+      const SizedBox(height: 8),
     ]));
   }
 

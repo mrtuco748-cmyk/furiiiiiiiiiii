@@ -26,11 +26,18 @@ class _ClassSetupWizardState extends State<ClassSetupWizard> {
   @override
   void dispose() {
     _pageCtrl.dispose();
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    _controllers.clear();
     super.dispose();
   }
 
   void _next() {
     if (_step == 0) {
+      for (final c in _controllers) {
+        c.dispose();
+      }
       _controllers.clear();
       for (var i = 0; i < _classCount; i++) {
         _controllers.add(_ClassForm());
@@ -272,4 +279,11 @@ class _ClassForm {
   final endCtrl = TextEditingController();
   final profCtrl = TextEditingController();
   final selectedDays = <int>[1, 2, 3, 4, 5];
+
+  void dispose() {
+    nameCtrl.dispose();
+    startCtrl.dispose();
+    endCtrl.dispose();
+    profCtrl.dispose();
+  }
 }

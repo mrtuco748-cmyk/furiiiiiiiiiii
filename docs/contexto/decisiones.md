@@ -113,3 +113,19 @@
 - **Impacto**: `go_router ^17.5.0`, `lib/router.dart` (22 rutas + `RouterRoutes` + `navigatorKey`), `main.dart` con `MaterialApp.router`, 8 screens rewired. Los objetos tipados (AppMode, Schedule, DateTime) viajan por `state.extra`. Flujo especial: `context.push<bool>` para el wizard de clases.
 - **Nota Flutter 3.44**: `routerConfig` solo existe en **`MaterialApp.router`**; el constructor base ya NO lo acepta (por eso el error `undefined_named_parameter` intermitente engañaba — el analyzer lo cacheaba).
 - **Revisable**: Sí — si la app gana deep-links/auth, migrar el `redirect` a autenticación real; si se agregan pantallas, sumarlas a `RouterRoutes` + tabla.
+
+### D-15: Notas compartidas con Supabase (la pareja ve las notas de ambos)
+- **Fecha**: 2026-09-01
+- **Qué se decidió**: Las notas de la sección "Notas" (que reemplazó al pizarrón v2) pasan de vivir SOLO en SQLite local a sincronizarse con la tabla cloud `notes` con el patrón de `ScheduleProvider` (cloudId + dirty flag `synced` + merge por cloudId + realtime). Cualquier dispositivo ve las notas de ambos; el autor queda en `user_id`. SQLite v11 agrega `cloud_id`/`synced`/`user_id`, la tabla cloud `notes` ganó `title` (+ RLS full_access + realtime).
+- **Por qué**: cada dispositivo veía solo sus notas locales (gap de la app de pareja). La decisión del usuario fue sincronizar (el pizarrón colaborativo que reemplazó era compartido).
+- **Alternativas descartadas**: dejarlo local-only e documentarlo como intencional (se ofreció; el usuario eligió sincronizar).
+- **Impacto**: `notes_provider.dart` reescrito (`_pushUnsyncedToCloud`/`_pullFromCloud`/realtime), `note.dart` (+`cloudId`/`userId`/`toSupabaseMap`/`fromCloudRow`), `database_helper.dart` v11, `supabase/migration_notes_sync.sql` + `supabase_schema.sql` (sección 14), SQL ejecutado en prod vía Management API.
+- **Revisable**: Sí — el sync es offline-first con cache local; si se necesita autorías/permisos distintos, migrar a RLS por `user_id`.
+
+### D-16: Comentarios de workouts con merge atómico (RPC server-side)
+- **Fecha**: 2026-09-01
+- **Qué se decidió**: Los comentarios de workouts dejan de enviarse con el documento `social` completo (`.update(next.toMap())`, último-write-gana) y pasan a 2 RPC de Postgres con row-level lock: `add_workout_comment` / `delete_workout_comment` (whitelist `workout_*`, bump `updated_at`, devuelven el `social` autoritativo). El provider hace optimistic + reconciliación (`_commentViaRpc`), preservando las reacciones locales.
+- **Por qué**: era la misma race condition que la RPC de reacciones ya resolvió (D-13): dos comentarios simultáneos se pisaban.
+- **Alternativas descartadas**: seguir con el merge client-side en realtime (parche, no garantiza consistencia en el origen), triggers por tabla.
+- **Impacto**: `workout_provider.dart` rewireado, `_saveLog`/`_saveRoutineSocial` eliminados (muertos), `supabase/migration_workout_comments_rpc.sql` + `supabase_schema.sql` (sección 29c), SQL ejecutado en prod vía Management API.
+- **Revisable**: Sí — la whitelist limita a `workout_*`; si se agregan tablas con comentarios, sumarlas.

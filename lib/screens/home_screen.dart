@@ -64,8 +64,8 @@ class _BrutalGridState extends State<_BrutalGrid>
     await prefs.setString('appMode', mode.name);
   }
 
-  void _onModeTap(AppMode mode) {
-    _confettiAt(0, 0);
+  void _onModeTap(AppMode mode, Offset g) {
+    _confettiGlobal(g);
     setState(() => _mode = mode);
     _saveMode(mode);
   }
@@ -222,18 +222,9 @@ class _BrutalGridState extends State<_BrutalGrid>
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
             children: [
-               _scBtn(ctx, 'Carta', Icons.edit, () => _executeShortcutAction('create_letter'), t),
-               _scBtn(ctx, 'Nota', Icons.note_add, () => _executeShortcutAction('create_note'), t),
-               _scBtn(ctx, 'Favorito', Icons.add_circle, () => _executeShortcutAction('create_favorite'), t),
-               _scBtn(ctx, 'Evento', Icons.event, () => _executeShortcutAction('create_event'), t),
-               _scBtn(ctx, 'Reto', Icons.flag, () => _executeShortcutAction('create_challenge'), t),
-               _scBtn(ctx, 'Meta', Icons.emoji_events, () => _executeShortcutAction('create_goal'), t),
-               _scBtn(ctx, 'Finanzas', Icons.account_balance_wallet, () => _executeShortcutAction('create_transaction'), t),
-               _scBtn(ctx, 'Pregunta', Icons.chat_bubble_outline, () => _executeShortcutAction('create_question'), t),
-               _scBtn(ctx, 'Galería', Icons.photo_camera_front, () => _executeShortcutAction('create_gallery'), t),
-               _scBtn(ctx, 'Tarea', Icons.task_alt, () => _executeShortcutAction('create_task'), t),
-               _scBtn(ctx, 'Clase', Icons.school, () => _executeShortcutAction('create_class'), t),
-               _scBtn(ctx, 'Recordator', Icons.alarm, () => _executeShortcutAction('create_reminder'), t),
+              for (var i = 0; i < _homeShortcuts.length; i++)
+                _scBtn(ctx, _homeShortcuts[i].label, _homeShortcuts[i].icon,
+                    () => _executeShortcutAction(_homeShortcuts[i].action), t),
             ],
           ),
         ),
@@ -362,8 +353,8 @@ class _BrutalGridState extends State<_BrutalGrid>
     context.push(RouterRoutes.favoritos);
   }
 
-  void _openPizarra(double x, double y) {
-    context.push(RouterRoutes.letters, extra: _mode);
+  void _openNotas(double x, double y) {
+    context.push(RouterRoutes.notes, extra: _mode);
   }
 
   void _openEjercicios(double x, double y) {
@@ -451,8 +442,7 @@ class _BrutalGridState extends State<_BrutalGrid>
         final y4 = y3 + rh[3] + gap;
         final y5 = y4 + rh[4] + gap;
 
-final raw = getTheme(_mode);
-                final t = raw;
+final t = getTheme(_mode);
 
                 return SizedBox(width: w, height: h, child: Stack(
                   children: [
@@ -488,7 +478,7 @@ final raw = getTheme(_mode);
               Transform.rotate(angle: 0.08, alignment: Alignment.center,
                 child: Container(margin: EdgeInsets.all(w * 0.03),
                   decoration: BoxDecoration(color: t.c, border: Border.all(color: t.dark, width: 5), borderRadius: BorderRadius.circular(16))),
-              ), _openPizarra, borderWidth: 5),
+              ), _openNotas, borderWidth: 5),
             block(x3, y3, c3, rh[3], t.c,
               Transform.rotate(angle: -0.1, alignment: Alignment.center,
                 child: Padding(padding: EdgeInsets.all(w * 0.02),
@@ -800,6 +790,8 @@ class _NotificationPanelState extends State<_NotificationPanel> {
       NotificationService.markAsRead(id);
     }
     if (mounted) setState(() => n['read'] = true);
+    final type = (n['data'] is Map) ? (n['data'] as Map)['type'] as String? : null;
+    final route = type == null ? null : routeForNotificationType(type);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -813,6 +805,12 @@ class _NotificationPanelState extends State<_NotificationPanel> {
         content: Text(n['body']?.toString() ?? '',
             style: GoogleFonts.bangers(fontSize: 14, color: Colors.white70)),
         actions: [
+          if (route != null)
+            TapTile(onTap: () { Navigator.pop(ctx); context.push(route); }, child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: widget.theme.b, borderRadius: BorderRadius.circular(10), border: Border.all(color: widget.theme.b, width: 2)),
+              child: const Icon(Icons.open_in_new, color: Colors.white, size: 24),
+            )),
           TapTile(onTap: () => Navigator.pop(ctx), child: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(color: widget.theme.a, borderRadius: BorderRadius.circular(10), border: Border.all(color: widget.theme.a, width: 2)),
@@ -919,6 +917,45 @@ class _NotificationPanelState extends State<_NotificationPanel> {
   }
 }
 
+class _ShortcutDef {
+  final String label;
+  final IconData icon;
+  final String action;
+  const _ShortcutDef(this.label, this.icon, this.action);
+}
+
+const _homeShortcuts = [
+  _ShortcutDef('Carta', Icons.edit, 'create_letter'),
+  _ShortcutDef('Nota', Icons.note_add, 'create_note'),
+  _ShortcutDef('Favorito', Icons.add_circle, 'create_favorite'),
+  _ShortcutDef('Evento', Icons.event, 'create_event'),
+  _ShortcutDef('Reto', Icons.flag, 'create_challenge'),
+  _ShortcutDef('Meta', Icons.emoji_events, 'create_goal'),
+  _ShortcutDef('Finanzas', Icons.account_balance_wallet, 'create_transaction'),
+  _ShortcutDef('Pregunta', Icons.chat_bubble_outline, 'create_question'),
+  _ShortcutDef('Galería', Icons.photo_camera_front, 'create_gallery'),
+  _ShortcutDef('Tarea', Icons.task_alt, 'create_task'),
+  _ShortcutDef('Clase', Icons.school, 'create_class'),
+  _ShortcutDef('Recordator', Icons.alarm, 'create_reminder'),
+];
+
+Color _shortcutColor(ThemeSet t, int i) {
+  switch (i) {
+    case 0: return t.a;
+    case 1: return t.c;
+    case 2: return t.c;
+    case 3: return t.b;
+    case 4: return t.d;
+    case 5: return t.e;
+    case 6: return t.d;
+    case 7: return t.a;
+    case 8: return t.b;
+    case 9: return t.c;
+    case 10: return t.b;
+    default: return t.a;
+  }
+}
+
 class _ShortcutPanel extends StatelessWidget {
   final ThemeSet theme;
   final VoidCallback onClose;
@@ -972,18 +1009,9 @@ class _ShortcutPanel extends StatelessWidget {
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
               children: [
-                _scItem(Icons.edit, 'Carta', t.a, () => onAction('create_letter')),
-                _scItem(Icons.note_add, 'Nota', t.c, () => onAction('create_note')),
-                _scItem(Icons.add_circle, 'Favorito', t.c, () => onAction('create_favorite')),
-                _scItem(Icons.event, 'Evento', t.b, () => onAction('create_event')),
-                _scItem(Icons.flag, 'Reto', t.d, () => onAction('create_challenge')),
-                _scItem(Icons.emoji_events, 'Meta', t.e, () => onAction('create_goal')),
-                _scItem(Icons.account_balance_wallet, 'Finanzas', t.d, () => onAction('create_transaction')),
-                _scItem(Icons.chat_bubble_outline, 'Pregunta', t.a, () => onAction('create_question')),
-                _scItem(Icons.photo_camera_front, 'Galería', t.b, () => onAction('create_gallery')),
-                _scItem(Icons.task_alt, 'Tarea', t.c, () => onAction('create_task')),
-                _scItem(Icons.school, 'Clase', t.b, () => onAction('create_class')),
-                _scItem(Icons.alarm, 'Recordator', t.a, () => onAction('create_reminder')),
+                for (var i = 0; i < _homeShortcuts.length; i++)
+                  _scItem(_homeShortcuts[i].icon, _homeShortcuts[i].label,
+                      _shortcutColor(t, i), () => onAction(_homeShortcuts[i].action)),
               ],
             ),
           ),

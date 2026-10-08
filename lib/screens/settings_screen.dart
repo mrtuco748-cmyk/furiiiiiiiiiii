@@ -49,7 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final nextMode = nextIdx < all.length ? all[nextIdx] : AppMode.values.first;
           settings.setAppMode(nextMode);
           if (context.mounted) {
-            context.goNamed(RouterRoutes.settings, extra: nextMode);
+            context.go(RouterRoutes.settings, extra: nextMode);
           }
         },
       ),

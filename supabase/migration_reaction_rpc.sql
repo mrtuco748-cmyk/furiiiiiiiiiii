@@ -1,166 +1,157 @@
 -- ============================================================
--- Migración: RPCs de reacciones server-side (Phase 0)
+-- Migración: RPCs de reacciones server-side (Fase 0)
 -- ============================================================
 -- Evita race condition "último write gana" en reacciones JSONB.
 -- Antes cada provider enviaba el mapa reactions completo y el último
 -- pisaba al anterior. Ahora el merge ocurre DENTRO del servidor con
 -- row-level lock (SELECT ... FOR UPDATE).
+--
+-- FUENTE DE VERDAD: este archivo DEBE espejar supabase_schema.sql
+-- (sección 29, RPC DE MERGE ATÓMICO DE REACCIONES). C1 resuelto:
+-- `react_deck_card` opera sobre `deck_cards.reactions` (no la pizarra) y
+-- `toggle_reaction` usa whitelist + updated_at + USING (parámetros, no %L).
+-- Si cambiás una función acá, cambiala también en el schema maestro.
 -- ============================================================
 
 -- 1. Función toggle_reaction: forma {key:[uid]}, whitelist de tablas/columnas,
 --    max 5 keys, toggle on/off (1 reacción por usuario, se quita de todas
---    las keys y se agrega/quita de la key objetivo). Espejo exacto de
---    Message.toggleReaction/BoardSocialData.withToggledReaction.
+--    las keys y se agrega/quita de la key objetivo).
+--    Usa USANDO (parámetros $1/$2) para los valores, nunca %L (evita
+--    interpolación literal y coincide con el schema maestro). Bump de
+--    updated_at solo en las tablas workout (donde la columna existe).
 DROP FUNCTION IF EXISTS toggle_reaction(text, text, bigint, text, text);
-CREATE FUNCTION toggle_reaction(
-    target_table text,
-    target_col text,
-    row_id bigint,
-    reaction_key text,
-    user_id text
+CREATE OR REPLACE FUNCTION public.toggle_reaction(
+  target_table TEXT,
+  target_col   TEXT,
+  row_id       BIGINT,
+  reaction_key TEXT,
+  user_id      TEXT
 )
-RETURNS jsonb
+RETURNS JSONB
 LANGUAGE plpgsql
-STRICT
+SECURITY INVOKER
 AS $$
 DECLARE
-    target_exists boolean := false;
-    allowed_tables text[] := ARRAY['board_elements_v2','messages','gallery','workout_logs','workout_routines','workout_challenges'];
-    target_in_whitelist boolean := false;
-    current_json jsonb;
-    new_key text := reaction_key;
-    existing_uids text[];
-    remaining_uids text[];
-    new_data jsonb;
-    key_count integer;
+  doc     JSONB;
+  base    JSONB;
+  reac    JSONB;
+  w       JSONB;
+  k       TEXT;
+  arr     JSONB;
+  new_arr JSONB;
+  already BOOLEAN;
+  nkeys   INT;
 BEGIN
-    -- Verificar que la tabla esté en la whitelist
-    target_in_whitelist := target_table = ANY(allowed_tables);
+  IF NOT (
+        (target_table = 'messages'   AND target_col = 'reactions')
+     OR (target_table = 'gallery'    AND target_col = 'reactions')
+     OR (target_table = 'workout_logs'       AND target_col = 'social')
+     OR (target_table = 'workout_routines'   AND target_col = 'social')
+     OR (target_table = 'workout_challenges' AND target_col = 'social')
+  ) THEN
+    RAISE EXCEPTION 'tabla/columna no permitida: %.%', target_table, target_col;
+  END IF;
 
-    IF NOT target_in_whitelist THEN
-        RAISE EXCEPTION 'Tabla no permitida: %', target_table USING ERRCODE = 'feature_not_found';
+  IF reaction_key IS NULL OR reaction_key = '' OR user_id IS NULL OR user_id = '' THEN
+    RAISE EXCEPTION 'reaction_key y user_id son requeridos';
+  END IF;
+
+  EXECUTE format('SELECT %I FROM %I WHERE id = $1 FOR UPDATE', target_col, target_table)
+    INTO doc USING row_id;
+  IF doc IS NULL THEN
+    RAISE EXCEPTION 'registro no encontrado: %', row_id;
+  END IF;
+
+  IF target_col IN ('social', 'data') THEN
+    base := doc;
+    reac := doc -> 'reactions';
+  ELSE
+    base := NULL;
+    reac := doc;
+  END IF;
+  IF reac IS NULL OR jsonb_typeof(reac) != 'object' THEN
+    reac := '{}'::jsonb;
+  END IF;
+
+  already := (reac -> reaction_key) IS NOT NULL
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(reac -> reaction_key) AS e
+               WHERE e = user_id
+             );
+
+  SELECT count(*)::int INTO nkeys FROM jsonb_object_keys(reac);
+  IF NOT already AND NOT (reac ? reaction_key) AND nkeys >= 5 THEN
+    RETURN reac;
+  END IF;
+
+  FOR k IN SELECT key FROM jsonb_object_keys(reac) AS key LOOP
+    arr := reac -> k;
+    IF jsonb_typeof(arr) = 'array' THEN
+      new_arr := (
+        SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+        FROM jsonb_array_elements_text(arr) AS e
+        WHERE e <> user_id
+      );
+      IF jsonb_array_length(new_arr) = 0 THEN
+        reac := reac - k;
+      ELSE
+        reac := jsonb_set(reac, ARRAY[k], new_arr);
+      END IF;
     END IF;
+  END LOOP;
 
-    -- Verificar que el elemento existe (con lock row para race condition)
-    EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I WHERE id = %L FOR UPDATE)', target_table, row_id) INTO target_exists;
+  IF NOT already THEN
+    reac := jsonb_set(reac, ARRAY[reaction_key],
+      COALESCE(reac -> reaction_key, '[]'::jsonb) || to_jsonb(user_id));
+  END IF;
 
-    IF NOT target_exists THEN
-        RETURN NULL::jsonb;
-    END IF;
+  IF target_col IN ('social', 'data') THEN
+    w := jsonb_set(base, ARRAY['reactions'], reac);
+  ELSE
+    w := reac;
+  END IF;
 
-    -- Obtener datos actuales
-    EXECUTE format('SELECT %I FROM %I WHERE id = %L', target_col, target_table, row_id) INTO current_json;
+  IF target_table IN ('workout_logs','workout_routines','workout_challenges') THEN
+    EXECUTE format('UPDATE %I SET %I = $1, updated_at = NOW() WHERE id = $2', target_table, target_col) USING w, row_id;
+  ELSE
+    EXECUTE format('UPDATE %I SET %I = $1 WHERE id = $2', target_table, target_col) USING w, row_id;
+  END IF;
 
-    IF current_json IS NULL THEN
-        RETURN '{}'::jsonb;
-    END IF;
-
-    -- Extraer la lista de user_ids para la key actual
-    -- IMPORTANTE: usar jsonb_array_elements_text, NO el cast ::text[]
-    -- porque ->> devuelve formato JSON ["uid1","uid2"] y ::text[] espera {uid1,uid2}
-    existing_uids := ARRAY(SELECT jsonb_array_elements_text(current_json->new_key));
-
-    -- LÓGICA DE TOGGLE:
-    -- Si el usuario ya reaccionó con esta key, removerlo.
-    -- Si no, agregarlo (siempre que no se supere el límite de 5 keys).
-    IF existing_uids IS NOT NULL AND user_id = ANY(existing_uids) THEN
-        -- Remover usuario de la lista usando EXCEPT
-        remaining_uids := ARRAY(SELECT unnest(existing_uids) EXCEPT SELECT unnest(string_to_array(user_id, ',')));
-        -- Si después de remover no quedan user_ids, borrar la key entero
-        IF remaining_uids IS NULL OR CARDINALITY(remaining_uids) = 0 THEN
-            new_data := jsonb_strip_nulls(current_json - new_key);
-        ELSE
-            -- Reconstruir JSONB con la lista restante
-            new_data := jsonb_set(current_json, ARRAY[new_key], (SELECT jsonb_agg(elem) FROM unnest(remaining_uids) AS t(elem)));
-        END IF;
-    ELSE
-        -- USUARIO NUEVO: verificar límite de 5 keys usando COUNT
-        SELECT COUNT(*) INTO key_count FROM jsonb_object_keys(current_json);
-
-        IF key_count >= 5 THEN
-            -- Límite alcanzado: retornar data sin modificar
-            RETURN current_json;
-        END IF;
-
-        -- Agregar nueva key con este user_id
-        new_data := jsonb_set(current_json, ARRAY[new_key], (SELECT jsonb_agg(DISTINCT elem) FROM unnest(string_to_array(user_id, ',')) AS t(elem)));
-    END IF;
-
-    -- Actualizar fila con nuevo data (sin updated_at para compatibilidad con todas las tablas)
-    IF new_data IS DISTINCT FROM current_json THEN
-        EXECUTE format('UPDATE %I SET %I = %L WHERE id = %L', target_table, target_col, new_data, row_id);
-    END IF;
-
-    RETURN COALESCE(new_data, '{}'::jsonb);
+  RETURN reac;
 END;
 $$;
 
--- 2. Función react_deck_card: forma {uid:emoji} del mazo
+-- 2. Función react_deck_card: forma {uid:emoji} del mazo (deck_cards.reactions)
 DROP FUNCTION IF EXISTS react_deck_card(bigint, text, text);
-CREATE FUNCTION react_deck_card(
-    row_id bigint,
-    user_id text,
-    reaction text
+CREATE OR REPLACE FUNCTION public.react_deck_card(
+  row_id   BIGINT,
+  user_id  TEXT,
+  reaction TEXT
 )
-RETURNS jsonb
+RETURNS JSONB
 LANGUAGE plpgsql
-STRICT
+SECURITY INVOKER
 AS $$
 DECLARE
-    current_data jsonb;
-    current_reactions jsonb;
-    new_reactions jsonb;
-    user_key text := user_id;
-    key_count integer;
+  reac JSONB;
 BEGIN
-    SELECT data INTO current_data FROM board_elements_v2 WHERE id = row_id;
+  IF user_id IS NULL OR user_id = '' OR reaction IS NULL OR reaction = '' THEN
+    RAISE EXCEPTION 'user_id y reaction son requeridos';
+  END IF;
 
-    IF current_data IS NULL THEN
-        RETURN NULL::jsonb;
-    END IF;
+  SELECT reactions INTO reac FROM deck_cards WHERE id = row_id FOR UPDATE;
+  IF reac IS NULL OR jsonb_typeof(reac) != 'object' THEN reac := '{}'::jsonb; END IF;
 
-    -- Parse reactions actuales (formato {uid:emoji})
-    current_reactions := current_data->'reactions';
-
-    IF current_reactions IS NULL THEN
-        current_reactions := '{}'::jsonb;
-    END IF;
-
-    -- Si ya tiene reacción de este usuario → quitarla
-    IF current_reactions ? user_key THEN
-        new_reactions := current_reactions - user_key;
-        IF jsonb_typeof(new_reactions) = 'null' OR new_reactions = 'null'::jsonb THEN
-            new_reactions := '{}'::jsonb;
-        END IF;
-    ELSE
-        -- Nueva reacción: verificar límite de 5 keys usando COUNT
-        SELECT COUNT(*) INTO key_count FROM jsonb_object_keys(current_reactions);
-
-        IF key_count >= 5 THEN
-            -- Límite alcanzado: retornar data sin modificar
-            RETURN current_reactions;
-        END IF;
-
-        -- Agregar nueva key: {user_id: emoji}
-        new_reactions := jsonb_set(current_reactions, ARRAY[user_key], to_jsonb(reaction));
-    END IF;
-
-    -- Actualizar fila
-    UPDATE board_elements_v2
-    SET data = jsonb_set(current_data, '{reactions}', new_reactions),
-        updated_at = NOW()
-    WHERE id = row_id;
-
-    RETURN new_reactions;
+  reac := jsonb_set(reac, ARRAY[user_id], to_jsonb(reaction));
+  UPDATE deck_cards SET reactions = reac, updated_at = NOW() WHERE id = row_id;
+  RETURN reac;
 END;
 $$;
 
 -- 3. Otorgar permisos a roles anon y authenticated
-GRANT EXECUTE ON FUNCTION toggle_reaction TO anon;
-GRANT EXECUTE ON FUNCTION toggle_reaction TO authenticated;
-GRANT EXECUTE ON FUNCTION react_deck_card TO anon;
-GRANT EXECUTE ON FUNCTION react_deck_card TO authenticated;
+GRANT EXECUTE ON FUNCTION public.toggle_reaction(TEXT, TEXT, BIGINT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.react_deck_card(BIGINT, TEXT, TEXT) TO anon, authenticated;
 
 -- 4. Comentario explicativo
-COMMENT ON FUNCTION toggle_reaction(text, text, bigint, text, text) IS 'Merge atómico de reacciones JSONB con row-level lock. Devuelve el mapa de reacciones actualizado (JSONB). Cubre board_elements_v2, messages y tablas workout*. Whitelist de tablas permitidas. Max 5 keys, 1 reacción por usuario por key.';
-COMMENT ON FUNCTION react_deck_card(bigint, text, text) IS 'RPC dedicada para tarjetas del mazo: forma {uid:emoji}. Toggle on/off, límite 5 keys. Devuelve el estado autoritativo.';
+COMMENT ON FUNCTION public.toggle_reaction(TEXT, TEXT, BIGINT, TEXT, TEXT) IS 'Merge atómico de reacciones JSONB con row-level lock. Devuelve el mapa de reacciones actualizado (JSONB). Cubre messages.reactions, gallery.reactions y workout_*.social. Whitelist de tablas permitidas. Max 5 keys, 1 reacción por usuario por key.';
+COMMENT ON FUNCTION public.react_deck_card(BIGINT, TEXT, TEXT) IS 'RPC dedicada para tarjetas del mazo (deck_cards.reactions): forma {uid:emoji}. Reemplazo atómico con updated_at. Devuelve el estado autoritativo.';

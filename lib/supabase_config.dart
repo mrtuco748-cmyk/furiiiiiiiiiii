@@ -15,6 +15,7 @@ class SupabaseConfig {
       _initialized = true;
     } catch (e) {
       debugPrint('Supabase init error: $e');
+      rethrow;
     }
   }
 

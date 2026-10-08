@@ -168,9 +168,11 @@ class NotificationService {
   ) async {
     final type = data['type'] as String? ?? 'notification';
     try {
+      // El push lo genera la actividad de la pareja (vía triggers), así que el
+      // remitente en la bandeja es el partner, NO el usuario activo.
       await SupabaseConfig.client.from('notifications').insert({
         'user_id': AppState.myId,
-        'from_user': AppState.myId,
+        'from_user': AppState.partnerId,
         'type': type,
         'title': title,
         'body': body,
@@ -320,52 +322,6 @@ class NotificationService {
     }
   }
 
-  static Future<void> sendPushNotification({
-    required String userId,
-    required String title,
-    required String body,
-    Map<String, dynamic> data = const {},
-  }) async {
-    if (!_firebaseAvailable) return;
-    try {
-      await SupabaseConfig.client.functions.invoke(
-        'send-push',
-        body: {
-          'user_id': userId,
-          'title': title,
-          'body': body,
-          'data': data,
-        },
-      );
-    } catch (e) {
-      debugPrint('Error sending push: $e');
-    }
-  }
-
-  static Future<void> storeNotification({
-    required String type,
-    required String title,
-    required String body,
-    String? fromUserId,
-    Map<String, dynamic> data = const {},
-    String? targetUserId,
-  }) async {
-    final uid = targetUserId ?? AppState.partnerId;
-    if (uid == null) return;
-    try {
-      await SupabaseConfig.client.from('notifications').insert({
-        'user_id': uid,
-        'from_user': fromUserId ?? AppState.myId,
-        'type': type,
-        'title': title,
-        'body': body,
-        'data': data,
-      });
-    } catch (e) {
-      debugPrint('NotificationService.storeNotification error: $e');
-    }
-  }
-
   static Future<List<Map<String, dynamic>>> getNotifications() async {
     if (AppState.myId == null) return [];
     try {
@@ -383,22 +339,6 @@ class NotificationService {
       // Fallback to cache if available
       final cached = await LocalCache.getList('cache_notifications');
       return cached;
-    }
-  }
-
-  static Future<void> _refreshNotificationsCache() async {
-    try {
-      final res = await SupabaseConfig.client
-          .from('notifications')
-          .select()
-          .eq('user_id', AppState.myId!)
-          .order('created_at', ascending: false)
-          .limit(50)
-          .timeout(const Duration(seconds: 10));
-      await LocalCache.setList(
-          'cache_notifications', (res as List).cast<Map<String, dynamic>>());
-    } catch (e) {
-      debugPrint('NotificationService._refreshNotificationsCache error: $e');
     }
   }
 

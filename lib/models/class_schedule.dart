@@ -9,6 +9,7 @@ class ClassSchedule {
   final String professor;
   final String userId;
   final int color;
+  final DateTime? updatedAt;
 
   ClassSchedule({
     this.id,
@@ -21,6 +22,7 @@ class ClassSchedule {
     this.professor = '',
     this.userId = '',
     this.color = 0xFF7B2D8E,
+    this.updatedAt,
   });
 
   Map<String, dynamic> toMap() => {
@@ -34,6 +36,7 @@ class ClassSchedule {
     'professor': professor,
     'userId': userId,
     'color': color,
+    'updatedAt': updatedAt?.toIso8601String(),
   };
 
   factory ClassSchedule.fromMap(Map<String, dynamic> map) => ClassSchedule(
@@ -47,6 +50,9 @@ class ClassSchedule {
     professor: (map['professor'] as String?) ?? '',
     userId: (map['userId'] as String?) ?? '',
     color: (map['color'] as int?) ?? 0xFF7B2D8E,
+    updatedAt: map['updatedAt'] is String
+        ? DateTime.tryParse(map['updatedAt'] as String)
+        : null,
   );
 
   /// Fila de Supabase: el id del servidor pasa a ser el cloudId.
@@ -60,6 +66,9 @@ class ClassSchedule {
     professor: (row['professor'] as String?) ?? '',
     userId: (row['user_id'] as String?) ?? '',
     color: (row['color'] as int?) ?? 0xFF7B2D8E,
+    updatedAt: row['updated_at'] is String
+        ? DateTime.tryParse(row['updated_at'] as String)
+        : null,
   );
 
   ClassSchedule copyWith({
@@ -73,6 +82,7 @@ class ClassSchedule {
     String? professor,
     String? userId,
     int? color,
+    DateTime? updatedAt,
   }) => ClassSchedule(
     id: id ?? this.id,
     cloudId: cloudId ?? this.cloudId,
@@ -84,6 +94,7 @@ class ClassSchedule {
     professor: professor ?? this.professor,
     userId: userId ?? this.userId,
     color: color ?? this.color,
+    updatedAt: updatedAt ?? this.updatedAt,
   );
 
   Map<String, dynamic> toSupabaseMap() => {
@@ -95,5 +106,6 @@ class ClassSchedule {
     'professor': professor,
     'user_id': userId,
     'color': color,
+    'updated_at': updatedAt?.toIso8601String(),
   };
 }

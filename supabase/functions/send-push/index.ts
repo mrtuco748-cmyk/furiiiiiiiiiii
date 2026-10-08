@@ -1,40 +1,35 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const FCM_V1_URL = 'https://fcm.googleapis.com/v1/projects/furi-7cf63/messages:send'
+// ─── SECRETOS (Equipo 1 - 2026-09-01) ────────────────────────────────────────
+// El service account de Firebase (clave privada) ya NO vive hardcodeado en el
+// código. Se lee de la variable de entorno FIREBASE_SERVICE_ACCOUNT (un JSON
+// completo) seteada con:
+//   supabase secrets set FIREBASE_SERVICE_ACCOUNT='{...json del service account}'
+// Campos requeridos: client_email, private_key, token_uri, project_id.
+// SUPABASE_URL y SUPABASE_ANON_KEY se leen del entorno de la Edge Function.
+const FIREBASE_SERVICE_ACCOUNT = Deno.env.get('FIREBASE_SERVICE_ACCOUNT') || ''
 
-const SERVICE_ACCOUNT = {
-  client_email: 'firebase-adminsdk-fbsvc@furi-7cf63.iam.gserviceaccount.com',
-  private_key: `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC3Xy8+qsH8P8rq
-6EAW5EQq9VjIHImIMI1pmWi9K8uf+CB/P+8RbnbsNlxdUHU7ghDiAScJ5y/0Fmje
-/tSJE90RDWclz3ffOV9L76XVP/b1bwS3Z4D0qLWCjgxSXJgTu70EDe7ec90OPMCI
-/r+78FaLdWew5L3gNk4kgIxvLMAfz75aUp/u+P03ggvLWjDgkFuSBuCZ37Y54lNL
-T+zOZ8mMj+YimjAZ4THZuRgZCYjS1NQD2X1/V/89hb6twUVn1RUgRsz0Jwxsi1RH
-UpHDm8dCbPZLCev5pK7aVDU4eZy74mVfIPYvrVoopJHvqe63CDhkBGj7UoSGc2uJ
-4Iy3yNA1AgMBAAECggEAJKexzYCb0107JlbzzL+ngsDVlPbjZSZzdir03W++PgV/
-FYDFvMHMou5A62RUcudOkabyU0/z7YJ3RzBAcwBV/f0kY9IDn8sbqhXHHAgzyR7+
-ndziUcXRtr3HZ8VbnwI1x/QzDiOyChEJ2bi2wg5KdokrB5jJ/eJNH43UxLp400LA
-oB9YUixDDIG2qAaZAlno0AQxzQdT0UW3rYjMRQDxtv11C42aLE2WMR7G0Jkl4oMk
-8p2iUicbkpVmKco3fOmYieYBoMaavl4Gxae9gDvaNxQdrzr1pDKN3kL/He+hF6en
-04DWM6r2Ogal1YeQDwhW+dqYjFc9BiBQN9mVv/l7kQKBgQDeDCbgP/3zA/h+2z/h
-0GVwxDKi1KpfO0ZADFjmQC13ht/Q6/siYh90vZr6OlEDiTDGp5IxyacESCSWMMKV
-mJyf1eEznbT1rcuUFdDEy1duJiR5oQ3a3IaEcc1YAkaEm2OkFUd57zKs2DruIUGh
-IFfUd7kHSWPMCPhRoyZ0FdYFOQKBgQDTaRvr5S03qKSQKFPlbJlrcgixjD4+beV2
-mTT0o+AVnxzMw5bDgIS2JiwXBfNXEcqZGsPQUhxOYFbL5e8E3rSQxoWd5SGZHXNK
-/cL3t32a27tiYlB3zMUsbzZqSn+E/FHH/27uyHGmqRpfohmFVoH/zzm334bBD8eP
-L0ISbVa+3QKBgCKzf3fYSFWsLy+UEB24NcIzxz4PQjjzyHzF8Ta6nOBrIZtC5dJv
-xz61Sv0EFBkbXZYOJhjFzOYsaBtYr3A1k3SfNjyczuT+LiyMZD39EULTjyu68bFc
-eWFFb7PrVx3uMto3wR3bNe4xNLR2Wg1WQqOfujjbTU9br4MCnkXSC8pxAoGAF6lQ
-9bL9v5gBax0IXsor1am6rVx77vLP1tlI4wSgZOsdBxHxAsqUj+pvztfcp2cXXNFx
-DxTRlDgWHtYKTWo7nWSKueRWQVPZfpAuTRldVoK3U0ibpvzlKJb96SGTaifvY0oE
-eXc3uSZ+DCwRXSoUfLQNyrWa2GrStATfCT7xkYUCgYEAmcrFJqhPNJiDKGCg/xA1
-12DEdRUJ3MSfe8Mmdug1vq6hVwdhl5g2whWoe/PWjRClvxw1z1w4DgOzbs+De6d6
-3LELsIfOfnR0iIysNwZppHQgmvyZDKIbqkzUOORAkvVEj3i3VL6MUQcnkAFQZmyq
-3EjIYOfZWg5eWXKhIBnvz/0=
------END PRIVATE KEY-----`,
-  token_uri: 'https://oauth2.googleapis.com/token',
+interface ServiceAccount {
+  client_email: string
+  private_key: string
+  token_uri: string
+  project_id: string
 }
+
+let serviceAccount: ServiceAccount | null = null
+if (FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(FIREBASE_SERVICE_ACCOUNT) as ServiceAccount
+  } catch (e) {
+    console.error('FIREBASE_SERVICE_ACCOUNT no es un JSON válido:', e)
+    serviceAccount = null
+  }
+}
+
+const FCM_V1_URL = serviceAccount?.project_id
+  ? `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`
+  : ''
 
 function base64url(buf: ArrayBuffer): string {
   const str = btoa(String.fromCharCode(...new Uint8Array(buf)))
@@ -85,16 +80,16 @@ async function getAccessToken(): Promise<string> {
   const jwt = await signJWT(
     { alg: 'RS256', typ: 'JWT' },
     {
-      iss: SERVICE_ACCOUNT.client_email,
+      iss: serviceAccount!.client_email,
       scope: 'https://www.googleapis.com/auth/firebase.messaging',
-      aud: SERVICE_ACCOUNT.token_uri,
+      aud: serviceAccount!.token_uri,
       exp: now + 3600,
       iat: now,
     },
-    SERVICE_ACCOUNT.private_key,
+    serviceAccount!.private_key,
   )
 
-  const res = await fetch(SERVICE_ACCOUNT.token_uri, {
+  const res = await fetch(serviceAccount!.token_uri, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -109,6 +104,10 @@ async function getAccessToken(): Promise<string> {
 }
 
 serve(async (req) => {
+  if (!serviceAccount) {
+    return new Response('Firebase service account not configured (FIREBASE_SERVICE_ACCOUNT env missing)', { status: 500 })
+  }
+
   const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '')
   if (!authHeader) return new Response('Unauthorized', { status: 401 })
 

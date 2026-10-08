@@ -7,12 +7,72 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~ALTA - Día entrenado no podía desmarcarse (toggle de completado roto)~~ ✅ RESUELTO 2026-09-01
+- **Dónde**: `lib/providers/workout_provider.dart` (`toggleCompletion`) + `lib/models/workout_completion.dart`
+- **Qué pasaba**: tocar el badge F/R de un día marcado nunca lo desmarcaba. El call-site llama `toggleCompletion(userId, date)` **sin `routineId`** (`null`), pero el filtro del registro existente usaba `c.routineId == routineId` mientras `toMap()` persiste `routine_id: 0` para "sin rutina" y `fromMap` lo lee como `0`. `0 == null` es `false` → la rama de delete nunca corría y el día quedaba permanentemente "entrenado".
+- **Fix**: normalizar ambos operandos `(c.routineId ?? 0) == (routineId ?? 0)`.
+- **Lección**: un `toMap()` que normaliza `null` a `0` desincroniza la comparación en memoria (`fromMap` devuelve `0`, no `null`). Cualquier lookup por igualdad contra un valor persistido normalizado debe normalizar AMBOS operandos.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-09-01
+
+### ~~ALTA - Carta de la pareja nunca aparecía en Nosotros (swap 📬 siempre vacío)~~ ✅ RESUELTO 2026-09-01
+- **Dónde**: `lib/screens/nosotros_screen.dart` (`_loadPartnerLetter`)
+- **Qué pasaba**: `_loadPartnerLetter()` llamaba `_markSeen()` ANTES de chequear `seen_by`, y `_markSeen` agrega `myId` a `record['seen_by']` (mapa local) → el chequeo posterior `contains(myId)` era SIEMPRE true → la función retornaba `null` siempre, y el swap de cartas de Nosotros nunca mostraba la carta de la pareja. Bonus: `_markSeen` hacía un UPDATE real a la BD en cada carga de la pantalla.
+- **Fix**: chequear `seen_by` ANTES de marcar (solo marcar si aún no está leída).
+- **Lección**: una mutación que es a la vez el "efecto" y la condición del chequeo debe ejecutarse DESPUÉS de leer el estado; el orden "chequear estado → mutar" evita que la propia mutación invalide el chequeo.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-09-01
+
+### ALTA - Comentarios de workouts con last-write-wins (race "último write gana")~~ ✅ RESUELTO 2026-09-01
+- **Dónde**: `lib/providers/workout_provider.dart` + BD cloud (`workout_*.social`)
+- **Qué pasaba**: cada comentario se enviaba con el documento `social` COMPLETO (`.update(next.toMap())`). Dos comentarios simultáneos de Facu y Rocio al mismo ejercicio/rutina/reto se pisaban (el último update ganaba) — exactamente el mismo bug que la RPC de reacciones ya había resuelto (D-13), reintroducido en los comentarios.
+- **Fix**: 2 RPC de Postgres con row-level lock (`SELECT ... FOR UPDATE`) `add_workout_comment` / `delete_workout_comment` (whitelist `workout_*`, bump `updated_at`, devuelven el `social` completo autoritativo). El provider hace optimistic + reconciliación (`_commentViaRpc` + `_applyCommentLog/Routine/Challenge`), preservando las reacciones locales. Migración integrada al schema maestro (sección 29c) y **ejecutada en prod** vía Management API.
+- **Lección**: cualquier entidad embebida en un JSONB que se envía completo es last-write-wins; la defensa real es serializar en el origen (RPC con `FOR UPDATE`) y reconciliar contra el estado autoritativo del servidor. Al rewirear un método reusado para dos cosas (workout `social` = reacciones + comentarios) hay que tocar SOLO la rama de comentarios.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-09-01
+
+### ~~MEDIA - Notas solo-locales (la pareja no veía las notas del otro)~~ ✅ RESUELTO 2026-09-01 (decisión D-15)
+- **Dónde**: `lib/providers/notes_provider.dart` + SQLite local
+- **Qué pasaba**: las notas vivían SOLO en SQLite local (`notes` del dispositivo); cada dispositivo veía solo las suyas y la pareja no tenía forma de compartirlas (gap de la app de pareja).
+- **Fix**: sync completo con Supabase con el patrón de `ScheduleProvider` — SQLite v11 (`cloud_id`/`synced`/`user_id`), `_pushUnsyncedToCloud` (insert + re-push dirty), `_pullFromCloud` (merge por `cloudId`, borrar locales sin fila cloud), `add/update/delete` local + cloud, realtime `notes_sync`. Tabla cloud `notes` ganó `title` + RLS `full_access_notes` + publicación realtime. Migración integrada al schema maestro (sección 14) y **ejecutada en prod** vía Management API.
+- **Lección**: una tabla cloud puede existir sin estar definida en el schema maestro (la `notes` solo la referenciaban triggers de push). Antes de sincronizar contra ella, verificar sus columnas reales y usar `ADD COLUMN IF NOT EXISTS`/`CREATE TABLE IF NOT EXISTS`. Y cuando la entidad local usa camelCase pero la nube snake_case, armar mapas locales EXPLÍCITOS (no reusar `toMap()` contra la DB local).
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-09-01
+
+### ALTA - Sync de clases con último-write-gana (edición de la pareja se pisaba)~~ ✅ RESUELTO 2026-09-01
+- **Dónde**: `lib/providers/class_schedule_provider.dart` + SQLite `class_schedules`
+- **Qué pasaba**: a diferencia de `ScheduleProvider`, el sync de clases no comparaba `updated_at`: el pull y el realtime aplicaban la fila cloud autoritativamente y el push subía sin chequear la versión cloud → "último que escribe, gana" entre ambos dispositivos (una edición de A podía pisar la de B, y viceversa). Además `class_schedules` no tenía timestamps locales.
+- **Fix**: SQLite v12 (`updatedAt TEXT`), modelo con `updatedAt`, y merge por recencia espejando `schedules`: `_pushToSupabase` no sobrescribe si la cloud es más nueva; `_pullFromCloud`/realtime solo aplican la cloud cuando es más nueva (o la local no tiene timestamp).
+- **Lección**: cualquier sync cloudId + dirty-flag que no compare timestamps es último-write-gana latente. El patrón del proyecto (schedules) es `cloudId + synced + updatedAt + merge por recencia`; una tabla nueva que sincronice debe espejarlo o reintroducirá este bug.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-09-01
+
+### ALTA - Maestro diverge de prod para `notes` (user_id UUID vs TEXT) + realtime incompleto~~ ✅ RESUELTO 2026-09-01 (schema)
+- **Dónde**: `supabase_schema.sql`
+- **Qué pasaba**: el master declaraba `notes.user_id UUID REFERENCES profiles` (con `pinned`) mientras prod/migración usan `TEXT`; y el master solo publicaba realtime de `notifications`/`chat_typing`/`notes` (el resto solo en migraciones). Una DB reconstruida solo con el master quedaría: (a) con INSERT a `notes` roto (42883 por el cast uuid→text del trigger) y (b) sin sync en vivo en casi toda la app.
+- **Fix**: master alineado a `notes.user_id TEXT` (sin `pinned`), `notify_note_insert` con `::text`, y sección realtime con `FOREACH ARRAY` agregando las ~22 tablas que la app suscribe.
+- **Lección**: el master DEBE espejar 1:1 lo que ejecuta prod; si una columna/tabla solo vive en una migración suelta, una DB fresca queda rota. Auditoría del master = comparar con las migraciones + el `.select`/realtime real del código Dart.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-09-01 (schema)
+
+### ALTA - No se pueden crear retos ni metas (trigger push FCM rompe el INSERT)
+- **Dónde**: `supabase/migration_push_categories.sql` y BD cloud (`challenges`, `goals`)
+- **Qué pasa**: el INSERT a `challenges` (retos) y `goals` (metas) falla. La app lo traga con `catch`
+  ("No se pudo guardar el reto"). El error real del servidor (reproducido por REST) es PostgreSQL
+  `42883`: `function furi_notify_partner(uuid, unknown, text, jsonb) does not exist`.
+- **Causa raíz**: los triggers `AFTER INSERT` `notify_challenge_insert()` y `notify_goal_insert()`
+  llaman `furi_notify_partner(NEW.couple_id, ...)`. `NEW.couple_id` es `uuid` y la función espera
+  `text`; PostgreSQL NO hace cast implícito `uuid→text` para resolver el overload → el trigger lanza
+  → falla TODO el INSERT. moods/workout usan `::text` (por eso funcionaban).
+- **Fix**: cast explícito `furi_notify_partner(NEW.couple_id::text, ...)` en ambos triggers
+  (aplicado en `migration_push_categories.sql`).
+- **Pendiente**: ~~ejecutar `supabase/migration_fix_goal_challenge_push_cast.sql` (CREATE OR REPLACE)
+  en el SQL Editor de prod~~ ✅ EJECUTADO 2026-09-01.
+- **Lección**: pasar un `uuid` a un parámetro `text` de una función no resuelve el overload en
+  PostgreSQL — se necesita `::text` explícito. Cualquier trigger que pase una columna `uuid` a un
+  helper de texto debe castearla. Y un "catch" en la app oculta el error SQL: reproducir el INSERT
+  por REST con la anon key (RLS full-access) muestra el error del servidor al instante.
+
 ### ALTA - Tokens FCM muertos (`UNREGISTERED`) acumulados en `device_tokens`
 - **Dónde**: `supabase/functions/send-push/index.ts` + tabla `device_tokens`
 - **Qué pasa**: La Edge Function mandaba push a TODOS los tokens históricos de un usuario, incluidos los vencidos (`UNREGISTERED`) por reinstalar la app o cambiar de perfil. Esos tokens nunca se borraban → se reintentaba a ciegas y el usuario afectado (Rocio) dejaba de recibir push sin error visible. Además `device_tokens` acumulaba duplicados por usuario.
 - **Fix**: `send-push` ahora filtra `created_at >= ahora-90d` y al recibir `UNREGISTERED` borra el row (RLS full-access). `supabase/migration_device_tokens_unique.sql` agrega `idx_device_tokens_user_token` (único por user+token) para dedupe. Ver historial 2026-08-28 (Push FCM).
 - **Lección**: Los tokens FCM se podan SOLO en el servidor al recibir `UNREGISTERED`; el cliente no sabe que venció hasta que la app se reabra. Si un dispositivo no reabre la app, su token queda muerto y ese usuario no recibe push (no es bug de código, es higiene de tokens).
-- **Pendiente**: ~~el deploy de `send-push` es manual (`supabase functions deploy send-push`)~~ ✅ DEPLOYADO 2026-08-28 vía Management API (`POST /v1/projects/{ref}/functions/deploy?slug=send-push`, PAT `sbp_...`). La poda en la nube ya está activa.
+- **Pendiente**: ~~el deploy de `send-push` es manual (`supabase functions deploy send-push`)~~ ✅ DEPLOYADO 2026-08-28 vía Management API (`POST /v1/projects/{ref}/functions/deploy?slug=send-push`, PAT `sbp_...`). La poda en la nube ya está activa. **Redeploy 2026-09-01 → v7**: el service account de Firebase salió del código a `FIREBASE_SERVICE_ACCOUNT` (secreto de la Edge Function, seteado con `scripts/deploy-send-push.ps1`); el PAT quedó en GH Secret `SUPABASE_ACCESS_TOKEN` y `scripts/.env`. Ver historial 2026-09-01 (send-push vía Management API).
 - **Prioridad**: ~~ALTA~~ → MITIGADO 2026-08-28 (deploy de la función completado)
 
 ### ~~ALTA - Pantallas blancas en APK release (Logros/Metas)~~ 🟡 MITIGADO CON SKIA (validar en celular)

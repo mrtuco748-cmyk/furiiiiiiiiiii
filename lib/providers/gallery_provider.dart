@@ -114,7 +114,21 @@ class GalleryProvider extends ChangeNotifier {
           final deletedId = payload.oldRecord['id'] as int?;
           _items.removeWhere((i) => i.id == deletedId);
           notifyListeners();
-        } else { load(); }
+          return;
+        }
+        final row = payload.newRecord;
+        if (row.isEmpty) return;
+        final remote = GalleryItem.fromMap(Map<String, dynamic>.from(row));
+        final idx = _items.indexWhere((i) => i.id == remote.id);
+        if (idx < 0) {
+          _items.insert(0, remote);
+        } else {
+          // Merge de reacciones (unión de user_ids por key) para no pisar la
+          // reacción local optimista que el servidor todavía no confirmó.
+          _items[idx] = remote.copyWith(
+              reactions: _mergeReactions(_items[idx].reactions, remote.reactions));
+        }
+        notifyListeners();
       },
     ).onPostgresChanges(
       // Comentarios en vivo: si la pareja comenta una foto que ya tengo
@@ -141,7 +155,7 @@ class GalleryProvider extends ChangeNotifier {
     }
     try {
       final res = await SupabaseConfig.client.from('gallery').select()
-          .order('created_at', ascending: false).limit(50).timeout(const Duration(seconds: 10));
+          .order('created_at', ascending: false).timeout(const Duration(seconds: 10));
       _items = (res as List).map((e) => GalleryItem.fromMap(e as Map<String, dynamic>)).toList();
       await LocalCache.setList(
           'cache_gallery', _items.map((i) => i.toMap()).toList());
@@ -258,6 +272,26 @@ class GalleryProvider extends ChangeNotifier {
       debugPrint('GalleryProvider.toggleReaction error: $e');
       notifyListeners();
     }
+  }
+
+  /// Une dos mapas de reacciones `{key: [userIds]}` preservando todas las
+  /// entradas de `local` (mi estado optimista) con el server (`remote`).
+  Map<String, List<String>> _mergeReactions(
+    Map<String, List<String>> local,
+    Map<String, List<String>> remote,
+  ) {
+    final out = <String, List<String>>{};
+    for (final e in remote.entries) {
+      out[e.key] = List<String>.from(e.value);
+    }
+    local.forEach((k, v) {
+      final existing = out[k] ?? <String>[];
+      for (final uid in v) {
+        if (!existing.contains(uid)) existing.add(uid);
+      }
+      out[k] = existing;
+    });
+    return out;
   }
 
   Future<void> addComment(int galleryId, String content) async {

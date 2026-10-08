@@ -10,6 +10,8 @@ class SoundService {
   static final AudioPlayer _player = AudioPlayer()..audioCache.prefix = '';
   static DateTime? _lastClickTime;
   static DateTime? _lastSwooshTime;
+  static DateTime? _lastPopTime;
+  static DateTime? _lastSuccessTime;
 
   // Lock para evitar que llamadas concurrentes a _play se superpongan.
   static bool _isPlaying = false;
@@ -22,7 +24,6 @@ class SoundService {
   // que los SFX cortos no lo interrumpan con su stop().
   static final AudioPlayer _bgPlayer = AudioPlayer()..audioCache.prefix = '';
   static bool _bgStarted = false;
-  static const double _bgVolume = 0.5;
 
   // Contexto de audio para SFX: pide foco "transient may duck" en Android para
   // que, al sonar un click/pop, NO pause la música de fondo (solo la baja un
@@ -78,16 +79,16 @@ class SoundService {
 
   Future<void> pop() async {
     final now = DateTime.now();
-    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _popDebounceMs) return;
-    _lastSwooshTime = now;
+    if (_lastPopTime != null && now.difference(_lastPopTime!).inMilliseconds < _popDebounceMs) return;
+    _lastPopTime = now;
     HapticFeedback.mediumImpact();
     await _play('sounds/pop.wav');
   }
 
   Future<void> success() async {
     final now = DateTime.now();
-    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _popDebounceMs) return;
-    _lastSwooshTime = now;
+    if (_lastSuccessTime != null && now.difference(_lastSuccessTime!).inMilliseconds < _popDebounceMs) return;
+    _lastSuccessTime = now;
     HapticFeedback.heavyImpact();
     await _play('sounds/success.wav');
   }
@@ -103,8 +104,8 @@ class SoundService {
   void tick() { HapticFeedback.selectionClick(); }
   Future<void> alert() async {
     final now = DateTime.now();
-    if (_lastSwooshTime != null && now.difference(_lastSwooshTime!).inMilliseconds < _popDebounceMs) return;
-    _lastSwooshTime = now;
+    if (_lastPopTime != null && now.difference(_lastPopTime!).inMilliseconds < _popDebounceMs) return;
+    _lastPopTime = now;
     HapticFeedback.heavyImpact();
     await _play('sounds/pop.wav');
   }

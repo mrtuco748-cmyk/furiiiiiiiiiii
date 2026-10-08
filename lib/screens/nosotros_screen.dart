@@ -20,8 +20,6 @@ import '../widgets/app_feedback.dart';
 const _purple = Color(0xFF7000FF);
 const _black = Color(0xFF000000);
 
-const _emojis = ['😊', '😢', '😡', '😍', '😴', '😰', '🥳', '🤔', '😎', '🤗', '😤', '🥰', '😱', '😶', '🙄', '😇'];
-
 class _Layout {
   final double w, h, gapW, gapH, headerH;
   final double r1Y, r1H, cartasY, cartasH;
@@ -255,12 +253,13 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
     final openRaw = letter['scheduled_open'];
     final openAt = openRaw == null ? null : DateTime.tryParse(openRaw.toString());
     if (openAt != null && openAt.isAfter(DateTime.now())) return null;
-    // Solo presenta cartas no leidas por el usuario actual.
+    // Solo presenta cartas no leidas por el usuario actual. El chequeo de
+    // seen_by va ANTES de _markSeen: _markSeen agrega myId al mapa local,
+    // así que mirar después hacía que esta función retornara siempre null.
+    final seen = (letter['seen_by'] as List?)?.contains(widget.myId) ?? false;
+    if (seen) return null;
     await _markSeen(letter, 'letters');
-    return letter['seen_by'] != null &&
-            (letter['seen_by'] as List).contains(widget.myId)
-        ? null
-        : letter;
+    return letter;
   }
 
   // Marca como "visto" el registro actual (agrega myId al array seen_by).
@@ -1042,7 +1041,3 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
   }
 
 }
-
-// This is a fix for the deprecated AnimatedBuilder - using AnimatedWidget or similar
-// Flutter has renamed AnimatedBuilder to AnimatedWidget in some versions.
-// Keeping AnimatedBuilder as is since it's still available.

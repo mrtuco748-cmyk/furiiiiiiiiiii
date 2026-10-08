@@ -14,8 +14,6 @@ class NotesScreen extends StatefulWidget {
 }
 
 class _NotesScreenState extends State<NotesScreen> {
-  final _fabKey = GlobalKey();
-
   @override
   void initState() {
     super.initState();
@@ -37,7 +35,6 @@ class _NotesScreenState extends State<NotesScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        key: _fabKey,
         onPressed: () => _showNoteEditor(context, null),
         backgroundColor: const Color(0xFF9D00FF),
         foregroundColor: Colors.white,
@@ -323,21 +320,22 @@ class _NotesScreenState extends State<NotesScreen> {
                   },
                   child: const Icon(Icons.save, color: Color(0xFF39FF14)),
                 ),
-              TextButton(
-                onPressed: () {
-                  if (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty) {
-                    context.read<NotesProvider>().add(Note(
-                          title: titleCtrl.text,
-                          content: contentCtrl.text,
-                          color: selectedColor,
-                          createdAt: DateTime.now().toIso8601String(),
-                          updatedAt: DateTime.now().toIso8601String(),
-                        ));
-                  }
-                  Navigator.pop(ctx);
-                },
-                child: const Icon(Icons.check, color: Color(0xFF39FF14)),
-              ),
+              if (note == null)
+                TextButton(
+                  onPressed: () {
+                    if (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty) {
+                      context.read<NotesProvider>().add(Note(
+                            title: titleCtrl.text,
+                            content: contentCtrl.text,
+                            color: selectedColor,
+                            createdAt: DateTime.now().toIso8601String(),
+                            updatedAt: DateTime.now().toIso8601String(),
+                          ));
+                    }
+                    Navigator.pop(ctx);
+                  },
+                  child: const Icon(Icons.check, color: Color(0xFF39FF14)),
+                ),
             ],
           );
         },

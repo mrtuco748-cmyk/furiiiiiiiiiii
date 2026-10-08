@@ -84,9 +84,11 @@ class _ChatViewState extends State<_ChatView> {
 
   void _onScroll() {
     if (!_scrollCtrl.hasClients) return;
+    final pv = context.read<ChatProvider>();
+    if (pv.messages.isEmpty) return;
     final pos = _scrollCtrl.position;
     if (pos.pixels >= pos.maxScrollExtent - 40) {
-      context.read<ChatProvider>().loadOlderMessages();
+      pv.loadOlderMessages();
     }
   }
 

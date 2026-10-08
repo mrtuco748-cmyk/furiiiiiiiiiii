@@ -375,7 +375,7 @@ packages:
     source: hosted
     version: "5.2.1"
   flutter_launcher_icons:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: flutter_launcher_icons
       sha256: "10f13781741a2e3972126fae08393d3c4e01fa4cd7473326b94b72cf594195e7"
@@ -422,14 +422,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.35"
-  flutter_svg:
-    dependency: "direct main"
-    description:
-      name: flutter_svg
-      sha256: "35882981abcbfb8c15b286f0cd690ff25bac12d95eff3e25ee207f37d4c42e7f"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.3.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -448,14 +440,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  font_awesome_flutter:
-    dependency: "direct main"
-    description:
-      name: font_awesome_flutter
-      sha256: "09dcde8ab90ffae1a7d65ff2ef96fc62a17ad9d0ce7c127b317ded676b0d5935"
-      url: "https://pub.dev"
-    source: hosted
-    version: "11.0.0"
   functions_client:
     dependency: transitive
     description:
@@ -784,14 +768,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
-  material_design_icons_flutter:
-    dependency: "direct main"
-    description:
-      name: material_design_icons_flutter
-      sha256: "6f986b7a51f3ad4c00e33c5c84e8de1bdd140489bbcdc8b66fc1283dad4dea5a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.7296"
   meta:
     dependency: transitive
     description:
@@ -880,14 +856,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
-  path_parsing:
-    dependency: transitive
-    description:
-      name: path_parsing
-      sha256: "883402936929eac138ee0a45da5b0f2c80f89913e6dc3bf77eb65b84b409c6ca"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.0"
   path_provider:
     dependency: "direct main"
     description:
@@ -992,14 +960,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.2"
-  phosphor_flutter:
-    dependency: "direct main"
-    description:
-      name: phosphor_flutter
-      sha256: "8a14f238f28a0b54842c5a4dc20676598dd4811fcba284ed828bd5a262c11fde"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.0"
   platform:
     dependency: transitive
     description:
@@ -1208,14 +1168,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.1"
-  simple_gesture_detector:
-    dependency: transitive
-    description:
-      name: simple_gesture_detector
-      sha256: ba2cd5af24ff20a0b8d609cec3f40e5b0744d2a71804a2616ae086b9c19d19a3
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.1"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -1341,14 +1293,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.1+1"
-  table_calendar:
-    dependency: "direct main"
-    description:
-      name: table_calendar
-      sha256: "0c0c6219878b363a2d5f40c7afb159d845f253d061dc3c822aa0d5fe0f721982"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.0"
   term_glyph:
     dependency: transitive
     description:
@@ -1382,7 +1326,7 @@ packages:
     source: hosted
     version: "1.4.0"
   url_launcher:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: url_launcher
       sha256: f6a7e5c4835bb4e3026a04793a4199ca2d14c739ec378fdfe23fc8075d0439f8
@@ -1453,30 +1397,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.6.0"
-  vector_graphics:
-    dependency: transitive
-    description:
-      name: vector_graphics
-      sha256: "2306c03da2ba81724afeb589c351ebbc0aa7d86005925be8f8735856dbe5e42d"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.2"
-  vector_graphics_codec:
-    dependency: transitive
-    description:
-      name: vector_graphics_codec
-      sha256: "99fd9fbd34d9f9a32efd7b6a6aae14125d8237b10403b422a6a6dfeac2806146"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.13"
-  vector_graphics_compiler:
-    dependency: transitive
-    description:
-      name: vector_graphics_compiler
-      sha256: "142a9146f447d15b10bdc00e21d5f4d83e5b32bb5f8f8f5a04c75311344923a3"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.6"
   vector_math:
     dependency: transitive
     description:

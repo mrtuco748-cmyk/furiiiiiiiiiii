@@ -48,9 +48,16 @@ class RewardsProvider extends ChangeNotifier {
     // Cache local (offline-first): mostramos lo último conocido de inmediato.
     final cachedR = await LocalCache.getList('cache_rewards');
     final cachedP = await LocalCache.getList('cache_points');
-    if (cachedR.isNotEmpty || cachedP.isNotEmpty) {
+    // Sembrar cada lista con su cache independiente: si solo existe uno de los
+    // dos, no vaciar el otro (antes se reseteaba _entries a [] cuando faltaba
+    // cache_points y el balance quedaba 0 hasta el fetch).
+    if (cachedR.isNotEmpty) {
       _rewards = cachedR.map((m) => CoupleReward.fromMap(m)).toList();
+    }
+    if (cachedP.isNotEmpty) {
       _entries = cachedP.map((m) => PointsEntry.fromMap(m)).toList();
+    }
+    if (cachedR.isNotEmpty || cachedP.isNotEmpty) {
       _loading = false;
       notifyListeners();
     }

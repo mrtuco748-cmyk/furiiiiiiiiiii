@@ -181,7 +181,7 @@ class ChatProvider extends ChangeNotifier {
             _state = ChatLoadState.data;
             notifyListeners();
             if (msg.toUser == myId) {
-              markIncomingDelivered();
+              markIncomingDelivered(onlyThese: {msg.id});
             }
           },
         )
@@ -434,10 +434,12 @@ class ChatProvider extends ChangeNotifier {
   /// Marca como entregados (delivered_at) los mensajes recibidos por realtime
   /// que todavia no estan marcados. No los marca como leidos: eso solo ocurre
   /// cuando el usuario abre el chat (markIncomingRead).
-  Future<void> markIncomingDelivered() async {
-    final undelivered = _messages
-        .where((m) => m.toUser == myId && m.deliveredAt == null)
-        .map((m) => m.id)
+  Future<void> markIncomingDelivered({Set<int>? onlyThese}) async {
+    final undelivered = (onlyThese ??
+            _messages
+                .where((m) => m.toUser == myId && m.deliveredAt == null)
+                .map((m) => m.id)
+                .toList())
         .toList();
     if (undelivered.isEmpty) return;
     final now = DateTime.now().toUtc().toIso8601String();

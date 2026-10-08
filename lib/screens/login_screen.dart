@@ -50,7 +50,8 @@ class LoginScreen extends StatelessWidget {
 
   Future<void> _login(BuildContext context, String identity) async {
     HapticFeedback.heavyImpact();
-    AppState.identity = identity;
+    // No pisar AppState.identity hasta confirmar el perfil en Supabase:
+    // si el perfil no existe, no se deja una identidad a medio cargar.
     try {
       final res = await SupabaseConfig.client
           .from('profiles')
@@ -58,6 +59,7 @@ class LoginScreen extends StatelessWidget {
           .eq('name', identity)
           .maybeSingle();
       if (res != null) {
+        AppState.identity = identity;
         AppState.myId = res['id'] as String;
         AppState.myName = res['name'] as String;
         AppState.partnerId = res['partner_id'] as String?;

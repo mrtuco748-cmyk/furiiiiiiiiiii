@@ -385,43 +385,97 @@ class WorkoutProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> _saveLog(WorkoutLog next, int idx) async {
-    final prev = _logs[idx];
-    _logs[idx] = next;
-    notifyListeners();
+  /// Llama a la RPC de merge atómico de comentarios (social) y devuelve el
+  /// `social` completo (reactions + comments) autoritativo del servidor, o
+  /// null si falló (p. ej. RPC no desplegada).
+  Future<WorkoutSocial?> _commentViaRpc({
+    required String table,
+    required int id,
+    required String action,
+    Map<String, dynamic>? comment,
+    String? commentId,
+  }) async {
     try {
-      await SupabaseConfig.client
-          .from(_logsTable)
-          .update(next.toMap())
-          .eq('id', next.id!)
+      final fn = action == 'add'
+          ? 'add_workout_comment'
+          : 'delete_workout_comment';
+      final res = await SupabaseConfig.client
+          .rpc(fn, params: {
+            'target_table': table,
+            'row_id': id,
+            'comment': ?comment,
+            'comment_id': ?commentId,
+          })
           .timeout(const Duration(seconds: 10));
-      return true;
+      if (res == null) return null;
+      return WorkoutSocial.fromMap(res);
     } catch (e) {
-      _logs[idx] = prev;
-      _error = 'No se pudo guardar la reacción';
-      developer.log('WorkoutProvider._saveLog error: $e');
-      notifyListeners();
-      return false;
+      developer.log('WorkoutProvider._commentViaRpc error: $e');
+      return null;
     }
   }
 
   Future<void> addLogComment(int id, String text, {String? replyToId}) async {
     final idx = _logs.indexWhere((l) => l.id == id);
-    if (idx == -1 || text.trim().isEmpty) return;
-    final next = _logs[idx].addComment(
+    if (idx == -1 || text.trim().isEmpty || _logs[idx].id == null) return;
+    final prev = _logs[idx];
+    final comment = WorkoutComment(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       userId: myId,
       text: text.trim(),
+      createdAt: DateTime.now(),
       replyToId: replyToId,
+    ).toMap();
+    final optimistic = prev.copyWith(
+      social: prev.social
+          .addComment(
+            id: comment['id'] as String,
+            userId: myId,
+            text: text.trim(),
+            replyToId: replyToId,
+          ),
     );
-    await _saveLog(next, idx);
+    _logs[idx] = optimistic;
+    notifyListeners();
+    final auth =
+        await _commentViaRpc(table: _logsTable, id: id, action: 'add', comment: comment);
+    _applyCommentLog(idx, prev, optimistic, auth);
   }
 
   Future<void> deleteLogComment(int id, String commentId) async {
     final idx = _logs.indexWhere((l) => l.id == id);
-    if (idx == -1) return;
-    final next = _logs[idx].deleteComment(commentId);
-    await _saveLog(next, idx);
+    if (idx == -1 || _logs[idx].id == null) return;
+    final prev = _logs[idx];
+    final optimistic = prev.copyWith(social: prev.social.deleteComment(commentId));
+    _logs[idx] = optimistic;
+    notifyListeners();
+    final auth = await _commentViaRpc(
+        table: _logsTable, id: id, action: 'delete', commentId: commentId);
+    _applyCommentLog(idx, prev, optimistic, auth);
+  }
+
+  /// Reconciliación tras la RPC de comentario: si falló vuelve a [prev]
+  /// (rollback); si el servidor respondió, toma sus comentarios autoritativos
+  /// preservando las reacciones locales optimistas.
+  void _applyCommentLog(
+    int idx,
+    WorkoutLog prev,
+    WorkoutLog optimistic,
+    WorkoutSocial? auth,
+  ) {
+    if (auth == null) {
+      _logs[idx] = prev;
+      _error = 'No se pudo guardar el comentario';
+      developer.log('WorkoutProvider comment log RPC falló');
+    } else {
+      _logs[idx] = optimistic.copyWith(
+        social: WorkoutSocial(
+          reactions: optimistic.social.reactions,
+          comments: auth.comments,
+        ),
+      );
+    }
+    notifyListeners();
   }
 
   // ─── RUTINAS ──────────────────────────────────────────────────
@@ -506,38 +560,56 @@ class WorkoutProvider extends ChangeNotifier {
 
   Future<void> addRoutineComment(int id, String text) async {
     final idx = _routines.indexWhere((r) => r.id == id);
-    if (idx == -1 || text.trim().isEmpty) return;
-    final next = _routines[idx].addComment(
+    if (idx == -1 || text.trim().isEmpty || _routines[idx].id == null) return;
+    final prev = _routines[idx];
+    final comment = WorkoutComment(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       userId: myId,
       text: text.trim(),
+      createdAt: DateTime.now(),
+    ).toMap();
+    final optimistic = prev.copyWith(
+      social: prev.social
+          .addComment(id: comment['id'] as String, userId: myId, text: text.trim()),
     );
-    await _saveRoutineSocial(next, idx);
+    _routines[idx] = optimistic;
+    notifyListeners();
+    final auth = await _commentViaRpc(
+        table: _routinesTable, id: id, action: 'add', comment: comment);
+    _applyCommentRoutine(idx, prev, optimistic, auth);
   }
 
   Future<void> deleteRoutineComment(int id, String commentId) async {
     final idx = _routines.indexWhere((r) => r.id == id);
-    if (idx == -1) return;
-    final next = _routines[idx].deleteComment(commentId);
-    await _saveRoutineSocial(next, idx);
+    if (idx == -1 || _routines[idx].id == null) return;
+    final prev = _routines[idx];
+    final optimistic = prev.copyWith(social: prev.social.deleteComment(commentId));
+    _routines[idx] = optimistic;
+    notifyListeners();
+    final auth = await _commentViaRpc(
+        table: _routinesTable, id: id, action: 'delete', commentId: commentId);
+    _applyCommentRoutine(idx, prev, optimistic, auth);
   }
 
-  Future<void> _saveRoutineSocial(WorkoutRoutine next, int idx) async {
-    final prev = _routines[idx];
-    _routines[idx] = next;
-    notifyListeners();
-    try {
-      await SupabaseConfig.client
-          .from(_routinesTable)
-          .update(next.toMap())
-          .eq('id', next.id!)
-          .timeout(const Duration(seconds: 10));
-    } catch (e) {
+  void _applyCommentRoutine(
+    int idx,
+    WorkoutRoutine prev,
+    WorkoutRoutine optimistic,
+    WorkoutSocial? auth,
+  ) {
+    if (auth == null) {
       _routines[idx] = prev;
       _error = 'No se pudo guardar el comentario';
-      developer.log('WorkoutProvider._saveRoutineSocial error: $e');
-      notifyListeners();
+      developer.log('WorkoutProvider comment routine RPC falló');
+    } else {
+      _routines[idx] = optimistic.copyWith(
+        social: WorkoutSocial(
+          reactions: optimistic.social.reactions,
+          comments: auth.comments,
+        ),
+      );
     }
+    notifyListeners();
   }
 
   // ─── COMPLETIONS (marcar el día) ──────────────────────────────
@@ -554,7 +626,9 @@ class WorkoutProvider extends ChangeNotifier {
     );
     final existing = _completions
         .where((c) =>
-            c.userId == userId && c.day == day && c.routineId == routineId)
+            c.userId == userId &&
+            c.day == day &&
+            (c.routineId ?? 0) == (routineId ?? 0))
         .toList();
     if (existing.isNotEmpty) {
       _completions.removeWhere((c) => existing.contains(c));
@@ -675,20 +749,56 @@ class WorkoutProvider extends ChangeNotifier {
 
   Future<void> addChallengeComment(int id, String text) async {
     final idx = _challenges.indexWhere((c) => c.id == id);
-    if (idx == -1 || text.trim().isEmpty) return;
-    final next = _challenges[idx].addComment(
+    if (idx == -1 || text.trim().isEmpty || _challenges[idx].id == null) return;
+    final prev = _challenges[idx];
+    final comment = WorkoutComment(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       userId: myId,
       text: text.trim(),
+      createdAt: DateTime.now(),
+    ).toMap();
+    final optimistic = prev.copyWith(
+      social: prev.social
+          .addComment(id: comment['id'] as String, userId: myId, text: text.trim()),
     );
-    await _saveChallenge(next, idx);
+    _challenges[idx] = optimistic;
+    notifyListeners();
+    final auth = await _commentViaRpc(
+        table: _challengesTable, id: id, action: 'add', comment: comment);
+    _applyCommentChallenge(idx, prev, optimistic, auth);
   }
 
   Future<void> deleteChallengeComment(int id, String commentId) async {
     final idx = _challenges.indexWhere((c) => c.id == id);
-    if (idx == -1) return;
-    final next = _challenges[idx].deleteComment(commentId);
-    await _saveChallenge(next, idx);
+    if (idx == -1 || _challenges[idx].id == null) return;
+    final prev = _challenges[idx];
+    final optimistic = prev.copyWith(social: prev.social.deleteComment(commentId));
+    _challenges[idx] = optimistic;
+    notifyListeners();
+    final auth = await _commentViaRpc(
+        table: _challengesTable, id: id, action: 'delete', commentId: commentId);
+    _applyCommentChallenge(idx, prev, optimistic, auth);
+  }
+
+  void _applyCommentChallenge(
+    int idx,
+    WorkoutChallenge prev,
+    WorkoutChallenge optimistic,
+    WorkoutSocial? auth,
+  ) {
+    if (auth == null) {
+      _challenges[idx] = prev;
+      _error = 'No se pudo guardar el comentario';
+      developer.log('WorkoutProvider comment challenge RPC falló');
+    } else {
+      _challenges[idx] = optimistic.copyWith(
+        social: WorkoutSocial(
+          reactions: optimistic.social.reactions,
+          comments: auth.comments,
+        ),
+      );
+    }
+    notifyListeners();
   }
 
   Future<bool> _saveChallenge(

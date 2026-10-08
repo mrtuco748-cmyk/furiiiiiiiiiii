@@ -100,7 +100,6 @@ class DeckProvider extends ChangeNotifier {
           .from('deck_cards')
           .select()
           .order('created_at', ascending: false)
-          .limit(200)
           .timeout(const Duration(seconds: 10));
       final cloud = (res as List)
           .map((e) => DeckCard.fromMap(e as Map<String, dynamic>))
@@ -121,7 +120,6 @@ class DeckProvider extends ChangeNotifier {
           .from('deck_cards')
           .select()
           .order('created_at', ascending: false)
-          .limit(200)
           .timeout(const Duration(seconds: 10));
       final cloud = (res as List)
           .map((e) => DeckCard.fromMap(e as Map<String, dynamic>))

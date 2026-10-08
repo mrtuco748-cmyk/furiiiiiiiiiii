@@ -23,6 +23,7 @@ class RewardsScreen extends StatefulWidget {
 
 class _RewardsScreenState extends State<RewardsScreen> {
   final _titleCtrl = TextEditingController();
+  final _costCtrl = TextEditingController(text: '10');
 
   @override
   void initState() {
@@ -36,6 +37,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _costCtrl.dispose();
     super.dispose();
   }
 
@@ -155,7 +157,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
 
   Future<void> _addRewardDialog() async {
     _titleCtrl.clear();
-    const cost = 10;
+    _costCtrl.text = '10';
     final t = getTheme(widget.mode);
     await showDialog(
       context: context,
@@ -165,16 +167,29 @@ class _RewardsScreenState extends State<RewardsScreen> {
           borderRadius: BorderRadius.circular(18),
           side: const BorderSide(color: Color(0xFFFFD700), width: 4)),
         title: const Icon(Icons.card_giftcard, color: Colors.white, size: 34),
-        content: TextField(
-          controller: _titleCtrl,
-          autofocus: true,
-          style: GoogleFonts.bangers(color: Colors.white),
-          decoration: const InputDecoration(
-            labelText: '¿Qué se ganan?',
-            labelStyle: TextStyle(color: Colors.white54),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFFFD700))),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: _titleCtrl,
+            autofocus: true,
+            style: GoogleFonts.bangers(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: '¿Qué se ganan?',
+              labelStyle: TextStyle(color: Colors.white54),
+              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFFFD700))),
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _costCtrl,
+            keyboardType: TextInputType.number,
+            style: GoogleFonts.bangers(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Costo en puntos',
+              labelStyle: TextStyle(color: Colors.white54),
+              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFFFD700))),
+            ),
+          ),
+        ]),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -184,6 +199,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
             onPressed: () {
               final title = _titleCtrl.text.trim();
               if (title.isEmpty) return;
+              final cost = int.tryParse(_costCtrl.text.trim()) ?? 10;
               Navigator.of(ctx).pop();
               context.read<RewardsProvider>().addReward(title, '🎁', cost);
               if (mounted) AppFeedback.saved(context, 'Recompensa creada');

@@ -64,7 +64,7 @@ Future<void> _loadRetos() async {
     if (_retos.isEmpty) {
       try {
         final cached = await LocalCache.getList('cache_retos');
-        if (cached != null && cached.isNotEmpty && mounted) {
+        if (cached.isNotEmpty && mounted) {
           setState(() => _retos = cached);
         }
       } catch (_) {}

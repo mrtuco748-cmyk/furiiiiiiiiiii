@@ -133,7 +133,9 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     return Scaffold(backgroundColor: _dark, body: SafeArea(child: Stack(children: [
       Positioned.fill(child: img != null ? Image(image: img, fit: BoxFit.cover) : Icon(Icons.broken_image, color: _c, size: 80)),
       Positioned.fill(child: Container(color: const Color(0xFF000000).withValues(alpha: 0.45))),
-      Align(alignment: Alignment.bottomCenter, child: _detailPanel(item)),
+      Align(alignment: Alignment.bottomCenter, child: Consumer<GalleryProvider>(
+        builder: (context, pv, _) => _detailPanel(pv, item),
+      )),
       Positioned(left: 12, top: 8, child: TapTile(onTap: () => setState(() => _fullScreenId = null), child: Container(width: 44, height: 44, decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.arrow_back, color: Color(0xFF000000), size: 26)))),
       Positioned(right: 12, top: 8, child: TapTile(onTap: () async {
         final pv = context.read<GalleryProvider>();
@@ -147,8 +149,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     ])));
   }
 
-  Widget _detailPanel(GalleryItem item) {
-    final pv = context.read<GalleryProvider>();
+  Widget _detailPanel(GalleryProvider pv, GalleryItem item) {
     final comments = pv.commentsFor(item.id);
     return Container(width: double.infinity, constraints: const BoxConstraints(maxHeight: 260), padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: const BoxDecoration(color: Color(0xFF1A0A14), border: Border(top: BorderSide(color: Color(0xFF1A0A14), width: 2))),

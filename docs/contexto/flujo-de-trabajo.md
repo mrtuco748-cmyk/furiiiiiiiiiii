@@ -81,13 +81,23 @@ test: agregar tests para W
 # Windows + APK en un solo comando
 pwsh scripts/build-all.ps1
 
+# Windows + APK + subir a GitHub
+pwsh scripts/build-all.ps1 -Upload
+
 # Solo Windows
 pwsh scripts/build-windows.ps1
 # Output: build/windows/x64/runner/Release/furi_app.exe
 
-# Solo APK
+# Solo APK (genera 3 APKs separados por arquitectura)
 pwsh scripts/build-apk.ps1
-# Output: build/app/outputs/flutter-apk/app-release.apk
+# Output:
+#   build/app/outputs/flutter-apk/app-arm64-v8a-release.apk   (~21 MB)
+#   build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk  (~20 MB)
+#   build/app/outputs/flutter-apk/app-x86_64-release.apk       (~23 MB)
+
+# Subir APKs a GitHub
+pwsh scripts/upload-apk.ps1
+# Sube los 3 APKs al release de GitHub
 ```
 
 Los scripts verifican que Flutter este en PATH, que JAVA_HOME sea valido (APK) y reportan el tamaño del binario final. Los settings de Gradle (daemon off, heap 6G, compileSdk override) ya estan en `android/gradle.properties` y `android/build.gradle.kts` - no hay que pasar variables de entorno a mano.
@@ -127,6 +137,17 @@ flutter build apk --release
 cd supabase
 supabase functions deploy send-push
 ```
+
+Sin CLI de supabase, usar el helper local (lee el PAT de `scripts/.env` y el service
+account de `scripts/.env.firebase`, ambos gitignoreados):
+```powershell
+# Windows PowerShell 5.1 (pwsh no esta instalado en esta maquina)
+& .\scripts\deploy-send-push.ps1
+```
+El script setea el secreto `FIREBASE_SERVICE_ACCOUNT` de la Edge Function vía Management
+API (`POST /v1/projects/{ref}/secrets`) y hace deploy de `index.ts`
+(`POST /v1/projects/{ref}/functions/deploy?slug=send-push`). `SUPABASE_URL` /
+`SUPABASE_ANON_KEY` los inyecta Supabase automáticamente, no hace falta setearlos.
 
 ## Troubleshooting
 

@@ -112,28 +112,53 @@ class CoupleAchievementsProvider extends ChangeNotifier {
   }
 
   Future<AchievementSnapshot> _buildSnapshot() async {
-    final moods = await _loadUserIds(_moodsTable, dateColumn: 'date');
-    final completions =
-        await _loadUserIds(_completionsTable, dateColumn: 'completed_on');
-    final hasDeckMatch = await _hasDeckMatch();
-    final totalMessages = await _countMessages();
-    final bothSharedLocation = await _bothSharedLocation();
-    final hasFulfilledReward = await _hasFulfilledReward();
-    final bothAnsweredTrivia = await _bothAnsweredTrivia();
-    final totalLetters = await _countLetters();
-    final totalChallengesCompleted = await _countChallengesCompleted();
-    final totalGoalsCompleted = await _countGoalsCompleted();
-    final totalGalleryItems = await _countGalleryItems();
-    final totalFavorites = await _countFavorites();
-    final totalTriviaAnswers = await _countTriviaAnswers();
-    final totalRewardsFulfilled = await _countRewardsFulfilled();
-    final totalCouplePoints = await _countCouplePoints();
-    final matchCount = await _countMatches();
-    final distanceKm = await _maxDistanceKm();
-    final hasCompletedChallenge = await _hasCompletedChallenge();
-    final hasCompletedGoal = await _hasCompletedGoal();
-    final hasSentLetter = await _hasSentLetter();
-    final hasGalleryPhoto = await _hasGalleryPhoto();
+    // Todas las consultas son independientes: se corren en paralelo para no
+    // encadenar ~20 round-trips seriales (antes el load() tardaba decenas de
+    // segundos con jank al entrar a Logros).
+    final r = await Future.wait<Object?>([
+      _loadUserIds(_moodsTable, dateColumn: 'date'),
+      _loadUserIds(_completionsTable, dateColumn: 'completed_on'),
+      _hasDeckMatch(),
+      _countMessages(),
+      _bothSharedLocation(),
+      _hasFulfilledReward(),
+      _bothAnsweredTrivia(),
+      _countLetters(),
+      _countChallengesCompleted(),
+      _countGoalsCompleted(),
+      _countGalleryItems(),
+      _countFavorites(),
+      _countTriviaAnswers(),
+      _countRewardsFulfilled(),
+      _countCouplePoints(),
+      _countMatches(),
+      _maxDistanceKm(),
+      _hasCompletedChallenge(),
+      _hasCompletedGoal(),
+      _hasSentLetter(),
+      _hasGalleryPhoto(),
+    ]);
+    final moods = r[0] as List<CoupleActivity>;
+    final completions = r[1] as List<CoupleActivity>;
+    final hasDeckMatch = r[2] as bool;
+    final totalMessages = r[3] as int;
+    final bothSharedLocation = r[4] as bool;
+    final hasFulfilledReward = r[5] as bool;
+    final bothAnsweredTrivia = r[6] as bool;
+    final totalLetters = r[7] as int;
+    final totalChallengesCompleted = r[8] as int;
+    final totalGoalsCompleted = r[9] as int;
+    final totalGalleryItems = r[10] as int;
+    final totalFavorites = r[11] as int;
+    final totalTriviaAnswers = r[12] as int;
+    final totalRewardsFulfilled = r[13] as int;
+    final totalCouplePoints = r[14] as int;
+    final matchCount = r[15] as int;
+    final distanceKm = r[16] as double;
+    final hasCompletedChallenge = r[17] as bool;
+    final hasCompletedGoal = r[18] as bool;
+    final hasSentLetter = r[19] as bool;
+    final hasGalleryPhoto = r[20] as bool;
 
     final activities = <CoupleActivity>[
       ...moods,

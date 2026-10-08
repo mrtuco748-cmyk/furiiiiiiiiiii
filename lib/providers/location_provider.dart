@@ -19,6 +19,7 @@ class LocationProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   RealtimeChannel? _channel;
+  bool _realtimeUp = false;
 
   List<CoupleLocation> get locations => List.unmodifiable(_locations);
   bool get loading => _loading;
@@ -91,6 +92,8 @@ class LocationProvider extends ChangeNotifier {
       }).timeout(const Duration(seconds: 10));
       _upsertLocal(CoupleLocation(userId: myId, lat: lat, lng: lng, updatedAt: DateTime.now()));
       notifyListeners();
+      await LocalCache.setList(
+          'cache_locations', _locations.map((l) => l.toMap()).toList());
       return true;
     } catch (e) {
       _error = 'No se pudo compartir tu ubicación';
@@ -119,6 +122,8 @@ class LocationProvider extends ChangeNotifier {
   }
 
   void _subscribeRealtime() {
+    if (_realtimeUp) return;
+    _realtimeUp = true;
     _channel?.unsubscribe();
     _channel = SupabaseConfig.client
         .channel('couple_locations')

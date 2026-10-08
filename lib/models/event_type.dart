@@ -11,6 +11,7 @@ class EventType {
   IconData get iconData {
     switch (icon) {
       case 'restaurant': return Icons.restaurant;
+      case 'restaurant_menu': return Icons.restaurant_menu;
       case 'cake': return Icons.cake;
       case 'coffee': return Icons.coffee;
       case 'local_dining': return Icons.local_dining;

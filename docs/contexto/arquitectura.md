@@ -207,11 +207,30 @@ Home → boton pesa (verde lima #39FF14, sin confeti) → EjerciciosScreen
           Tap en item de rutina → dialog nuevo log pre-rellenado
      Ejercicios: workout_logs (nombre obligatorio + opcionales) → tap =
           detalle (weightHistoryFor = evolución de peso) + comentarios;
-          long-press = reacciones (social JSONB, merge union en realtime)
+          long-press = reacciones (social JSONB)
      Retos: workout_challenges (approved_by/completed_by, ambos deben
           aprobar/completar) → sheet de acciones
      Stats: WorkoutStats (streakFor individual, sessionsThisWeek,
           distinctExerciseNames, muscleGroupCounts)
+  → `social` JSONB (reacciones `{key:[uid]}` + comentarios):
+       Reacciones → RPC toggle_reaction (merge atómico, FOR UPDATE)
+       Comentarios → RPC add_workout_comment / delete_workout_comment
+          (merge atómico server-side, evita el race "último write gana");
+          el provider hace optimistic + reconciliación con el `social`
+          autoritativo que devuelve la RPC (workout_provider._commentViaRpc)
+```
+
+### Notas (sección "Notas" — antes pizarrón v2)
+```
+Sección "Notas" abre → NotesScreen → NotesProvider.load() (offline-first + Supabase)
+  → SQLite local (tabla `notes`, v11: id, cloud_id, synced, user_id,
+      title, content, color, created_at, updated_at) + tabla cloud `notes`
+  → _pushUnsyncedToCloud() (insert notas sin cloudId + re-push dirty synced=0)
+  → _pullFromCloud() (trae TODAS, merge por cloudId; borra locales sin fila cloud)
+  → RealtimeChannel notes_sync → _debouncedReload()
+  → add/update/delete escriben local + cloud (con dirty flag; re-push offline)
+  → Las notas SE COMPARTEN entre Facu y Rocio (decisión D-15): cualquier
+    dispositivo ve las notas de ambos. Autor por user_id (quién la creó).
 ```
 
 ### Racha de pareja 🔥 (días en que ambos están activos)

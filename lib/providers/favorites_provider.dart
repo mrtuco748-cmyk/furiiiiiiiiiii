@@ -220,7 +220,6 @@ class FavoritesProvider extends ChangeNotifier {
           .from('favorites')
           .select()
           .order('created_at', ascending: false)
-          .limit(200)
           .timeout(const Duration(seconds: 10));
       _items = (res as List)
           .map((e) => FavoriteItem.fromMap(e as Map<String, dynamic>))

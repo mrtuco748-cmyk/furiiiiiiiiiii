@@ -17,9 +17,6 @@ import 'providers/schedule_provider.dart';
 import 'providers/event_type_provider.dart';
 import 'providers/class_schedule_provider.dart';
 import 'providers/class_type_provider.dart';
-import 'providers/sync_provider.dart';
-
-import 'providers/study_provider.dart';
 import 'providers/finances_provider.dart';
 import 'providers/gallery_provider.dart';
 import 'providers/favorites_provider.dart';
@@ -31,8 +28,6 @@ import 'providers/trivia_provider.dart';
 import 'providers/rewards_provider.dart';
 import 'providers/deck_provider.dart';
 import 'providers/location_provider.dart';
-import 'providers/theme_provider.dart';
-import 'providers/menu_provider.dart';
 import 'database/database_helper.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -187,8 +182,6 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
             ChangeNotifierProvider(create: (_) => EventTypeProvider()),
             ChangeNotifierProvider(create: (_) => ClassTypeProvider()),
             ChangeNotifierProvider(create: (_) => ClassScheduleProvider()),
-            ChangeNotifierProvider(create: (_) => SyncProvider()),
-            ChangeNotifierProvider(create: (_) => StudyProvider()),
             ChangeNotifierProvider(create: (_) => FinancesProvider()),
             ChangeNotifierProvider(create: (_) => GalleryProvider()),
             ChangeNotifierProvider(create: (_) => FavoritesProvider()),
@@ -200,8 +193,6 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
             ChangeNotifierProvider(create: (_) => RewardsProvider()),
             ChangeNotifierProvider(create: (_) => DeckProvider()),
             ChangeNotifierProvider(create: (_) => LocationProvider()),
-            ChangeNotifierProvider(create: (_) => ThemeProvider()),
-            ChangeNotifierProvider(create: (_) => MenuProvider()),
           ],
           child: MaterialApp.router(
             routerConfig: appRouter,

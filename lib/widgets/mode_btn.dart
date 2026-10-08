@@ -5,7 +5,7 @@ class ModeBtn extends StatelessWidget {
   final AppMode mode;
   final IconData icon;
   final bool active;
-  final void Function(AppMode) onTap;
+  final void Function(AppMode, Offset) onTap;
   final Color? iconColor;
 
   const ModeBtn(this.mode, this.icon, this.active, this.onTap, {super.key, this.iconColor});
@@ -13,8 +13,10 @@ class ModeBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = appThemes[mode]!;
+    Offset? downPos;
     return GestureDetector(
-      onTap: () => onTap(mode),
+      onTapDown: (d) => downPos = d.globalPosition,
+      onTap: () => onTap(mode, downPos ?? Offset.zero),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: 32, height: 32,

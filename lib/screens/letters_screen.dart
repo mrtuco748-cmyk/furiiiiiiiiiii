@@ -117,10 +117,10 @@ class _LettersScreenState extends State<LettersScreen> {
       try {
         final inbox = await LocalCache.getList('cache_letters_inbox');
         final sent = await LocalCache.getList('cache_letters_sent');
-        if (mounted && (inbox != null || sent != null)) {
+        if (mounted && (inbox.isNotEmpty || sent.isNotEmpty)) {
           setState(() {
-            if (inbox != null) _inboxLetters = inbox;
-            if (sent != null) _sentLetters = sent;
+            if (inbox.isNotEmpty) _inboxLetters = inbox;
+            if (sent.isNotEmpty) _sentLetters = sent;
             _state = _PageState.data;
           });
         }

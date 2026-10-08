@@ -1,7 +1,14 @@
 -- ===========================================================================
--- MIGRACION COMBINADA: sync de calendario/clases entre ambos usuarios
--- Ejecutar ESTE archivo completo en el SQL Editor de Supabase (una sola vez).
--- Es idempotente: se puede correr varias veces sin error.
+-- MIGRACION COMBINADA (FUENTE DE VERDAD ÚNICA): sync de calendario/clases
+-- entre ambos usuarios. Ejecutar ESTE archivo completo en el SQL Editor de
+-- Supabase (una sola vez). Es idempotente: se puede correr varias veces sin
+-- error.
+--
+-- CONSOLIDACIÓN (Equipo 1 - 2026-09-01): este archivo absorbe el contenido de
+-- las antiguas migraciones `migration_schedules_sync.sql`,
+-- `migration_schedule_class_sync.sql` y `migration_class_schedules.sql`, que
+-- fueron ELIMINADAS. Todo el DDL de calendario/clases vive acá.
+--
 -- Orden: (1) crear class_schedules, (2) columnas/color de schedules + realtime,
 --        (3) RLS full access + grants + realtime para ambas tablas.
 -- ===========================================================================

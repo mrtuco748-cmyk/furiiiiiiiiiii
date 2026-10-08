@@ -49,7 +49,6 @@ abstract final class RouterRoutes {
   static const String chat = '/chat';
   static const String retos = '/retos';
   static const String cartas = '/cartas';
-  static const String letters = '/letters';
   static const String metas = '/metas';
   static const String mapa = '/mapa';
   static const String scheduleForm = '/calendar/form';
@@ -64,6 +63,45 @@ abstract final class RouterRoutes {
 /// Lee el `AppMode` que la pantalla lanzó (viene por `extra`) con fallback seguro.
 AppMode _mode(GoRouterState state) =>
     state.extra is AppMode ? state.extra as AppMode : AppMode.dark;
+
+/// Mapea el `data.type` de una notificación push a la ruta canónica de la app,
+/// para "ir a la pantalla" cuando se toca una notificación. `null` si el tipo
+/// no tiene pantalla propia. (Solo mapea rutas que existen y no exigen extras.)
+String? routeForNotificationType(String type) {
+  switch (type) {
+    case 'message':
+      return RouterRoutes.chat;
+    case 'mood':
+    case 'letter':
+    case 'custom_question':
+    case 'timeline':
+      return RouterRoutes.nosotros;
+    case 'goal':
+      return RouterRoutes.metas;
+    case 'challenge':
+      return RouterRoutes.retos;
+    case 'note':
+      return RouterRoutes.notes;
+    case 'transaction':
+      return RouterRoutes.finanzas;
+    case 'favorite':
+      return RouterRoutes.favoritos;
+    case 'gallery':
+      return RouterRoutes.galeria;
+    case 'schedule':
+    case 'class_schedule':
+    case 'anniversary':
+      return RouterRoutes.calendar;
+    case 'achievement':
+      return RouterRoutes.logros;
+    case 'workout_log':
+    case 'workout_completion':
+    case 'workout_challenge':
+      return RouterRoutes.ejercicios;
+    default:
+      return null;
+  }
+}
 
 /// Clave del navegador raíz (usada por Escape→maybePop y por el router).
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

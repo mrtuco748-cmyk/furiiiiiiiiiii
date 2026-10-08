@@ -47,8 +47,8 @@
 | QuestionAnswer | Respuesta a pregunta | `question_answers` |
 | Notification | Notificación in-app | `notifications` |
 | ChatTyping | Indicador "escribiendo..." del chat (1 fila por usuario: is_typing, updated_at); la pareja lo ve con realtime | `chat_typing` |
-| Note | Nota del pizarrón v2 con forma, color, gradiente, patrón, fuente y borde personalizables; persiste en `board_elements_v2` | SQLite `board_elements_v2` + Supabase `board_elements_v2` |
-| Pizarra v2 | Lienzo infinito colaborativo con grid de puntos, notas renderizadas con estilo real, drag-to-move, edit y delete | Provisto por `BoardProviderV2` |
+| Note | Nota de la sección "Notas" (antes pizarrón). Tiene `title`/`content`/`color`; se comparte con la pareja (sync Supabase offline-first con `cloudId` + dirty flag `synced` + realtime). Autor en `user_id` | SQLite `notes` + Supabase `notes` |
+| Pizarra v2 | ~~Lienzo infinito colaborativo~~ → ELIMINADO 2026-09-01: la sección "Notas" lo reemplazó (decisión del usuario). La tabla `notes` es la que persiste las notas compartidas. | Provisto por `NotesProvider` |
 | DeviceToken | Token FCM | `device_tokens` |
 | Schedule | Evento de calendario; `cloudId` = id cloud (BIGSERIAL de Supabase) distinto del id local de SQLite; `user_id` en cloud = autor (colores F/R) | SQLite `schedules` + Supabase `schedules` |
 | ClassSchedule | Clase recurrente por día de la semana; `cloudId` = id cloud (BIGSERIAL de Supabase) distinto del id local de SQLite | SQLite `class_schedules` + Supabase `class_schedules` |

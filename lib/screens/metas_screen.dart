@@ -40,6 +40,7 @@ class _MetasScreenState extends State<MetasScreen> {
 
   @override
   void dispose() {
+    _tapTimerMeta?.cancel();
     _channel?.unsubscribe();
     super.dispose();
   }
@@ -68,7 +69,7 @@ class _MetasScreenState extends State<MetasScreen> {
     if (_metas.isEmpty) {
       try {
         final cached = await LocalCache.getList('cache_metas');
-        if (cached != null && cached.isNotEmpty && mounted) {
+        if (cached.isNotEmpty && mounted) {
           setState(() => _metas = cached);
         }
       } catch (_) {}
@@ -137,10 +138,10 @@ class _MetasScreenState extends State<MetasScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: GoogleFonts.bangers(color: Colors.white)), backgroundColor: const Color(0xFFCC0000)));
   }
 
-  void _addOrEdit({Map<String, dynamic>? existing}) {
+  Future<void> _addOrEdit({Map<String, dynamic>? existing}) async {
     final titleCtrl = TextEditingController(text: existing?['title'] ?? '');
     final descCtrl = TextEditingController(text: existing?['description'] ?? '');
-    showDialog(context: context, builder: (ctx) {
+    await showDialog(context: context, builder: (ctx) {
       final t = getTheme(widget.mode);
       return AlertDialog(backgroundColor: t.mid, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: t.d, width: 4)),
         title: Icon(existing != null ? Icons.edit : Icons.emoji_events, color: t.light, size: 34),
@@ -171,6 +172,8 @@ class _MetasScreenState extends State<MetasScreen> {
         ],
       );
     });
+    titleCtrl.dispose();
+    descCtrl.dispose();
   }
 
   String get _myInitial => (AppState.identity?.substring(0, 1).toUpperCase() ?? '?');
@@ -250,10 +253,9 @@ void _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
               LocaScreen.closeIcon(() => Navigator.pop(ctx), t.d, Icons.close),
             ]),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(title, textAlign: TextAlign.center,
                   style: GoogleFonts.bangers(color: t.light, fontSize: 26, fontWeight: FontWeight.w900,
                     decoration: done ? TextDecoration.lineThrough : null)),
@@ -264,7 +266,6 @@ void _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
                       decoration: done ? TextDecoration.lineThrough : null)),
                 ],
               ]),
-            ),
           ),
         ]),
       ),
@@ -313,20 +314,21 @@ Widget _historyMetaCard(ThemeSet t, Map<String, dynamic> meta) {
     return TapTile(
       onTap: () {
         if (_tapMetaId == meta['id']) {
-          // Double tap within 500ms: show expanded panel, don't toggle
-          _showMetaPanel(t, meta);
-          _tapMetaId = 0; // reset after showing
-        } else {
-          // First tap: immediately toggle completed
-          _toggle(meta);
-          // Auto-reset after 500ms so next tap is treated as first tap
-          setState(() => _tapMetaId = 0);
-          // Cancel any previous timer and start new one
+          // Double tap within 500ms: show expanded panel, don't toggle.
           _tapTimerMeta?.cancel();
+          _tapTimerMeta = null;
+          _tapMetaId = 0;
+          _showMetaPanel(t, meta);
+        } else {
+          // First tap: arm the toggle. Si llega un segundo tap dentro de
+          // 500ms, se abre el panel (el toggle se cancela).
+          _tapTimerMeta?.cancel();
+          setState(() => _tapMetaId = (meta['id'] as num).toInt());
           _tapTimerMeta = Timer(const Duration(milliseconds: 500), () {
-            if (mounted) setState(() => _tapMetaId = 0);
+            if (!mounted) return;
+            setState(() => _tapMetaId = 0);
+            _toggle(meta);
           });
-          if (mounted) _showError('¡Meta completada!');
         }
       },
       child: ClipRRect(

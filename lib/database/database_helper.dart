@@ -15,7 +15,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 10, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 12, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -23,21 +23,6 @@ class DatabaseHelper {
     // para que columnas/tablas existan cuando las referencian. (Antes el bloque
     // <8 creaba el índice de class_schedules.cloudId ANTES de agregar la
     // columna en <6 → excepción en upgrades v2..v5.)
-    if (oldVersion < 2) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS menu_plans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          date TEXT NOT NULL,
-          mealType TEXT NOT NULL,
-          recipeId INTEGER,
-          recipeName TEXT,
-          notes TEXT DEFAULT '',
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
-        )
-      ''');
-    }
     if (oldVersion < 3) {
       await db.execute("ALTER TABLE schedules ADD COLUMN userId TEXT DEFAULT ''");
     }
@@ -60,64 +45,6 @@ class DatabaseHelper {
     if (oldVersion < 6) {
       await db.execute("ALTER TABLE class_schedules ADD COLUMN cloudId INTEGER");
     }
-    if (oldVersion < 7) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS board_elements_v2 (
-          id INTEGER PRIMARY KEY,
-          type TEXT NOT NULL DEFAULT 'note',
-          title TEXT DEFAULT '',
-          content TEXT DEFAULT '',
-          x REAL NOT NULL DEFAULT 0,
-          y REAL NOT NULL DEFAULT 0,
-          width REAL,
-          height REAL,
-          rotation REAL NOT NULL DEFAULT 0,
-          color TEXT,
-          text_color TEXT,
-          font_family TEXT,
-          font_size REAL,
-          text_align TEXT DEFAULT 'left',
-          is_bold INTEGER NOT NULL DEFAULT 0,
-          is_italic INTEGER NOT NULL DEFAULT 0,
-          is_underline INTEGER NOT NULL DEFAULT 0,
-          emoji_header TEXT,
-          tags TEXT DEFAULT '[]',
-          priority TEXT DEFAULT 'normal',
-          assigned_to TEXT,
-          user_id TEXT DEFAULT '',
-          status TEXT DEFAULT 'draft',
-          is_collapsed INTEGER NOT NULL DEFAULT 0,
-          is_locked INTEGER NOT NULL DEFAULT 0,
-          is_archived INTEGER NOT NULL DEFAULT 0,
-          board_id INTEGER NOT NULL DEFAULT 1,
-          z INTEGER NOT NULL DEFAULT 0,
-          data TEXT DEFAULT '{}',
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_new INTEGER NOT NULL DEFAULT 1,
-          synced INTEGER NOT NULL DEFAULT 0
-        )
-      ''');
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS board_activity (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id TEXT NOT NULL,
-          action TEXT NOT NULL,
-          element_id INTEGER,
-          element_type TEXT NOT NULL,
-          description TEXT NOT NULL,
-          timestamp TEXT NOT NULL
-        )
-      ''');
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS board_tags (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL UNIQUE,
-          color TEXT NOT NULL,
-          created_at TEXT NOT NULL
-        )
-      ''');
-    }
     if (oldVersion < 8) {
       await db.execute("ALTER TABLE schedules ADD COLUMN cloudId INTEGER");
       await db.execute('''
@@ -130,14 +57,7 @@ class DatabaseHelper {
       ''');
     }
     if (oldVersion < 9) {
-      // Debe ir al final: board_elements_v2 pudo crearse recién en <7.
-      await db.execute("ALTER TABLE board_elements_v2 ADD COLUMN cloud_id INTEGER");
-      await db.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_board_elements_v2_cloudId
-        ON board_elements_v2(cloud_id) WHERE cloud_id IS NOT NULL
-      ''');
-      // Dirty flag para re-push de ediciones offline en calendario (mismo
-      // patrón que board_elements_v2.synced).
+      // Dirty flag para re-push de ediciones offline en calendario.
       await db.execute("ALTER TABLE schedules ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
       await db.execute("ALTER TABLE class_schedules ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
     }
@@ -152,6 +72,17 @@ class DatabaseHelper {
           updated_at TEXT NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 11) {
+      // Sync de notas con Supabase: cloudId (PK cloud) + author + dirty flag.
+      await db.execute("ALTER TABLE notes ADD COLUMN cloud_id INTEGER");
+      await db.execute("ALTER TABLE notes ADD COLUMN synced INTEGER NOT NULL DEFAULT 1");
+      await db.execute("ALTER TABLE notes ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
+    }
+    if (oldVersion < 12) {
+      // updatedAt para el merge local<->cloud de clases (mismo patrón que
+      // schedules): evita que una edición offline pierda contra la cloud vieja.
+      await db.execute("ALTER TABLE class_schedules ADD COLUMN updatedAt TEXT DEFAULT ''");
     }
   }
 
@@ -195,7 +126,8 @@ class DatabaseHelper {
         userId TEXT DEFAULT '',
         color INTEGER DEFAULT 0xFF7B2D8E,
         cloudId INTEGER,
-        synced INTEGER NOT NULL DEFAULT 1
+        synced INTEGER NOT NULL DEFAULT 1,
+        updatedAt TEXT DEFAULT ''
       )
     ''');
     await db.execute('''
@@ -208,19 +140,6 @@ class DatabaseHelper {
 
     await db.insert('event_types', {'name': 'Práctico', 'color': 0xFFFF6B35, 'icon': 'restaurant_menu'});
     await db.insert('event_types', {'name': 'Examen', 'color': 0xFFFF5757, 'icon': 'school'});
-    await db.execute('''
-      CREATE TABLE menu_plans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        date TEXT NOT NULL,
-        mealType TEXT NOT NULL,
-        recipeId INTEGER,
-        recipeName TEXT,
-        notes TEXT DEFAULT '',
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    ''');
     await db.insert('class_types', {'name': 'Clase', 'color': 0xFF00D4FF});
     await db.insert('class_types', {'name': 'Práctico', 'color': 0xFF39FF14});
     await db.execute('''
@@ -230,67 +149,6 @@ class DatabaseHelper {
         file_name TEXT,
         mime_type TEXT
       )
-    ''');
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS board_elements_v2 (
-          id INTEGER PRIMARY KEY,
-          type TEXT NOT NULL DEFAULT 'note',
-          title TEXT DEFAULT '',
-          content TEXT DEFAULT '',
-          x REAL NOT NULL DEFAULT 0,
-          y REAL NOT NULL DEFAULT 0,
-          width REAL,
-          height REAL,
-          rotation REAL NOT NULL DEFAULT 0,
-          color TEXT,
-          text_color TEXT,
-          font_family TEXT,
-          font_size REAL,
-          text_align TEXT DEFAULT 'left',
-          is_bold INTEGER NOT NULL DEFAULT 0,
-          is_italic INTEGER NOT NULL DEFAULT 0,
-          is_underline INTEGER NOT NULL DEFAULT 0,
-          emoji_header TEXT,
-          tags TEXT DEFAULT '[]',
-          priority TEXT DEFAULT 'normal',
-          assigned_to TEXT,
-          user_id TEXT DEFAULT '',
-          status TEXT DEFAULT 'draft',
-          is_collapsed INTEGER NOT NULL DEFAULT 0,
-          is_locked INTEGER NOT NULL DEFAULT 0,
-          is_archived INTEGER NOT NULL DEFAULT 0,
-          board_id INTEGER NOT NULL DEFAULT 1,
-          z INTEGER NOT NULL DEFAULT 0,
-          data TEXT DEFAULT '{}',
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_new INTEGER NOT NULL DEFAULT 1,
-          synced INTEGER NOT NULL DEFAULT 0,
-          cloud_id INTEGER
-        )
-    ''');
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS board_activity (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        element_id INTEGER,
-        element_type TEXT NOT NULL,
-        description TEXT NOT NULL,
-        timestamp TEXT NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS board_tags (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        color TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_board_elements_v2_cloudId
-      ON board_elements_v2(cloud_id) WHERE cloud_id IS NOT NULL
     ''');
     await db.execute('''
       CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_cloudId
@@ -303,6 +161,9 @@ CREATE TABLE IF NOT EXISTS board_elements_v2 (
     await db.execute('''
       CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id INTEGER,
+        synced INTEGER NOT NULL DEFAULT 1,
+        user_id TEXT NOT NULL DEFAULT '',
         title TEXT NOT NULL DEFAULT '',
         content TEXT DEFAULT '',
         color TEXT NOT NULL DEFAULT '#FFF9C4',

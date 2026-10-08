@@ -16,6 +16,16 @@ const _red = Color(0xFFFF4444);
 const _blue = Color(0xFF0088FF);
 const _bg = Color(0xFF111111);
 
+const _categories = [
+  'other',
+  'comida',
+  'transporte',
+  'ocio',
+  'hogar',
+  'salud',
+  'sueldo',
+];
+
 const _finTheme = ThemeSet(
   a: Color(0xFF00FF66),
   b: Color(0xFF0088FF),
@@ -48,7 +58,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
     final titleCtrl = TextEditingController(text: existing?.description ?? '');
     final amountCtrl = TextEditingController(text: existing != null ? existing.amount.toStringAsFixed(0) : '');
     String type = existing?.type ?? 'expense';
-    final category = existing?.category ?? 'other';
+    String category = existing?.category ?? 'other';
     showDialog(context: context, builder: (ctx) => StatefulBuilder(builder: (context, setLocal) => AlertDialog(
       backgroundColor: _c,
       title: Icon(existing != null ? Icons.edit : Icons.add, color: const Color(0xFF111111), size: 34),
@@ -60,6 +70,11 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _segBtn('GASTO', type == 'expense', () => setLocal(() => type = 'expense'), _red),
           _segBtn('INGRESO', type == 'income', () => setLocal(() => type = 'income'), _cIncome),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final cat in _categories)
+            _catChip(cat, category, () => setLocal(() => category = cat)),
         ]),
       ]),
       actions: [
@@ -86,6 +101,18 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       color: active ? color : _bg, 
       border: Border.all(color: active ? color : color.withValues(alpha: 0.5), width: 2), 
       borderRadius: BorderRadius.circular(14)), child: Text(label, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: active ? Colors.white : color))));
+  }
+
+  Widget _catChip(String value, String current, VoidCallback onTap) {
+    final active = value == current;
+    return TapTile(onTap: () { HapticFeedback.selectionClick(); onTap(); }, child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? _blue : _bg,
+        border: Border.all(color: _blue, width: 2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(value, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 11, color: active ? Colors.white : _blue))));
   }
 
   void _deleteTransaction(Transaction t) {
