@@ -57,3 +57,12 @@ app.*.map.json
 # Build debug logs (local artifacts)
 build_log*.txt
 build_fast.txt
+
+# Bots de WhatsApp: cada uno es un repo propio con su historial, adentro de esta
+# carpeta. Van ignorados acá para que no aparezcan como código de la app ni se
+# mezclen con el refactor de Flutter.
+#   bot-furi/          -> notifica actividad de la app
+#   mini_F.U.R.I._bot/ -> recordatorios de la pareja (repo aparte)
+bot-furi/
+mini_F.U.R.I._bot/
+mini F.U.R.I.-bot/

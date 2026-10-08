@@ -1,5 +1,153 @@
 ﻿# Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-07] - FEATURE - Vincular por código de 8 dígitos, para que la sesión se recupere sin QR
+
+**Resumen**: Pregunta directa: "si corro el QR local, ¿queda para siempre?". No. Las **credenciales** quedan (sobreviven deploys y reinicios porque viven en `mini_bot_sessions`), pero **WhatsApp puede revocar la sesión** cuando quiere, y no hay almacenamiento que lo evite. Para el objetivo declarado ("que dure indefinidamente") el cuello de botella no era guardar la sesión sino **recuperarla**: con el QR eso exigía una PC con cámara, lo que en la práctica hace que un corte se convierta en "tengo que ir a la computadora".
+
+**Lo que se agregó**: `POST /emparejar`, que usa `sock.requestPairingCode(BOT_NUMERO)` de Baileys y devuelve un código de 8 dígitos. En el celular: WhatsApp › Dispositivos vinculados › Vincular con número de teléfono › "Vincular en lugar de escanear" › se tipea el código. **Desde cualquier lado, sin cámara y sin tocar el servidor.**
+
+**Por qué esto es lo que sostiene "indefinidamente"**: no elimina las revocaciones (no se puede), pero baja el costo de cada una de "imposible" a "dos minutos desde el celular". Con eso la sesión se mantiene en la práctica por tiempo indefinido aunque caiga.
+
+**Cambios**:
+- `src/whatsapp/conexion.js`: nueva ruta `POST /emparejar` (protegida por `TICK_SECRET`), y `emparejado: {listo, codigo}` en `/estado`. El código se guarda en memoria y se vuelve a pedir en cada llamada, porque caduca a los pocos minutos: si se cacheara, se devolvería uno muerto y el error sería silencioso. Si `BOT_NUMERO` no está, devuelve **503 diciendo qué variable falta**, no un 500. Si `requestPairingCode` falla, el error de WhatsApp se propaga (un 200 vacío haría creer que seuccessfully emparejó).
+- El mensaje de "WhatsApp pide un QR" ahora bifurca: con `BOT_NUMERO` dice que use `/emparejar`; sin él, dice que escanee localmente.
+- `.env.ejemplo` y `render.yaml`: `BOT_NUMERO`, documentado como "el número de la cuenta del bot, una cuenta APARTE, no el tuyo".
+- `scripts/chequeo.mjs`: +3 pruebas (54 en total) sobre `/emparejar`: devuelve el código, sin `BOT_NUMERO` da 503 con el nombre de la variable, y un fallo de `requestPairingCode` no se traga.
+- `README.md` y `scripts/reescanear-qr.bat`: el procedimiento completo con las dos opciones y cuál usar.
+
+**Distinción importante que quedó escrita**: para la **primera** vinculación hay que usar el QR (`reescanear-qr.bat`), porque ni el QR ni el código funcionan hasta que la cuenta del bot esté vinculada al celular. El código es para las **renovaciones**.
+
+**Leccion**: cuando el objetivo de un usuario es "que algo dure para siempre", conviene separar lo que se puede garantizar de lo que no. Garantizable: que la sesión **guardada** sobreviva a cualquier reinicio. No garantizable: que WhatsApp la mantenga válida. Lo que sí se puede atacar es el **costo de recuperación**, y ahí es donde estaba el trabajo de verdad: una limitación que exige una máquina con cámara cada pocas semanas, en la práctica, corta el servicio para siempre. Bajarla a "tipear 8 dígitos" la convierte en un ruido.
+
+**Archivos impactados**: `src/whatsapp/conexion.js`, `.env.ejemplo`, `scripts/chequeo.mjs`, `scripts/reescanear-qr.bat`, `README.md`, `render.yaml`.
+
+---
+
+
+
+
+
+**Resumen**: Al preguntar por qué había que re-escanear el QR en Render, la explicación dada Earlier ("el disco es efímero") mezclaba dos cosas distintas. **La sesión de WhatsApp YA se guardaba en Supabase desde el primer día** (`mini_bot_sessions.data`, JSONB) y se restaura sola al arrancar; que Render borre `auth/` en cada deploy no pierde nada. Lo que obliga a re-escanear es que **WhatsApp invalide la sesión desde el servidor**: desvincular el dispositivo desde el celular, o la revocación periódica que le hace a los clientes no oficiales (Baileys es uno). Contra eso no hay almacenamiento que sirva.
+
+**Cambios**:
+- `src/whatsapp/sesion.js`: `crearSesion` ahora devuelve un `estado` con `{conSupabase, restaurada, guardadaEn, error}`. `restaurada` dice si este arranque vino de Supabase; `guardadaEn`, cuándo fue la última subida. El `error` **distingue los casos que piden acciones distintas**: "no hay sesión en ningún lado, hay que escanear un QR" (acción humana) vs. "no pude guardar: la base no responde" (problema de conexión).
+- `src/whatsapp/conexion.js`: el estado de la sesión se expone en `GET /estado` y se dice **una sola vez** al arrancar, no en cada log.
+- `scripts/chequeo.mjs`: +4 pruebas (48 en total). La nueva sección hace el roundtrip completo (guardar → borrar `auth/` → cargar) contra un Supabase falso, y verifica que `estado` reporte la verdad, incluido el caso "hay que escanear".
+- `README.md` y `docs/01-DETALLE-POR-CAPA.md`: la aclaración, una tabla de qué significa cada campo de `/estado`, y un aviso de que **Render usa IP de datacenter compartida**, que es más propensa a revocaciones que una IP residencial.
+
+**Por qué el diagnóstico importa acá**: con Render no se puede abrir un QR, así que la pregunta "¿la sesión se está guardando?" no se puede responder mirando el disco ni esperando a que algo falle. Con `guardadaEn` en `/estado` se responde de un vistazo con un `curl`, y se distingue una sesión sana de una que dejó de persistir hace tres días.
+
+**Leccion**: al explicar una limitación, hay que decir **qué la causa** y no **en qué se manifiesta**. "El disco es efímero" describía el síntoma de una restricción que en realidad es de WhatsApp, y hacía buscar el problema en el lugar equivocado: invita a pensar que hay que arreglar la persistencia (que ya funcionaba) en vez de a aceptar que hay que re-escanear de vez en cuando. Cuando una explicación、制 звучит a que algo del proyecto está mal, conviene revisar si la causa es externa.
+
+**Leccion 2**: un estado que distingue "necesita una acción humana" de "algo se rompió" vale más que un estado que solo dice "ok/fail". El primero te dice qué hacer; el segundo te deja adivinar. El mismo criterio del 503 de `/tick`, aplicado a la sesión.
+
+**Archivos impactados**: `src/whatsapp/sesion.js`, `src/whatsapp/conexion.js`, `scripts/chequeo.mjs`, `README.md`, `docs/01-DETALLE-POR-CAPA.md`.
+
+---
+
+## [2026-10-07] - FIX - Aclarar que el QR no es culpa del disco ef?mero, y hacer la persistencia visible
+**Resumen**: Al preguntar por qué había que re-escanear el QR en Render, la explicación dada Earlier ("el disco es efímero") mezclaba dos cosas distintas. **La sesión de WhatsApp YA se guardaba en Supabase desde el primer día** (`mini_bot_sessions.data`, JSONB) y se restaura sola al arrancar; que Render borre `auth/` en cada deploy no pierde nada. Lo que obliga a re-escanear es que **WhatsApp invalide la sesión desde el servidor**: desvincular el dispositivo desde el celular, o la revocación periódica que le hace a los clientes no oficiales (Baileys es uno). Contra eso no hay almacenamiento que sirva.
+
+**Cambios**:
+- `src/whatsapp/sesion.js`: `crearSesion` ahora devuelve un `estado` con `{conSupabase, restaurada, guardadaEn, error}`. `restaurada` dice si este arranque vino de Supabase; `guardadaEn`, cuándo fue la última subida. El `error` **distingue los casos que piden acciones distintas**: "no hay sesión en ningún lado, hay que escanear un QR" (acción humana) vs. "no pude guardar: la base no responde" (problema de conexión).
+- `src/whatsapp/conexion.js`: el estado de la sesión se expone en `GET /estado` y se dice **una sola vez** al arrancar, no en cada log.
+- `scripts/chequeo.mjs`: +4 pruebas (48 en total). La nueva sección hace el roundtrip completo (guardar → borrar `auth/` → cargar) contra un Supabase falso, y verifica que `estado` reporte la verdad, incluido el caso "hay que escanear".
+- `README.md` y `docs/01-DETALLE-POR-CAPA.md`: la aclaración, una tabla de qué significa cada campo de `/estado`, y un aviso de que **Render usa IP de datacenter compartida**, que es más propensa a revocaciones que una IP residencial.
+
+**Por qué el diagnóstico importa acá**: con Render no se puede abrir un QR, así que la pregunta "¿la sesión se está guardando?" no se puede responder mirando el disco ni esperando a que algo falle. Con `guardadaEn` en `/estado` se responde de un vistazo con un `curl`, y se distingue una sesión sana de una que dejó de persistir hace tres días.
+
+**Leccion**: al explicar una limitación, hay que decir **qué la causa** y no **en qué se manifiesta**. "El disco es efímero" describía el síntoma de una restricción que en realidad es de WhatsApp, y hacía buscar el problema en el lugar equivocado: invita a pensar que hay que arreglar la persistencia (que ya funcionaba) en vez de a aceptar que hay que re-escanear de vez en cuando. Cuando una explicación、制 звучит a que algo del proyecto está mal, conviene revisar si la causa es externa.
+
+**Leccion 2**: un estado que distingue "necesita una acción humana" de "algo se rompió" vale más que un estado que solo dice "ok/fail". El primero te dice qué hacer; el segundo te deja adivinar. El mismo criterio del 503 de `/tick`, aplicado a la sesión.
+
+**Archivos impactados**: `src/whatsapp/sesion.js`, `src/whatsapp/conexion.js`, `scripts/chequeo.mjs`, `README.md`, `docs/01-DETALLE-POR-CAPA.md`.
+
+---
+
+## [2026-10-07] - FEATURE - Deploy en Render: Web Service + cron cada 5 minutos
+
+**Resumen**: Se preparó el minibot para Render. El pedido era "un servicio que despierte cada 5 minutos", pero hay un detalle de arquitectura que hubo que resolver antes: **un Render Cron Service es un proceso aparte**, con su propio disco. Si ese cron corriera `node bot.js`, habría **dos conexiones de WhatsApp con la misma sesión** compitiendo por los mensajes, que es el mismo modo de falla que ya estaba documentado en `conexion.js` ("está conectado pero no contesta nada"). Además el proceso nunca terminaría, porque queda esperando el socket.
+
+**Solución**: el cron NO abre conexión. Le pide al servicio web que haga el tick con el socket que ya tiene. Son dos servicios, un solo dueño de la sesión.
+
+```
+mini-furi-bot        Web Service   → conexión de WhatsApp + endpoint /tick
+mini-furi-bot-tick   Cron Service  → curl POST /tick, cada 5 min
+```
+
+**Cambios**:
+- `render.yaml` (nuevo): blueprint con los dos servicios. `buildCommand: npm ci --omit=dev`, `startCommand: node bot.js`, `healthCheckPath: /`, `NODE_VERSION=20`. El cron usa `curl --fail -X POST` con el secreto en el header, y hereda `TICK_SECRET` del web por `fromService`. Deploy con un clic desde el README.
+- `src/whatsapp/conexion.js`: el servidor HTTP pasó de "health-check que devuelve 200" a tres rutas: `GET /` (health), `GET /estado` (JSON con `conectado`, `modoTick`, `ultimoTick`) y `POST /tick` (fuerza una vuelta). Se extrajo el handler a `crearHandler(rutas, log)` para poder probarlo de verdad sin abrir un socket. Se agregó `TICK_MODE` (`interval` | `http` | `off`), el chequeo de `TICK_SECRET` con `crypto.timingSafeEqual`, y el handler de `SIGTERM` que guarda la sesión y cierra el socket antes de salir.
+- `src/bot/recordatorios.js`: candado de una vuelta a la vez. `tick()` devuelve `{saltado: true}` si ya hay una en marcha. Con `TICK_MODE=interval` y un cron HTTP conviviendo, dos vueltas simultáneas leerían la misma lista antes de que ninguna marque las ventanas, y los avisos saldrían dos veces.
+- `datos.json`: `avisarCadaMin` de 10 a 5.
+- `scripts/chequeo.mjs`: +6 pruebas (44 en total). Sección nueva que levanta el handler real sobre un servidor de verdad y cubre `/`, `/estado`, `/tick` con y sin conexión (503), el secreto (401) y dos ticks simultáneos.
+- `.env.ejemplo`: `TICK_MODE` y `TICK_SECRET` documentados.
+- `README.md`: sección de deploy con el botón del blueprint, los tres endpoints y por qué el cron es un `curl`. `ARQUITECTURA.md` y `docs/01-DETALLE-POR-CAPA.md`: modo de tick y el 503.
+
+**Tres decisiones que vale la pena que queden escritas**:
+1. **El 503 de `/tick` sin conexión es a propósito.** Sin él, un tick que llega durante una reconexión "terminaría bien" sin mandar nada y el recordatorio se perdería en silencio. Con el 503, el cron se ve FALLADO en el dashboard de Render, que es justo la señal para saber que hay que re-escanear el QR.
+2. **`TICK_SECRET` sin configurar no bloquea.** El endpoint acepta peticiones de cualquiera. Es lo que hace funcionar el primer deploy sin inventar nada, y lo único que puede lograr un tick ajeno es adelantar avisos (que no molesta, porque `mini_envios` evita duplicados). El bot avisa en mayúsculas al arrancar.
+3. **El QR sigue sin poder escanearse desde Render.** Es lo único que no se puede automatizar: cuando WhatsApp cierra la sesión hay que correr `scripts/reescanear-qr.bat` en la máquina. Las credenciales viven en el disco efímero de Render y se espejan en `mini_bot_sessions`, pero el vínculo inicial es siempre manual.
+
+**Leccion**: antes de implementar "un cron que despierte el servicio", hay que preguntar **quién tiene el recursoscarso**. Acá el recurso scarso es la sesión de WhatsApp: un solo dueño, siempre. El cron no es "otro proceso que corre el bot", es "una señal que le llega al que ya está corriendo". Ese mismo criterio se ya venía aplicando en el bot para la reconexión (un solo reintento en vuelo, cerrando el socket viejo) y para el tick (un solo intervalo, limpiando el anterior).
+
+**Leccion 2**: un endpoint que se dispara desde afuera tiene que **contar cuando NO pudo hacer su trabajo**. Devolver `200` con un `{"enviados": 0}` cuando el socket está caído es peor que no tener endpoint: el dashboard dice que todo bien y el recordatorio se pierde sin que nadie entienda por qué. Los códigos de error son documentación.
+
+**Pendiente**: correr `schema.sql` en el Supabase de la app, y cargar en Render `SUPABASE_URL`, `SUPABASE_KEY`, `FACU_NUMERO`, `ROCIO_NUMERO` y (opcional) `GROQ_API_KEY`.
+
+**Archivos impactados**: `render.yaml` (nuevo), `src/whatsapp/conexion.js`, `src/bot/recordatorios.js`, `datos.json`, `scripts/chequeo.mjs`, `.env.ejemplo`, `README.md`, `ARQUITECTURA.md`, `docs/01-DETALLE-POR-CAPA.md`.
+
+---
+
+## [2026-10-07] - FEATURE - minibot F.U.R.I. de recordatorios (plantilla desde bot-turnos)
+
+**Resumen**: Nueva carpeta `mini_F.U.R.I._bot/` con un bot de WhatsApp de **recordatorios para la pareja** (Facu y Rocio), derivado de la estructura por capas de `D:\projetcs\proyectos\bot-turnos` pero **sin local, sin turnos y sin Google Sheets**. Es un esqueleto limpio: la infraestructura reutilizable + un recordatorio de ejemplo funcional. `npm run chequeo` -> **38/38 verdes**, sin WhatsApp y sin red.
+
+**Decisiones**:
+- **El mismo Supabase de la app, pero con tablas propias prefijadas `mini_`.** `bot-furi` ya usa `bot_sessions` y `bot_notificaciones` con otro formato; este bot **no las toca**. Crea `mini_bots`, `mini_bot_sessions`, `mini_recordatorios`, `mini_memoria` y `mini_envios` (`schema.sql`, idempotente). El prefijo existe justamente para que convivan tres bots en un proyecto sin pisarse.
+- **El nombre de la carpeta quedo `mini_F.U.R.I._bot`**: el entorno transforma espacios y guiones en `_` y renombro `mini F.U.R.I.-bot` a mitad de camino, partiendo los archivos en dos carpetas. Se consolido todo en la forma estable (decision del usuario).
+- **NADA se escribe sin aprobacion.** El ciclo es de dos turnos: el bot muestra `qué / cuándo / para quién` y recien con un *"dale"* ejecuta el `INSERT`. Motivo: este bot no tiene pantalla, asi que un recordatorio anotado por error no se puede borrar desde la app.
+- **La IA es el ultimo recurso, y solo cuando falta un dato.** Si el checklist se completa con regex (el caso comun) no se la llama: cada llamada cuesta plata y no aporta. Recien cuando falta algo se le pregunta, porque puede entender frases que las regex no alcanzan (*"el jueves tipo seis"*).
+- **Sin clave de IA el bot funciona entero.** No se apaga con un "no tengo IA configurada": el guion determinista cubre el flujo completo.
+
+**Bugs encontrados y corregidos durante la construccion** (todos con prueba que los cubre):
+- `diaDeTexto`: `.replace(/s$/, '')` para sacar el plural le quitaba la "s" **legitima** a `"viernes"` -> `"vierne"`. El dia explicito se ignoraba y *"manana, que es viernes"* terminaba siendo el dia de manana.
+- `textoDe`: el regex de la hora terminaba en `.*$`, que **se comia el resto de la frase** -> el texto quedaba vacio y el bot preguntaba "que queres que te acuerde?" con el dia y la hora ya leidos.
+- `actualizar`: el spread `{...c, ...checklistVacio()}` estaba al reves; como `checklistVacio()` tiene **todas** las claves vacias, pisaba el checklist entero y cada mensaje arrancaba de cero. Ademas ahora **muta en el lugar**: la conversacion guarda la referencia, asi que devolver una copia dejaba el checklist real siempre vacio.
+- `ctx.datos` arrancaba en `null` y las acciones escribian directo -> `Cannot set properties of null` en `mis recordatorios` y `cancelar`.
+- `habloElBot` solo se deducia al **cargar** desde Supabase: en una sesion nueva quedaba en `false` para siempre y el bot se volvia a presentar en cada mensaje que no entendia.
+- `.find(async (a) => a.antes(ctx))` en las acciones: el callback de `find` es sincronico, asi que con uno async devuelve el primer elemento **siempre** y la primera accion se hacia cargo de todos los mensajes. Tiene que ser un loop con `await`.
+- El orden de `conversacion.js`: las acciones tienen que ir **antes** de alimentar el checklist. Si no, *"mis recordatorios"* se guardaba como texto y contaminaba el recordatorio siguiente.
+- `consultas.despues` pasaba textos ya formateados a `guion.listado()`, que los volvia a formatear -> *"* undefined a las undefined"*.
+- `cuandoLegible` comparaba **horas** en vez de dias: hoy a las 23:59 con las 22:00 salia *"manana a las 23:59"*.
+- `aplicarDatosIA`: la regla era *"si el campo esta vacio, aceptá lo que diga la IA"*, asi que el modelo podia colar una hora del historial y el recordatorio saltaba a las 3 de la manana. Ahora, si `respalda` esta, el valor tiene que estar en el mensaje **este vacio el campo o no**. Para no rechazar las interpretaciones legitimas se agrego `mencionaHora` ("tipo seis" si menciona una hora; "sacale las fotos al perro" no).
+- `guion.confirmacion` usaba `.push()` sobre un string -> `base.join is not a function`.
+- `completar.despues` no manejaba el caso ambiguo -> "listo" con varios pendientes caia en "no entendi".
+
+**Leccion**: con regex, **"quitar el plural" y "el nombre termina en s" son la misma regla y se contradicen**. Siempre: intentar el nombre exacto primero, y recien despues la transformacion. Y un filtro que dice *"si el campo esta vacio, acepta"* es una puerta abierta a que el modelo invente: vacio significa "no lo encontre", no "me da permiso".
+
+**Leccion 2**: el orden de un orquestador es comportamiento, no estilo. Las acciones antes del checklist, y la IA antes de preguntar, son decisiones que cambian lo que el bot **hace**, no solo como lo escribe. Los dos casos se notaron con pruebas de conversacion completa, no con unitarias de cada pieza.
+
+**Archivos impactados**: carpeta nueva `mini_F.U.R.I._bot/` (33 archivos: `bot.js`, `datos.json`, `schema.sql`, `.env.ejemplo`, `.gitignore`, `README.md`, `ARQUITECTURA.md`, `docs/` (3), `scripts/` (3), `src/` (26 en 6 capas)), y este `historial.md`.
+
+**Pendiente**: falta correr `schema.sql` en el Supabase de la app y poner `FACU_NUMERO` / `ROCIO_NUMERO` en el `.env` para que pueda mandar algo.
+
+---## [2026-09-10] - BUGFIX - Bot notificaba al autor su propia acción (cartas y preguntas)
+
+**Resumen**: El bot de WhatsApp enviaba al mismo usuario la notificación de lo que él mismo acababa de hacer (cartas y preguntas). Ahora solo notifica a la pareja, como en el resto de categorías.
+
+**Causa raíz**: `bot-furi/bot.js` hacía `select('*, from_user:profiles!from_user(name)')` en `letters` (nueva + entrega ceremonial) y `custom_questions`. Ese alias pisaba la columna `from_user` (UUID del creador) con un objeto `{name}`. Al llamar `destinosPara(usuarios, l.from_user)` llegaba `"[object Object]"`, nunca matcheaba Facu/Rocio y caía en el fallback "a ambos" — el autor se auto-notificaba.
+
+**Cambios realizados**:
+- `bot-furi/bot.js`: 3 queries cambiadas a `sender:profiles!from_user(name)` para preservar `from_user`/`to_user` como UUID y usar `sender.name` para el texto. `destinosPara` ahora resuelve correctamente (Facu→solo Rocio, Rocio→solo Facu). Commit `d983b44` pusheado a `main`.
+
+**Lección**: en Supabase JS un alias `col:foreign!fk(...)` reemplaza la columna original en el row. Si necesitas el UUID y el join, aliasa el join (`sender:profiles!fk`), no la columna.
+
+**Archivos impactados**: `bot-furi/bot.js`, `historial.md`.
+
+---
+
+
 ## [2026-09-10] - BUGFIX - Bot notificaba al autor su propia acción (cartas y preguntas)
 
 **Resumen**: El bot de WhatsApp enviaba al mismo usuario la notificación de lo que él mismo acababa de hacer (cartas y preguntas). Ahora solo notifica a la pareja, como en el resto de categorías.
@@ -2858,3 +3006,93 @@ otifications.
 
 
 
+
+---
+
+---
+
+## [2026-10-07] - BUGFIX - mini_F.U.R.I._bot: el watchdog creia estar conectado con el socket muerto
+**Resumen**: El bot en Render no respondia a los mensajes pero `/estado` decia `conectado: true`.
+**Causa raiz**: El plan gratuito de Render CONGELA el proceso a los 15 min sin trafico HTTP (no lo mata).
+Al descongelarse, el WebSocket de Baileys esta muerto pero NO hubo evento `connection.update` con `close`,
+asi que la bandera interna `conectado` nunca bajaba a `false`. El watchdog miraba solo esa bandera, nunca
+reaccionaba, y `/estado` reportaba "conectado" mientras el socket estaba muerto: el peor sintoma posible,
+porque parece que anda.
+
+**Cambios realizados** (repo `mini-furi-bot`, commit `604ba4b`):
+- `socketVivo()`: verifica el `readyState` real del WebSocket (`sock.ws.isOpen()` de Baileys) en vez de
+  confiar en la bandera. `conexionReal()` = bandera Y socket.
+- `/estado` expone `conectado` / `flagInterno` / `socket`, mas `mensajesRecibidos`, `eventosRecibidos`,
+  `ultimoMensaje` y `tiposIgnorados`. Sin esto no se puede distinguir "los mensajes NO LLEGAN" (problema de
+  Render o de conexion) de "llegan y no se procesan" (problema del codigo): los dos se ven igual afuera.
+- Bug estructural encontrado de paso: `reconectar()` llama a `conectar()`, y cada llamada creaba su propio
+  watchdog (`setInterval`) y su propio `process.on('SIGTERM')` sin limpiar el anterior. Con el umbral en 12 s
+  se acumulaban: N watchdogs cada uno disparando su propio reconexion, que crea otro watchdog. Bucle que se
+  amplifica solo. Ahora se limpian al crear el nuevo (`registrarWatchdog`) y el SIGTERM se registra UNA vez.
+- Umbral de reconexion 45 s ? 12 s (medido: el socket cae a los pocos segundos del arranque).
+
+**Lecciones**:
+- Una bandera de estado que solo la baja un evento es fragil: si el evento no llega, la bandera miente para
+  siempre. Verificar el recurso real (`readyState`) y no el estado guardado.
+- Un `setInterval` dentro de una funcion que se puede volver a llamar es una fuga: cada invocacion suma uno.
+  Los timers y listeners globales van a un registro, no al scope de la llamada.
+- **NO correr dos instancias contra la misma sesion de WhatsApp, ni para testear.** Render y la maquina local
+  se expulsan mutuamente (codigo 440). Durante las pruebas locales desconecté el bot de Render: `/estado`
+  paso a `conectado: false`. Para testear hay que apuntar `AUTH_DIR` a un directorio nuevo Y borrar la
+  sesion de Supabase, o directamente no levantar la instancia.
+- Escribir archivos con `[System.IO.File]::WriteAllLines` desde acentos (`ReadAllLines` + reemplazo por
+  indice) corrompe caracteres: salio "qucken", "wereaban", "Cree", "existed". Para texto con acentos usar el
+  tool `edit`, o escribir sin acentos.
+
+**Impacto**: `mini_F.U.R.I._bot/src/whatsapp/conexion.js`
+**Relacionado con**: errores-conocidos.md (Render + WebSocket), bot-whatsapp.md
+
+---
+
+## [2026-10-07] - BUGFIX - mini_F.U.R.I._bot: `ws.isOpen` es un getter y el watchdog mataba la sesion sana
+**Resumen**: El bot reconectaba cada 12 s indefinidamente en Render. El bug estaba en el arreglo
+del dia anterior, no en codigo viejo: la verificacion del socket hacia `isOpen?.()` cuando `isOpen`
+es un GETTER.
+**Causa raiz**: En Baileys, `ws.isOpen` es una propiedad getter:
+`get isOpen() { return this.socket?.readyState === WebSocket.OPEN; }`. El codigo escribia
+`sock.ws?.isOpen?.()`: eso evalua el getter a `true` y despues intenta invocar `true()`, que lanza
+`TypeError: true is not a function`. El `catch` lo comia y `socketVivo()` devolvia `false` SIEMPRE.
+El watchdog creia que el socket estaba muerto cuando estaba sano, lo mataba y reconectaba cada 12 s,
+y como `reconectar()` llama a `conectar()` completo, cada vuelta montaba sus propios listeners. El
+proceso nunca terminaba de asentarse.
+
+**Sintoma en los logs de Render**:
+```
+app conectado a WhatsApp
+app socket cerrado hace 12s, reconectando
+app conectado a WhatsApp
+app socket cerrado hace 12s, reconectando   <- en bucle, sin parar
+```
+
+**Bug secundario**: los contadores de diagnostico vivian en el scope de `conectar()`, asi que cada
+reconexion los reiniciaba en cero. `/estado` reportaba `mensajesRecibidos: 0` mientras el log de la
+MISMA instancia mostraba `83189842346022@lid: hola`: los mensajes llegaban y el contador mintiendo.
+Un contador que se resetea solo es peor que no tenerlo, porque convierte un dato en Mentira.
+Ahora viven en `globalThis` y sobreviven las reconexiones.
+
+**Cambios realizados** (repo `mini-furi-bot`, commit `cfdd8b3`):
+- `socketVivo()` usa `sock.ws?.isOpen === true` (acceso a propiedad, sin llamada).
+- Contadores movidos a `globalThis.__diag`; se agrega `reconexiones` para distinguir una caida
+  puntual de un bucle, y se loguea cada 10.
+- `/estado` expone `reconexiones`.
+
+**Verificacion**: 100 s seguidos en Render con `conectado=true`, `socket=abierto`, `reconexiones=0`
+(antes: reconexion cada 12 s). 58/58 chequeos pasan.
+
+**Lecciones**:
+- Un getter que devuelve booleano NUNCA lleva parentesis. `isOpen?.()` sobre un getter booleano
+  compila, no tira error de sintaxis, y en runtime falla dentro de un `catch` que devuelve `false`:
+  el peor modo de fallo, porque el codigo parece correcto y el error queda invisible.
+- Un `try/catch` que devuelve un valor por defecto en un chequeo de salud esconde bugs en lugar de
+  reportarlos. Si el chequeo falla, hay que distinguir "el socket esta cerrado" de "no pude leer el
+  estado".
+- Codigo de desconexion de Baileys que hay que mirar antes de culpar a la red: **440** = la misma
+  sesion se conecto en otro lado (dos instancias peleando). No es un problema del servidor.
+- Antes de concluir "el bot no responde", leer el log COMPLETO del deploy, no solo `/estado`. El
+  log del deploy dice mucho mas que el endpoint.
+- Los contadores de diagnostico no se resetean al reconectar: si se resetean, mienten.
