@@ -1,5 +1,15 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-19] - RELEASE - Publicación de FURI v1.0.7 en GitHub Releases
+- **Release tag**: `v1.0.7` en GitHub (`https://github.com/mrtuco748-cmyk/furiiiiiiiiiii/releases/tag/v1.0.7`)
+- **Artefactos publicados**:
+  - `app-arm64-v8a-release.apk` (30.7 MB) - Recomendado para celulares Android modernos.
+  - `app-armeabi-v7a-release.apk` (28.7 MB) - Celulares de 32 bits / modelos antiguos.
+  - `app-x86_64-release.apk` (32.2 MB) - Emuladores y dispositivos x86_64.
+- **Contenido del release**: Optimización 60/120 FPS de pizarra Milanote, Auto-login silencioso en Pinterest con cuenta compartida F.U.R.I, y Chat estilo WhatsApp con vistos y stickers.
+
+---
+
 ## [2026-10-19] - FEATURE / UX - Auto-Login Automatizado en Pinterest con Cuenta Compartida F.U.R.I
 
 **Resumen**:
