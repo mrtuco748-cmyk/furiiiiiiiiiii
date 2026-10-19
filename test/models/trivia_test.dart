@@ -106,4 +106,38 @@ void main() {
       expect(TriviaStats.questionForDay(const [], DateTime(2026, 1, 1)), isNull);
     });
   });
+
+  group('Multiple questions per user (Deck / Survey persistence)', () {
+    test('responder múltiples preguntas preserva cada una en el historial y las saca de pendientes', () {
+      final questions = [
+        const TriviaQuestion(id: 1, question: 'Q1', options: ['A', 'B']),
+        const TriviaQuestion(id: 2, question: 'Q2', options: ['C', 'D']),
+        const TriviaQuestion(id: 3, question: 'Q3', options: ['E', 'F']),
+      ];
+
+      final answers = <TriviaAnswer>[];
+      // Usuario responde Q1
+      answers.removeWhere((a) => a.userId == 'user1' && a.questionId == 1);
+      answers.add(a(q: 1, user: 'user1', ans: 'A', guess: 'B'));
+
+      // Usuario responde Q2 el mismo día
+      answers.removeWhere((a) => a.userId == 'user1' && a.questionId == 2);
+      answers.add(a(q: 2, user: 'user1', ans: 'C', guess: 'D'));
+
+      // Verificar que AMBAS respuestas están presentes (ninguna sobreescribió a la otra)
+      expect(answers.length, 2);
+      final myAnsweredIds = answers.where((a) => a.userId == 'user1').map((a) => a.questionId).toSet();
+      expect(myAnsweredIds.contains(1), isTrue);
+      expect(myAnsweredIds.contains(2), isTrue);
+
+      // unanswered solo debe contener Q3
+      final unanswered = questions.where((q) => !myAnsweredIds.contains(q.id)).toList();
+      expect(unanswered.length, 1);
+      expect(unanswered.first.id, 3);
+
+      // answered contiene Q1 y Q2
+      final answered = questions.where((q) => myAnsweredIds.contains(q.id)).toList();
+      expect(answered.length, 2);
+    });
+  });
 }

@@ -44,9 +44,14 @@ class TriviaProvider extends ChangeNotifier {
       }
       final cachedA = await LocalCache.getList('cache_trivia_answers');
       if (cachedA.isNotEmpty) {
-        _answers = cachedA
+        final rawCached = cachedA
             .map((m) => TriviaAnswer.fromMap(m))
             .toList();
+        final uniqueMap = <String, TriviaAnswer>{};
+        for (final a in rawCached) {
+          uniqueMap['${a.userId}_${a.questionId}'] = a;
+        }
+        _answers = uniqueMap.values.toList();
       }
       notifyListeners();
     } catch (_) {}
@@ -72,13 +77,27 @@ class TriviaProvider extends ChangeNotifier {
 
   List<TriviaQuestion> get questions => List.unmodifiable(_questions);
 
-  /// Mi respuesta de hoy, o null si aún no respondí.
-  TriviaAnswer? get myAnswerToday {
-    final today = _today();
+  /// Mi respuesta para una pregunta específica, o null si aún no respondí.
+  TriviaAnswer? getMyAnswerForQuestion(int questionId) {
     for (final a in _answers) {
-      if (a.userId == myId && a.date == today) return a;
+      if (a.userId == myId && a.questionId == questionId) return a;
     }
     return null;
+  }
+
+  /// Respuesta de mi pareja para una pregunta específica.
+  TriviaAnswer? getPartnerAnswerForQuestion(int questionId) {
+    for (final a in _answers) {
+      if (a.userId == partnerId && a.questionId == questionId) return a;
+    }
+    return null;
+  }
+
+  /// Mi respuesta de hoy para la pregunta del día, o null si aún no respondí.
+  TriviaAnswer? get myAnswerToday {
+    final q = todayQuestion;
+    if (q?.id == null) return null;
+    return getMyAnswerForQuestion(q!.id!);
   }
 
   /// ¿Ambos respondieron la pregunta de hoy?
@@ -260,17 +279,25 @@ class TriviaProvider extends ChangeNotifier {
     final data = await SupabaseConfig.client
         .from(_aTable)
         .select()
-        .order('created_at', ascending: true)
+        .order('id', ascending: true)
         .timeout(const Duration(seconds: 8));
-    _answers = (data as List)
+    final rawList = (data as List)
         .map((r) => TriviaAnswer.fromMap(Map<String, dynamic>.from(r as Map)))
         .toList();
+
+    // Deduplicar en memoria dejando la respuesta más reciente por (userId, questionId)
+    final uniqueMap = <String, TriviaAnswer>{};
+    for (final a in rawList) {
+      uniqueMap['${a.userId}_${a.questionId}'] = a;
+    }
+    _answers = uniqueMap.values.toList();
     await LocalCache.setList('cache_trivia_answers', _answers.map((a) => a.toMap()).toList());
   }
 
   // ─── ENVÍO ────────────────────────────────────────────────────
 
-  /// Guarda (o reemplaza) mi respuesta y predicción de hoy.
+  /// Guarda (o reemplaza) mi respuesta y predicción para una pregunta específica.
+  /// Mantiene todas las respuestas guardadas en el historial y evita que vuelvan a aparecer.
   Future<bool> submit({required int questionId, required String answer, required String guess}) async {
     _error = null;
     final optimisticAnswer = TriviaAnswer(
@@ -280,20 +307,20 @@ class TriviaProvider extends ChangeNotifier {
       guess: guess,
       date: _today(),
     );
-    // Optimistic update: respuesta instantánea sin esperar a la red
-    _answers.removeWhere((a) => a.userId == myId && a.date == _today());
+    // Optimistic update: reemplaza solo la respuesta para esta pregunta específica
+    _answers.removeWhere((a) => a.userId == myId && a.questionId == questionId);
     _answers.add(optimisticAnswer);
     notifyListeners();
     await LocalCache.setList('cache_trivia_answers', _answers.map((a) => a.toMap()).toList());
 
     try {
-      // Upsert atómico sobre (user_id, date): idempotente, re-responder el día
-      // reemplaza la anterior en un solo paso.
+      // Upsert atómico sobre (user_id, question_id): persistente, cada pregunta queda guardada
+      // en el historial y no vuelve a aparecer en el mazo de pendientes.
       await SupabaseConfig.client
           .from(_aTable)
           .upsert(
             optimisticAnswer.toMap(),
-            onConflict: 'user_id,date',
+            onConflict: 'user_id,question_id',
           )
           .timeout(const Duration(seconds: 10));
       await _loadAnswers();

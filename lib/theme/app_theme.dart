@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
+import '../services/settings_service.dart';
 
 enum AppMode { flower, green, dark, blue, heart }
 
@@ -10,12 +11,27 @@ class ThemeSet {
     required this.d, required this.e,
     required this.dark, required this.light, required this.mid,
   });
+
+  ThemeSet copyWith({
+    Color? a, Color? b, Color? c, Color? d, Color? e,
+    Color? dark, Color? light, Color? mid,
+  }) => ThemeSet(
+    a: a ?? this.a,
+    b: b ?? this.b,
+    c: c ?? this.c,
+    d: d ?? this.d,
+    e: e ?? this.e,
+    dark: dark ?? this.dark,
+    light: light ?? this.light,
+    mid: mid ?? this.mid,
+  );
 }
 
 ThemeSet getTheme(AppMode mode) {
-  final t = appThemes[mode]!;
-  if (AppState.identity == 'Rocio') return _mutedTheme(t);
-  return t;
+  final base = appThemes[mode]!;
+  final custom = SettingsService().getCustomTheme(mode, base);
+  if (AppState.identity == 'Rocio') return _mutedTheme(custom);
+  return custom;
 }
 
 /// Devuelve el tema "apagado" cuando inicia como Rocio: así TODAS las

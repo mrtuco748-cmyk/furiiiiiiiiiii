@@ -28,7 +28,8 @@ class MilanoteScreen extends StatefulWidget {
 
 class _MilanoteScreenState extends State<MilanoteScreen> {
   final TransformationController _transformController = TransformationController();
-  final double _worldSize = 8000.0;
+  final double _boardWidth = 2400.0;
+  final double _boardHeight = 1600.0;
   final double _gridSpacing = 28.0;
 
   int _currentBoardId = 1;
@@ -61,9 +62,11 @@ class _MilanoteScreenState extends State<MilanoteScreen> {
 
   void _centerView() {
     final size = MediaQuery.of(context).size;
-    const initialScale = 0.95;
-    final cx = (_worldSize * initialScale - size.width) / 2;
-    final cy = (_worldSize * initialScale - size.height) / 2;
+    final scaleX = size.width / (_boardWidth * 0.85);
+    final scaleY = size.height / (_boardHeight * 0.85);
+    final initialScale = (scaleX < scaleY ? scaleX : scaleY).clamp(0.45, 0.95);
+    final cx = (_boardWidth * initialScale - size.width) / 2;
+    final cy = (_boardHeight * initialScale - size.height) / 2;
 
     _transformController.value = Matrix4.identity()
       ..scaleByDouble(initialScale, initialScale, 1.0, 1.0)
@@ -97,8 +100,12 @@ class _MilanoteScreenState extends State<MilanoteScreen> {
     final size = MediaQuery.of(context).size;
     final screenCenter = Offset(size.width / 2, size.height / 2);
     final inv = Matrix4.tryInvert(_transformController.value);
-    if (inv == null) return Offset(_worldSize / 2, _worldSize / 2);
-    return MatrixUtils.transformPoint(inv, screenCenter);
+    if (inv == null) return Offset(_boardWidth / 2, _boardHeight / 2);
+    final pt = MatrixUtils.transformPoint(inv, screenCenter);
+    return Offset(
+      pt.dx.clamp(60.0, _boardWidth - 60.0),
+      pt.dy.clamp(60.0, _boardHeight - 60.0),
+    );
   }
 
   double _snap(double val) {
@@ -109,8 +116,8 @@ class _MilanoteScreenState extends State<MilanoteScreen> {
   void _handleToolSelected(MilanoteToolType type) async {
     final pv = context.read<BoardDataProvider>();
     final center = _getViewportCenterInWorld();
-    final spawnX = _snap(center.dx - 110);
-    final spawnY = _snap(center.dy - 90);
+    final spawnX = _snap((center.dx - 110).clamp(40.0, _boardWidth - 280.0));
+    final spawnY = _snap((center.dy - 90).clamp(40.0, _boardHeight - 220.0));
 
     switch (type) {
       case MilanoteToolType.note:
@@ -283,10 +290,11 @@ class _MilanoteScreenState extends State<MilanoteScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // LIENZO INFINITO
+            // LIENZO FINITO
             Positioned.fill(
               child: GestureDetector(
                 onTap: () {
+                  FocusScope.of(context).unfocus();
                   setState(() {
                     _selectedElementId = null;
                     _connectingSource = null;
@@ -297,20 +305,33 @@ class _MilanoteScreenState extends State<MilanoteScreen> {
                   panEnabled: !_isDraggingElement,
                   scaleEnabled: !_isDraggingElement,
                   minScale: 0.25,
-                  maxScale: 2.8,
-                  boundaryMargin: const EdgeInsets.all(4000),
+                  maxScale: 2.5,
+                  boundaryMargin: const EdgeInsets.all(60),
                   constrained: false,
-                  child: SizedBox(
-                    width: _worldSize,
-                    height: _worldSize,
+                  child: Container(
+                    width: _boardWidth,
+                    height: _boardHeight,
+                    decoration: BoxDecoration(
+                      color: MilanotePalette.canvasDark,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
                     child: Stack(
                       children: [
-                        // Cuadrícula punteada Milanote optimizada con RepaintBoundary
+                        // Cuadrícula punteada Milanote finita optimizada con RepaintBoundary
                         Positioned.fill(
                           child: RepaintBoundary(
                             child: CustomPaint(
                               painter: MilanoteGridPainter(
-                                worldSize: _worldSize,
+                                width: _boardWidth,
+                                height: _boardHeight,
                                 gridSpacing: _gridSpacing,
                               ),
                             ),
@@ -356,8 +377,8 @@ class _MilanoteScreenState extends State<MilanoteScreen> {
                               _activeDragNotifier.value = null;
                               setState(() => _isDraggingElement = false);
                               if (el.id != null) {
-                                final finalX = _snap(el.x + totalDx);
-                                final finalY = _snap(el.y + totalDy);
+                                final finalX = _snap((el.x + totalDx).clamp(20.0, _boardWidth - el.width - 20.0));
+                                final finalY = _snap((el.y + totalDy).clamp(20.0, _boardHeight - el.height - 20.0));
                                 pv.updatePositionLocal(el.id!, finalX, finalY);
                               }
                             },

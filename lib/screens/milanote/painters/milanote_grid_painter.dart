@@ -2,17 +2,19 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
-/// Dibuja la cuadrícula de puntos infinita clásica de Milanote de forma ultra-optimizada.
-/// En vez de dibujar 81.000 círculos por cuadro en todo el mundo de 8000x8000,
-/// solo calcula y dibuja por lotes (drawPoints) los puntos visibles en el viewport.
+/// Dibuja la cuadrícula de puntos finita clásica de Milanote de forma ultra-optimizada.
+/// Al contar con un lienzo finito, despacha por lotes (drawPoints) los puntos visibles
+/// consumiendo prácticamente 0% de CPU y GPU.
 class MilanoteGridPainter extends CustomPainter {
-  final double worldSize;
+  final double width;
+  final double height;
   final double gridSpacing;
   final Color dotColor;
   final double dotRadius;
 
   const MilanoteGridPainter({
-    required this.worldSize,
+    required this.width,
+    required this.height,
     this.gridSpacing = 28.0,
     this.dotColor = const Color(0xFF2C2F36),
     this.dotRadius = 1.3,
@@ -24,9 +26,9 @@ class MilanoteGridPainter extends CustomPainter {
     if (visible.isEmpty || visible.isInfinite) return;
 
     final double startX = (math.max(0.0, visible.left) / gridSpacing).floor() * gridSpacing;
-    final double endX = math.min(worldSize, visible.right);
+    final double endX = math.min(width, visible.right);
     final double startY = (math.max(0.0, visible.top) / gridSpacing).floor() * gridSpacing;
-    final double endY = math.min(worldSize, visible.bottom);
+    final double endY = math.min(height, visible.bottom);
 
     if (startX > endX || startY > endY) return;
 
@@ -50,7 +52,8 @@ class MilanoteGridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant MilanoteGridPainter oldDelegate) {
-    return oldDelegate.worldSize != worldSize ||
+    return oldDelegate.width != width ||
+        oldDelegate.height != height ||
         oldDelegate.gridSpacing != gridSpacing ||
         oldDelegate.dotColor != dotColor ||
         oldDelegate.dotRadius != dotRadius;

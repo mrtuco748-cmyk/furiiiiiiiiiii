@@ -44,15 +44,15 @@ class _TriviaDeckState extends State<TriviaDeck> {
     super.didUpdateWidget(oldWidget);
     if (_index >= widget.questions.length) {
       _index = (widget.questions.length - 1).clamp(0, 99999);
-      _initQuestionState();
     }
+    _initQuestionState();
   }
 
   void _initQuestionState() {
     if (widget.questions.isEmpty) return;
-    final q = widget.questions[_index];
-    final my = widget.provider.myAnswerToday;
-    if (my != null && my.questionId == q.id) {
+    final q = widget.questions[_index.clamp(0, widget.questions.length - 1)];
+    final my = widget.provider.getMyAnswerForQuestion(q.id ?? 0);
+    if (my != null) {
       _answer = my.answer;
       _guess = my.guess;
     } else {

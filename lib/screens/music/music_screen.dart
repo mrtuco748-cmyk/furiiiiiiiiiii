@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../app_state.dart';
+import '../../models/download_queue_item.dart';
 import '../../models/music_playlist.dart';
 import '../../models/music_track.dart';
 import '../../providers/music_player_provider.dart';
@@ -41,7 +42,10 @@ class _MusicScreenState extends State<MusicScreen> {
     super.initState();
     _currentTab = widget.initialTab;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MusicPlayerProvider>().load();
+      if (mounted) {
+        context.read<MusicPlayerProvider>().load();
+        context.read<MusicPlayerProvider>().setMusicScreenOpen(true);
+      }
     });
   }
 
@@ -72,7 +76,8 @@ class _MusicScreenState extends State<MusicScreen> {
           children: [
             _buildHeader(playerPv),
             _buildTabs(),
-            if (playerPv.isDownloading) _buildDownloadProgressBar(playerPv),
+            if (playerPv.isDownloading || playerPv.activeOrQueuedCount > 0)
+              _buildDownloadProgressBar(playerPv),
             Expanded(
               child: _buildCurrentTabContent(playerPv),
             ),
@@ -124,6 +129,40 @@ class _MusicScreenState extends State<MusicScreen> {
             ),
           ),
           const Spacer(),
+          if (pv.activeOrQueuedCount > 0) ...[
+            GestureDetector(
+              onTap: () => _showDownloadQueueModal(context, pv),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF232E16),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF39FF14),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${pv.activeOrQueuedCount} en cola',
+                      style: GoogleFonts.bangers(
+                        color: const Color(0xFF39FF14),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -218,51 +257,370 @@ class _MusicScreenState extends State<MusicScreen> {
   }
 
   Widget _buildDownloadProgressBar(MusicPlayerProvider pv) {
+    final currentItem = pv.currentDownloadingItem;
+    final title = currentItem?.title ?? pv.downloadStatus;
+    final statusMsg = currentItem?.statusMessage ?? pv.downloadStatus;
+    final queuedCount = pv.queuedCount;
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        _showDownloadQueueModal(context, pv);
+      },
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161616),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: Color(0xFF39FF14),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.bangers(color: Colors.white, fontSize: 14),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        statusMsg,
+                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (queuedCount > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF382F10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '+$queuedCount en cola',
+                      style: GoogleFonts.bangers(
+                        color: const Color(0xFFFFDE59),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  '${(pv.downloadProgress * 100).toInt()}%',
+                  style: GoogleFonts.bangers(color: const Color(0xFF39FF14), fontSize: 14),
+                ),
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white38,
+                  size: 18,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pv.downloadProgress,
+                backgroundColor: const Color(0xFF222222),
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF39FF14)),
+                minHeight: 6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDownloadQueueModal(BuildContext context, MusicPlayerProvider pv) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF141414),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Consumer<MusicPlayerProvider>(
+          builder: (context, provider, _) {
+            final queue = provider.downloadQueue;
+            final hasFinished = queue.any((i) => i.isCompleted || i.isFailed || i.isCancelled);
+
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Indicador de arrastre
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A2A2A),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Título y botones de acción
+                    Row(
+                      children: [
+                        const Icon(Icons.queue_music_rounded, color: Color(0xFF39FF14), size: 22),
+                        const SizedBox(width: 8),
+                        Text(
+                          'COLA DE DESCARGAS',
+                          style: GoogleFonts.bangers(
+                            color: Colors.white,
+                            fontSize: 20,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (hasFinished)
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              provider.clearFinishedDownloads();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF222222),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'LIMPIAR',
+                                style: GoogleFonts.bangers(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => Navigator.of(ctx).pop(),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF222222),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (queue.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 36),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF39FF14), size: 48),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No hay descargas pendientes',
+                              style: GoogleFonts.bangers(color: Colors.white, fontSize: 18),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Busca en YouTube y toca "GUARDAR" en los temas que quieras descargar.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white60, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: queue.length,
+                          separatorBuilder: (context, index) => const SizedBox(height: 8),
+                          itemBuilder: (ctx, i) {
+                            final item = queue[i];
+                            return _buildQueueItemTile(context, provider, item);
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildQueueItemTile(BuildContext context, MusicPlayerProvider provider, DownloadQueueItem item) {
+    Color statusBg;
+    Color statusColor;
+    String statusText;
+
+    if (item.isDownloading) {
+      statusBg = const Color(0xFF1E381A);
+      statusColor = const Color(0xFF39FF14);
+      statusText = '${(item.progress * 100).toInt()}%';
+    } else if (item.isQueued) {
+      final pos = provider.getQueuePosition(item.id);
+      statusBg = const Color(0xFF3D3212);
+      statusColor = const Color(0xFFFFDE59);
+      statusText = 'EN COLA #$pos';
+    } else if (item.isCompleted) {
+      statusBg = const Color(0xFF1B2E18);
+      statusColor = const Color(0xFF39FF14);
+      statusText = 'GUARDADA';
+    } else {
+      statusBg = const Color(0xFF3B1A1A);
+      statusColor = const Color(0xFFFF5252);
+      statusText = 'FALLÓ';
+    }
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF161616),
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  color: Color(0xFF39FF14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: item.thumbnailUrl.isNotEmpty
+                      ? Image.network(
+                          item.thumbnailUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => _fallbackCover(),
+                        )
+                      : _fallbackCover(),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  pv.downloadStatus,
-                  style: GoogleFonts.bangers(color: Colors.white, fontSize: 14),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: GoogleFonts.bangers(color: Colors.white, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${item.author} • ${item.durationFormatted}',
+                      style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.statusMessage,
+                      style: TextStyle(
+                        color: item.isFailed ? const Color(0xFFFF5252) : Colors.white38,
+                        fontSize: 10,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                '${(pv.downloadProgress * 100).toInt()}%',
-                style: GoogleFonts.bangers(color: const Color(0xFF39FF14), fontSize: 14),
+              const SizedBox(width: 8),
+
+              // Badge de estado
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusBg,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  statusText,
+                  style: GoogleFonts.bangers(color: statusColor, fontSize: 12),
+                ),
               ),
+
+              // Botón de acción (cancelar o reintentar)
+              if (item.isQueued)
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    provider.removeFromQueue(item.id);
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF282828),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close_rounded, color: Colors.white60, size: 14),
+                  ),
+                ),
+              if (item.isFailed)
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    provider.retryDownload(item.id);
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF282828),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.refresh_rounded, color: Color(0xFF39FF14), size: 14),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: pv.downloadProgress,
-              backgroundColor: const Color(0xFF222222),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF39FF14)),
-              minHeight: 6,
+          if (item.isDownloading) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: item.progress,
+                backgroundColor: const Color(0xFF242424),
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF39FF14)),
+                minHeight: 4,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -860,6 +1218,9 @@ class _MusicScreenState extends State<MusicScreen> {
               itemBuilder: (ctx, i) {
                 final item = _searchResults[i];
                 final isAlreadySaved = pv.tracks.any((t) => t.youtubeId == item.id);
+                final isCurrentDownloading = pv.isDownloadingItem(item.id);
+                final isQueued = pv.isQueuedItem(item.id);
+                final queuePos = pv.getQueuePosition(item.id);
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
@@ -905,49 +1266,105 @@ class _MusicScreenState extends State<MusicScreen> {
                       ),
                       const SizedBox(width: 8),
                       TapTile(
-                        onTap: (isAlreadySaved || pv.isDownloading)
-                            ? () {}
-                            : () async {
-                                HapticFeedback.heavyImpact();
-                                final saved = await pv.downloadTrack(item);
-                                if (!mounted) return;
-                                if (saved != null) {
-                                   setState(() => _currentTab = 0);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: const Color(0xFF0D6B15),
-                                      content: Text(
-                                        '¡"${item.title}" guardada en Supabase!',
-                                        style: GoogleFonts.bangers(color: Colors.white),
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: const Color(0xFF7A1414),
-                                      content: Text(
-                                        'No se pudo guardar: ${pv.lastDownloadError ?? "Error de red"}',
-                                        style: GoogleFonts.bangers(color: Colors.white),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
+                        onTap: () {
+                          if (isAlreadySaved) {
+                            return;
+                          }
+                          if (isCurrentDownloading) {
+                            HapticFeedback.selectionClick();
+                            _showDownloadQueueModal(context, pv);
+                            return;
+                          }
+                          if (isQueued) {
+                            HapticFeedback.selectionClick();
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: const Color(0xFF2E2710),
+                                content: Text(
+                                  '"${item.title}" está en la posición #$queuePos de la cola de descargas.',
+                                  style: GoogleFonts.bangers(color: const Color(0xFFFFDE59)),
+                                ),
+                                action: SnackBarAction(
+                                  label: 'VER COLA',
+                                  textColor: const Color(0xFF39FF14),
+                                  onPressed: () => _showDownloadQueueModal(context, pv),
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          HapticFeedback.mediumImpact();
+                          final added = pv.addToDownloadQueue(item);
+                          if (!mounted) return;
+                          if (added) {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: const Color(0xFF1B2E18),
+                                content: Text(
+                                  pv.isDownloading && !isCurrentDownloading
+                                      ? '¡"${item.title}" agregada a la cola (#${pv.queuedCount})!'
+                                      : 'Iniciando descarga de "${item.title}"...',
+                                  style: GoogleFonts.bangers(color: Colors.white),
+                                ),
+                                duration: const Duration(seconds: 2),
+                                action: SnackBarAction(
+                                  label: 'VER COLA',
+                                  textColor: const Color(0xFF39FF14),
+                                  onPressed: () => _showDownloadQueueModal(context, pv),
+                                ),
+                              ),
+                            );
+                          }
+                        },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
                             color: isAlreadySaved
                                 ? const Color(0xFF222222)
-                                : const Color(0xFF39FF14),
+                                : isCurrentDownloading
+                                    ? const Color(0xFF1E381A)
+                                    : isQueued
+                                        ? const Color(0xFF3D3212)
+                                        : const Color(0xFF39FF14),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text(
-                            isAlreadySaved ? 'GUARDADO' : 'GUARDAR',
-                            style: GoogleFonts.bangers(
-                              color: isAlreadySaved ? Colors.white38 : const Color(0xFF0A0A0A),
-                              fontSize: 14,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isCurrentDownloading) ...[
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF39FF14),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Text(
+                                isAlreadySaved
+                                    ? 'GUARDADO'
+                                    : isCurrentDownloading
+                                        ? '${(pv.downloadProgress * 100).toInt()}%'
+                                        : isQueued
+                                            ? 'EN COLA (#$queuePos)'
+                                            : 'GUARDAR',
+                                style: GoogleFonts.bangers(
+                                  color: isAlreadySaved
+                                      ? Colors.white38
+                                      : isCurrentDownloading
+                                          ? const Color(0xFF39FF14)
+                                          : isQueued
+                                              ? const Color(0xFFFFDE59)
+                                              : const Color(0xFF0A0A0A),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -1720,6 +2137,7 @@ class _MusicScreenState extends State<MusicScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    MusicPlayerProvider.currentInstance?.setMusicScreenOpen(false);
     super.dispose();
   }
 }

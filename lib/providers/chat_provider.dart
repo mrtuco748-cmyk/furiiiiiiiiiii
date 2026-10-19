@@ -38,11 +38,17 @@ class ChatProvider extends ChangeNotifier {
   Timer? _typingDebounce;
   Timer? _typingReceiverTimer;
   RealtimeChannel? _typingChannel;
+  RealtimeChannel? _profilesChannel;
+
+  String? _myAvatarUrl;
+  String? _partnerAvatarUrl;
 
   List<Message> get messages => List.unmodifiable(_messages);
   ChatLoadState get state => _state;
   String? get error => _error;
   String get partnerName => _partnerName;
+  String? get myAvatarUrl => _myAvatarUrl ?? AppState.myAvatarUrl;
+  String? get partnerAvatarUrl => _partnerAvatarUrl ?? AppState.partnerAvatarUrl;
   Message? get replyTo => _replyTo;
   bool get sending => _sending;
   bool get hasMore => _hasMore;
@@ -58,6 +64,23 @@ class ChatProvider extends ChangeNotifier {
     _state = items.isEmpty ? ChatLoadState.empty : ChatLoadState.data;
   }
 
+  @visibleForTesting
+  void addOlderMessagesForTest(List<Message> items) {
+    final existingIds = _messages.map((m) => m.id).toSet();
+    final older = items.where((m) => !existingIds.contains(m.id)).toList();
+    _messages.insertAll(0, older);
+    if (_messages.isNotEmpty && _state == ChatLoadState.empty) {
+      _state = ChatLoadState.data;
+    }
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setHasMoreForTest(bool value) {
+    _hasMore = value;
+    notifyListeners();
+  }
+
   Future<void> init() async {
     _localPaths = await media.loadLocalIndex();
     // Nos suscribimos al realtime ANTES de cargar el snapshot de la BD: así
@@ -65,29 +88,94 @@ class ChatProvider extends ChangeNotifier {
     // se pierde. loadMessages hace merge por id en vez de limpiar la lista.
     subscribeRealtime();
     subscribeTyping();
-    await Future.wait([loadMessages(), loadPartnerName()]);
+    subscribeProfiles();
+    await Future.wait([loadMessages(), loadProfiles()]);
   }
 
-  Future<void> loadPartnerName() async {
-    if (partnerId.isEmpty) return;
+  Future<void> loadProfiles() async {
     try {
-      final data = await SupabaseConfig.client
-          .from('profiles')
-          .select('name')
-          .eq('id', partnerId)
-          .maybeSingle();
-      _partnerName = data?['name'] as String? ?? '';
+      if (partnerId.isNotEmpty) {
+        final pData = await SupabaseConfig.client
+            .from('profiles')
+            .select('name, avatar_url')
+            .eq('id', partnerId)
+            .maybeSingle();
+        if (pData != null) {
+          final n = pData['name'] as String?;
+          if (n != null && n.isNotEmpty) _partnerName = n;
+          _partnerAvatarUrl = pData['avatar_url'] as String?;
+          AppState.partnerAvatarUrl = _partnerAvatarUrl;
+        }
+      }
+      if (myId.isNotEmpty) {
+        final mData = await SupabaseConfig.client
+            .from('profiles')
+            .select('avatar_url')
+            .eq('id', myId)
+            .maybeSingle();
+        if (mData != null) {
+          _myAvatarUrl = mData['avatar_url'] as String?;
+          AppState.myAvatarUrl = _myAvatarUrl;
+        }
+      }
+      await AppState.saveSession();
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      developer.log('loadProfiles error: $e');
     }
   }
+
+  Future<void> updateMyAvatar(String avatarData) async {
+    if (myId.isEmpty) return;
+    _myAvatarUrl = avatarData;
+    AppState.myAvatarUrl = avatarData;
+    await AppState.saveSession();
+    notifyListeners();
+
+    try {
+      await SupabaseConfig.client
+          .from('profiles')
+          .update({'avatar_url': avatarData})
+          .eq('id', myId);
+    } catch (e) {
+      developer.log('updateMyAvatar error: $e');
+    }
+  }
+
+  void subscribeProfiles() {
+    _profilesChannel?.unsubscribe();
+    _profilesChannel = SupabaseConfig.client.channel('profiles-realtime');
+    _profilesChannel!
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'profiles',
+        callback: (payload) {
+          final record = payload.newRecord;
+          final id = record['id'] as String?;
+          if (id == partnerId) {
+            final newAvatar = record['avatar_url'] as String?;
+            final newName = record['name'] as String?;
+            if (newName != null && newName.isNotEmpty) _partnerName = newName;
+            _partnerAvatarUrl = newAvatar;
+            AppState.partnerAvatarUrl = newAvatar;
+            notifyListeners();
+          } else if (id == myId) {
+            final newAvatar = record['avatar_url'] as String?;
+            _myAvatarUrl = newAvatar;
+            AppState.myAvatarUrl = newAvatar;
+            notifyListeners();
+          }
+        },
+      )
+      .subscribe();
+  }
+
+  Future<void> loadPartnerName() => loadProfiles();
 
   Future<void> loadMessages() async {
     _state = ChatLoadState.loading;
     _error = null;
-    _hasMore = true;
     notifyListeners();
     try {
       final data = await SupabaseConfig.client
@@ -97,6 +185,7 @@ class ChatProvider extends ChangeNotifier {
           .order('created_at', ascending: false)
           .limit(100);
       final newestFirst = List<Map<String, dynamic>>.from(data as List);
+      _hasMore = newestFirst.length >= 100;
       final fetched = newestFirst.reversed.map((row) {
         final id = Message.fromMap(row).id;
         return Message.fromMap(row, localPath: _localPaths[id]);
@@ -132,7 +221,11 @@ class ChatProvider extends ChangeNotifier {
   /// scroll infinito hacia arriba. Los inserta al inicio (los más viejos).
   Future<void> loadOlderMessages() async {
     if (_loadingOlder || !_hasMore || _messages.isEmpty) return;
-    final oldest = _messages.first.createdAt;
+    final oldestMsg = _messages.firstWhere(
+      (m) => m.createdAt != null,
+      orElse: () => _messages.first,
+    );
+    final oldest = oldestMsg.createdAt;
     if (oldest == null) return;
     _loadingOlder = true;
     notifyListeners();
@@ -145,19 +238,27 @@ class ChatProvider extends ChangeNotifier {
           .order('created_at', ascending: false)
           .limit(100);
       final rows = List<Map<String, dynamic>>.from(data as List);
-      if (rows.isEmpty) {
+      if (rows.length < 100) {
         _hasMore = false;
-      } else {
-        final older = rows.reversed.map((row) {
-          final m = Message.fromMap(row);
-          return m.copyWith(localPath: _localPaths[m.id]);
-        }).toList();
-        _messages.insertAll(0, older);
-        _state = ChatLoadState.data;
+      }
+      if (rows.isNotEmpty) {
+        final existingIds = _messages.map((m) => m.id).toSet();
+        final older = rows.reversed
+            .map((row) {
+              final m = Message.fromMap(row);
+              return m.copyWith(localPath: _localPaths[m.id]);
+            })
+            .where((m) => !existingIds.contains(m.id))
+            .toList();
+        if (older.isEmpty) {
+          _hasMore = false;
+        } else {
+          _messages.insertAll(0, older);
+          _state = ChatLoadState.data;
+        }
       }
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      developer.log('loadOlderMessages error: $e');
     } finally {
       _loadingOlder = false;
       notifyListeners();
@@ -584,6 +685,7 @@ class ChatProvider extends ChangeNotifier {
     _typingDebounce?.cancel();
     _typingReceiverTimer?.cancel();
     _typingChannel?.unsubscribe();
+    _profilesChannel?.unsubscribe();
     _channel?.unsubscribe();
     super.dispose();
   }

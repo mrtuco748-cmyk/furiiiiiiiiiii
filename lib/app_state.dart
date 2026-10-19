@@ -5,6 +5,8 @@ class AppState {
   static String? partnerId;
   static String? myName;
   static String? identity; // 'Rocio' or 'Facu'
+  static String? myAvatarUrl;
+  static String? partnerAvatarUrl;
 
   static String get partnerName => identity == 'Facu' ? 'Rocío' : 'Facu';
 
@@ -14,6 +16,8 @@ class AppState {
     if (myId != null) prefs.setString('myId', myId!);
     if (partnerId != null) prefs.setString('partnerId', partnerId!);
     if (myName != null) prefs.setString('myName', myName!);
+    if (myAvatarUrl != null) prefs.setString('myAvatarUrl', myAvatarUrl!);
+    if (partnerAvatarUrl != null) prefs.setString('partnerAvatarUrl', partnerAvatarUrl!);
   }
 
   static Future<bool> loadSession() async {
@@ -24,6 +28,8 @@ class AppState {
     myId = prefs.getString('myId');
     partnerId = prefs.getString('partnerId');
     myName = prefs.getString('myName');
+    myAvatarUrl = prefs.getString('myAvatarUrl');
+    partnerAvatarUrl = prefs.getString('partnerAvatarUrl');
     return true;
   }
 
@@ -34,5 +40,7 @@ class AppState {
     partnerId = null;
     myName = null;
     identity = null;
+    myAvatarUrl = null;
+    partnerAvatarUrl = null;
   }
 }

@@ -272,7 +272,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Class events: use each class's color
-                  ...events!
+                  ...events
                       .where((e) => e.type == 'Clase')
                       .take(3)
                       .map((e) => Container(
@@ -280,10 +280,9 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
                             height: 4,
                             margin: const EdgeInsets.symmetric(horizontal: 1),
                             decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle),
-                          ))
-                      .toList(),
+                          )),
                   // Non‑class events: keep existing behavior
-                  ...events!
+                  ...events
                       .where((e) => e.type != 'Clase')
                       .take(3)
                       .map((e) => Container(
@@ -291,8 +290,7 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
                             height: 4,
                             margin: const EdgeInsets.symmetric(horizontal: 1),
                             decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle),
-                          ))
-                      .toList(),
+                          )),
                 ],
               ),
             ),

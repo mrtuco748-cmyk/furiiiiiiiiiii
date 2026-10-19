@@ -20,9 +20,10 @@ class _PinterestScreenState extends State<PinterestScreen> {
   bool _loading = true;
   double _progress = 0.0;
   bool _isMobile = false;
+  bool _showCredentialsBar = true;
 
-  static const String _autoEmail = 'derrame_company@yahoo.com';
-  static const String _autoPass = 'Tradden20';
+  static const String _accountEmail = 'derrame_company@yahoo.com';
+  static const String _accountPass = 'Zapallo1234*';
 
   @override
   void initState() {
@@ -52,9 +53,8 @@ class _PinterestScreenState extends State<PinterestScreen> {
           },
           onPageFinished: (String url) {
             if (mounted) setState(() => _loading = false);
-            // Ocultar banners molestos y automatizar inicio de sesión si es necesario
+            // Ocultar banners molestos de la web de Pinterest
             _injectCleanerCss();
-            _injectAutoLogin();
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('Pinterest WebView Error: ${error.description}');
@@ -62,64 +62,11 @@ class _PinterestScreenState extends State<PinterestScreen> {
         ),
       )
       ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
       )
-      ..loadRequest(Uri.parse('https://www.pinterest.com/login/'));
+      ..loadRequest(Uri.parse('https://www.pinterest.com/'));
 
     _controller = controller;
-  }
-
-  Future<void> _injectAutoLogin() async {
-    if (_controller == null) return;
-    try {
-      await _controller!.runJavaScript('''
-        (() => {
-          function setNativeValue(el, val) {
-            if (!el) return false;
-            const proto = Object.getPrototypeOf(el);
-            const set = Object.getOwnPropertyDescriptor(proto, 'value')?.set || Object.getOwnPropertyDescriptor(el, 'value')?.set;
-            if (set) {
-              set.call(el, val);
-            } else {
-              el.value = val;
-            }
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
-          }
-
-          function performAutoLogin() {
-            const email = document.querySelector('#email, input[type="email"], input[name="id"]');
-            const pass = document.querySelector('#password, input[type="password"]');
-            const btn = document.querySelector('button[type="submit"]');
-
-            if (email && pass) {
-              setNativeValue(email, '$_autoEmail');
-              setNativeValue(pass, '$_autoPass');
-              setTimeout(() => {
-                const submit = document.querySelector('button[type="submit"]') || btn;
-                if (submit) submit.click();
-              }, 300);
-              return true;
-            }
-            return false;
-          }
-
-          // Intento inmediato
-          if (!performAutoLogin()) {
-            let attempts = 0;
-            const interval = setInterval(() => {
-              attempts++;
-              if (performAutoLogin() || attempts > 16) {
-                clearInterval(interval);
-              }
-            }, 500);
-          }
-        })();
-      ''');
-    } catch (e) {
-      debugPrint('Error en auto-login Pinterest: $e');
-    }
   }
 
   Future<void> _injectCleanerCss() async {
@@ -180,6 +127,9 @@ class _PinterestScreenState extends State<PinterestScreen> {
             children: [
               // Cabecera superior nativa F.U.R.I
               _buildTopBar(),
+
+              // Barra rápida de credenciales (1-tap para copiar y pegar sin ser detectado como bot)
+              if (_showCredentialsBar) _buildCredentialsBanner(),
 
               // Barra de progreso delgada si está cargando
               if (_loading && _isMobile)
@@ -265,34 +215,30 @@ class _PinterestScreenState extends State<PinterestScreen> {
 
           const Spacer(),
 
-          // Botón Auto-Login con la cuenta F.U.R.I
-          if (_isMobile && _controller != null)
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.mediumImpact();
-                _injectAutoLogin();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Iniciando sesión automática en Pinterest...'),
-                    duration: Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF242424),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.vpn_key_rounded,
-                  color: Color(0xFFE60023),
-                  size: 18,
-                ),
+          // Botón para mostrar / ocultar credenciales
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              setState(() {
+                _showCredentialsBar = !_showCredentialsBar;
+              });
+            },
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: _showCredentialsBar
+                    ? const Color(0xFFE60023)
+                    : const Color(0xFF242424),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.vpn_key_rounded,
+                color: _showCredentialsBar ? Colors.white : const Color(0xFFE60023),
+                size: 18,
               ),
             ),
+          ),
           const SizedBox(width: 8),
 
           // Botón de Inicio / Recargar Pinterest
@@ -300,7 +246,7 @@ class _PinterestScreenState extends State<PinterestScreen> {
             GestureDetector(
               onTap: () {
                 HapticFeedback.lightImpact();
-                _controller!.loadRequest(Uri.parse('https://www.pinterest.com'));
+                _controller!.loadRequest(Uri.parse('https://www.pinterest.com/'));
               },
               child: Container(
                 width: 38,
@@ -339,6 +285,122 @@ class _PinterestScreenState extends State<PinterestScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCredentialsBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: const Color(0xFF1E1E1E),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Colors.white70,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _buildCopyChip(
+                    label: 'Copiar Correo',
+                    icon: Icons.mail_outline_rounded,
+                    value: _accountEmail,
+                    snackMsg: 'Correo copiado: $_accountEmail',
+                  ),
+                  const SizedBox(width: 8),
+                  _buildCopyChip(
+                    label: 'Copiar Clave',
+                    icon: Icons.lock_outline_rounded,
+                    value: _accountPass,
+                    snackMsg: 'Contraseña copiada al portapapeles',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _showCredentialsBar = false);
+            },
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Color(0xFF282828),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 14,
+                color: Colors.white60,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCopyChip({
+    required String label,
+    required IconData icon,
+    required String value,
+    required String snackMsg,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        Clipboard.setData(ClipboardData(text: value));
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              snackMsg,
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            backgroundColor: const Color(0xFF242424),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF282828),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: const Color(0xFFE60023)),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.copy_rounded, size: 12, color: Colors.white38),
+          ],
+        ),
       ),
     );
   }
@@ -383,36 +445,24 @@ class _PinterestScreenState extends State<PinterestScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.account_circle_rounded, color: Colors.white70, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Cuenta: $_autoEmail',
-                    style: GoogleFonts.plusJakartaSans(
-                      color: Colors.white,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(const ClipboardData(text: _autoEmail));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Email copiado al portapapeles')),
-                      );
-                    },
-                    child: const Icon(Icons.copy_rounded, color: Color(0xFFE60023), size: 16),
-                  ),
-                ],
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                _buildCopyChip(
+                  label: 'Copiar Correo',
+                  icon: Icons.mail_outline_rounded,
+                  value: _accountEmail,
+                  snackMsg: 'Correo copiado: $_accountEmail',
+                ),
+                _buildCopyChip(
+                  label: 'Copiar Clave',
+                  icon: Icons.lock_outline_rounded,
+                  value: _accountPass,
+                  snackMsg: 'Contraseña copiada al portapapeles',
+                ),
+              ],
             ),
             const SizedBox(height: 20),
             GestureDetector(

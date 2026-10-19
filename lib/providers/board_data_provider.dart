@@ -87,7 +87,28 @@ class BoardDataProvider extends ChangeNotifier {
         developer.log('Error al migrar notas legacy: $e');
       }
     }
-    _elements = result.map((m) => BoardElement.fromMap(Map<String, dynamic>.from(m))).toList();
+    _elements = result.map((m) {
+      final map = Map<String, dynamic>.from(m);
+      double x = (map['x'] as num?)?.toDouble() ?? 0.0;
+      double y = (map['y'] as num?)?.toDouble() ?? 0.0;
+      bool changed = false;
+      if (x > 2200.0) {
+        x -= 3400.0;
+        if (x < 40.0) x = 120.0;
+        map['x'] = x;
+        changed = true;
+      }
+      if (y > 1500.0) {
+        y -= 3400.0;
+        if (y < 40.0) y = 120.0;
+        map['y'] = y;
+        changed = true;
+      }
+      if (changed && map['id'] != null) {
+        db.update(_tableName, {'x': x, 'y': y}, where: 'id = ?', whereArgs: [map['id']]);
+      }
+      return BoardElement.fromMap(map);
+    }).toList();
   }
 
   /// Sube filas locales pendientes a Supabase (creadas offline o modificadas sin sincronizar).

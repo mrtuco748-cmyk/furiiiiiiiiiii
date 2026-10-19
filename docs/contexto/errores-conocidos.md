@@ -7,6 +7,138 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~MEDIA - Doble barra de control de música en la pantalla MusicScreen~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/widgets/furi_global_overlay.dart`, `lib/screens/music/music_screen.dart`, `lib/providers/music_player_provider.dart`
+- **Qué pasaba**: Al reproducir una canción dentro de `MusicScreen`, aparecían simultáneamente dos barras de control de música superpuestas (la barra inferior completa de la pantalla y la barra flotante global de la aplicación).
+- **Causa raíz**:
+  1. `FuriGlobalOverlay` envuelve la app a nivel `MaterialApp.builder` y muestra una barra de música flotante en cualquier pantalla cuando hay una canción sonando.
+  2. Para no mostrarse en `MusicScreen`, verificaba `appRouter.routerDelegate.currentConfiguration.uri.path.startsWith('/music')`.
+  3. Sin embargo, al navegar con `context.push(RouterRoutes.music)`, GoRouter no actualiza esa propiedad en el root delegate a `/music` ni dispara reconstrucción en los builders fuera del Navigator. Como resultado, ambas barras se mostraban a la vez.
+- **Fix**:
+  1. Se implementó `isMusicScreenOpen` y `setMusicScreenOpen(bool)` en `MusicPlayerProvider`.
+  2. `MusicScreen` activa esta bandera en `initState` y la desactiva en `dispose`.
+  3. `FuriGlobalOverlay` ahora evalúa `musicPv.isMusicScreenOpen`, ocultando reactivamente la barra flotante al entrar a `MusicScreen` y mostrándola nuevamente al salir hacia cualquier otra pantalla.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - Ícono de notificación aparecía como un cuadrado blanco en la barra superior de Android~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `android/app/src/main/res/drawable/ic_notification_fox.xml`, `android/app/src/main/AndroidManifest.xml`, `lib/services/notification_service.dart`
+- **Qué pasaba**: Al llegar una notificación en Android, el ícono en la barra superior (status bar) y en la insignia se mostraba como un cuadrado blanco opaco sin forma reconocible.
+- **Causa raíz**:
+  1. En `notification_service.dart`, se configuró `AndroidInitializationSettings('@mipmap/ic_launcher')`.
+  2. En Android 5.0+ (API 21+), el sistema operativo exige que los íconos de notificación sean monocromáticos sobre fondo transparente (`smallIcon`). Cualquier recurso que tenga un fondo opaco o forma rectangular completa es forzado por el rasterizador de Android a rellenar todos sus píxeles opacos en blanco puro, convirtiéndolo en un cuadrado.
+  3. En `AndroidManifest.xml` no se había declarado `com.google.firebase.messaging.default_notification_icon`.
+- **Fix**:
+  1. Se diseñó el vector drawable `ic_notification_fox.xml` en `res/drawable/` con la silueta de un zorrito 🦊 y recortes transparentes con regla `evenOdd` (ojos, orejas y hocico huecos).
+  2. Se configuró `notification_fox_color` (`#FF7A00`) en `colors.xml` para el tinte naranja de la insignia expandida.
+  3. Se declararon los metadatos de ícono y color en `AndroidManifest.xml`.
+  4. Se actualizó `notification_service.dart` para inicializar y despachar con `@drawable/ic_notification_fox` y color `#FF7A00`.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - Notificaciones en el panel lateral estaban invertidas o autoreferenciadas~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/home_screen.dart` (`_NotificationPanel`), `lib/services/notification_service.dart`, tabla `notifications` (Supabase)
+- **Qué pasaba**: Al entrar con el usuario Rocío, el panel lateral de notificaciones mostraba "Rocío registró una emoción", pero correspondía en realidad a las emociones de Facu. En general, se mostraban las acciones del propio usuario en lugar de las de la pareja.
+- **Causa raíz**:
+  1. En Supabase, varias filas históricas tenían `user_id = from_user` (asignadas al propio autor en lugar de a la pareja receptora).
+  2. En `NotificationService._storePushNotification()`, el guardado de notificaciones estaba cableado con `user_id: AppState.myId`, por lo que al simular o recibir notificaciones generadas localmente, se guardaban para uno mismo.
+  3. `_NotificationPanel` mostraba el `title` y `body` crudos de la tabla sin normalizar los nombres en caso de que vinieran nombrados en tercera persona con el nombre de la cuenta activa.
+- **Fix**:
+  1. **Supabase UPDATE**: Se migraron los registros de `notifications` para asignar el `user_id` al ID de la pareja y `from_user` al emisor real.
+  2. **Persistencia coherente**: `NotificationService._storePushNotification()` comprueba `isAuthoredByMe` y almacena con `user_id = AppState.partnerId` cuando el evento fue generado por el usuario activo, y con `user_id = AppState.myId` cuando viene de la pareja.
+  3. **Normalización en UI**: Se agregaron `_formatTitle()` y `_formatBody()` en `_NotificationPanelState`, reemplazando cualquier mención del nombre propio por `AppState.partnerName`, garantizando que en la cuenta de Facu siempre se lean los eventos de Rocío, y en la de Rocío los de Facu.
+  4. En `nosotros_screen.dart`, se actualizó el título de sección de emoción de "Pareja" a `AppState.partnerName`.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - Salto forzado hacia abajo al cargar mensajes antiguos en ChatScreen al hacer scroll hacia arriba~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/chat_screen.dart` (`_ChatViewState`), `lib/providers/chat_provider.dart`
+- **Qué pasaba**: Al subir en el chat para leer mensajes viejos, la carga de los 100 mensajes anteriores expulsaba al usuario de vuelta hacia abajo (offset 0), impidiendo leer el historial de mensajes pasados.
+- **Causa raíz**: En `_ChatViewState.build()`, se ejecutaba `if (chat.messages.length != _lastMsgCount) { _lastMsgCount = chat.messages.length; _scrollToBottom(); }`. Al ser una lista invertida (`reverse: true`), cargar mensajes viejos aumenta la longitud de la lista, activando incondicionalmente el auto-scroll hacia el final (mensajes nuevos). Además, `_hasMore` no se calculaba dinámicamente con base en los resultados del primer lote.
+- **Fix**:
+  1. `_ChatViewState` almacena `_lastNewestMessageId`. Solo hace `_scrollToBottom()` si es la primera carga (`_lastMsgCount == 0`) o si el ID del mensaje más reciente (`messages.last.id`) cambió (nuevo mensaje enviado o recibido en tiempo real).
+  2. Al cargar mensajes viejos (`_messages.insertAll(0, older)`), el ID más reciente no cambia, por lo que la posición de scroll del usuario permanece completamente fija y estable.
+  3. `_hasMore = newestFirst.length >= 100` y deduplicación por ID evitan peticiones redundantes.
+  4. Indicador superior (`CircularProgressIndicator`) al cargar mensajes anteriores y banner sutil ("Inicio de los mensajes") al alcanzar el comienzo.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Preguntas de trivia/encuesta se reiniciaban en bucle infinito y reaparecían tras responderlas~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/providers/trivia_provider.dart`, `lib/screens/trivia/widgets/trivia_deck.dart`, `lib/screens/trivia/widgets/history_screen.dart`, tabla `question_answers` (Supabase)
+- **Qué pasaba**: Al responder preguntas de la trivia o encuesta, nunca terminaban: seguían apareciendo en el mazo una y otra vez en bucle sin vaciarse ni pasar limpiamente al historial.
+- **Causa raíz**:
+  1. En Supabase, la tabla `question_answers` tenía un índice único `idx_question_answers_user_date` sobre `(user_id, date)`.
+  2. En `TriviaProvider.submit()`, la mutación optimista local hacía `_answers.removeWhere((a) => a.userId == myId && a.date == _today())` y enviaba el upsert a Supabase con `onConflict: 'user_id,date'`.
+  3. En consecuencia, si el usuario respondía una 2da pregunta el mismo día, la respuesta de la pregunta anterior era sobreescrita/eliminada tanto en Supabase como en la memoria local. La primera pregunta volvía a quedar sin respuesta (`unansweredQuestions`), reapareciendo de inmediato en el mazo de cartas y haciendo que nunca pudiera completarse el mazo de trivia.
+  4. La deduplicación en caché (`_initFromCache`) y en Supabase (`_loadAnswers`) mapeaba por clave `"${userId}_${date}"`, descartando cualquier otra pregunta respondida el mismo día.
+- **Fix**:
+  1. **Migración DDL en Supabase**: Se eliminó el índice restrictivo `idx_question_answers_user_date` y se creó `CREATE UNIQUE INDEX idx_question_answers_user_question ON public.question_answers (user_id, question_id)`.
+  2. **Persistencia por Pregunta**: En `TriviaProvider.submit()`, se actualizó el upsert a `onConflict: 'user_id,question_id'` y la mutación local a `_answers.removeWhere((a) => a.userId == myId && a.questionId == questionId)`. Cada pregunta respondida queda guardada permanentemente e intacta.
+  3. **Deduplicación por Pregunta**: `_loadAnswers()` y `_initFromCache()` ahora mapean deduplicando por `"${userId}_${questionId}"`.
+  4. **Consulta Específica de Respuestas**: Nuevos métodos `getMyAnswerForQuestion(int questionId)` y `getPartnerAnswerForQuestion(int questionId)`.
+  5. **Mazo e Historial**: `TriviaDeck` consulta el estado por `questionId` y actualiza reactivamente en `didUpdateWidget`. Al agotar las preguntas, se muestra correctamente la pantalla vacía de felicitaciones (`EmptyScreen`) y todas las respuestas pasadas se listan en `HistoryScreen` ordenadas por fecha e id descendente.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - Descargas de música perdidas al intentar descargar múltiples temas concurrentemente y bloqueo de búsqueda~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/music/music_screen.dart`, `lib/providers/music_player_provider.dart`, `lib/models/download_queue_item.dart`
+- **Qué pasaba**:
+  1. Si el usuario pulsaba "GUARDAR" en varias canciones de YouTube en la pantalla de música, solo la primera iniciaba y todas las demás pulsaciones eran descartadas silenciosamente sin advertencia.
+  2. Al terminar la primera descarga, la interfaz forzaba un cambio de pestaña hacia la biblioteca (`setState(() => _currentTab = 0)`), expulsando al usuario de sus resultados de búsqueda.
+- **Causa raíz**:
+  1. El botón de guardar en los resultados validaba `(isAlreadySaved || pv.isDownloading) ? () {} : ...`. Con `_isDownloading` activo durante los 20-30 segundos que demora extraer y subir a Supabase, cualquier interacción subsiguiente era una función vacía.
+  2. No existía estructura de cola ni despachador FIFO para encolar y procesar solicitudes asíncronas concurrentes.
+- **Fix**:
+  1. **Sistema de Cola Secuencial**: Modelo `DownloadQueueItem` y lista `_downloadQueue` en `MusicPlayerProvider`. El método `addToDownloadQueue` encola de inmediato y un worker secuencial `_processQueue` ejecuta las descargas una a una sin bloquear la interacción.
+  2. **Estados en los Botones**: Cada tarjeta en los resultados muestra su estado real: "GUARDADO", "DESCARGANDO (% en vivo)", "EN COLA (#pos)" o "GUARDAR".
+  3. **No Interrupción de Búsqueda**: Se eliminó la redirección forzada a la biblioteca; el usuario puede seguir explorando y encolando libremente.
+  4. **Modal y Notificaciones**: BottomSheet modal interactivo para monitorear, cancelar o reintentar canciones en la cola, y notificaciones in-app flotantes al finalizar cada descarga en background.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Detección y bloqueo como Bot en Pinterest por inyección de scripts JavaScript en WebView~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`
+- **Qué pasaba**: Al intentar automatizar el login de Pinterest inyectando JavaScript sintético que completaba correo y contraseña y hacía clic en el botón de submit, Pinterest activaba sus escudos de seguridad (Cloudflare / Akamai), bloqueando el acceso con captchas y errores 403 por detección de bot.
+- **Causa raíz**:
+  1. Los scripts que llenan inputs en 0 milisegundos y disparan eventos sintéticos (`dispatchEvent(new Event('input'))`) carecen de flags confiables de interacción humana (`isTrusted === false`), siendo detectados inmediatamente por sistemas anti-bot modernos.
+  2. Google OAuth no permite inicios de sesión dentro de WebViews embebidos (`403: disallowed_useragent`), y el sandbox de Android no permite transferir cookies de sesión desde la app externa de Google Chrome a un WebView embebido de una app de terceros.
+- **Fix**:
+  1. **Eliminación de Scripts de Inyección**: Se suprimieron por completo los scripts de autocompletado forzado que disparaban los detectores de bot.
+  2. **Camuflaje con User-Agent Genuino**: Se configuró el User-Agent de Chrome Mobile moderno (`Chrome/128.0.0.0 Mobile Safari/537.36`) para que Pinterest lo trate como un navegador móvil real.
+  3. **Barra Rápida de Credenciales F.U.R.I**: Se incorporó una barra superior con chips de 1 toque para copiar correo (`derrame_company@yahoo.com`) y contraseña (`Zapallo1234*`) al portapapeles con feedback táctil y visual. El pegado se realiza de manera humana y natural.
+  4. **Persistencia Permanente de Sesión**: Gracias a la retención automática de cookies en SQLite por parte de `WebViewCookieManager`, una vez completado el inicio de sesión orgánico, la sesión permanece guardada permanentemente en la app y no vuelve a solicitar credenciales.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Pizarrón con sobrecarga CPU/GPU por lienzo infinito y conflicto de arrastre con teclados virtuales al tocar la nota~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/milanote/milanote_screen.dart`, `lib/screens/milanote/widgets/milanote_element_card.dart`, `lib/screens/milanote/painters/milanote_grid_painter.dart`
+- **Qué pasaba**:
+  1. Al mover notas desde cualquier parte, el teclado virtual del teléfono se abría inesperadamente, interrumpiendo el arrastre y trabando la pantalla. Se dependía de un drag handle incómodo.
+  2. El pizarrón tenía un lienzo infinito virtual de 8000x8000 px con 4000 px de margen adicional (área de 256 millones de píxeles) que consumía excesiva GPU y CPU en móviles y PC, además de permitir que el usuario se perdiera en el vacío.
+- **Causa raíz**:
+  1. `MilanoteElementCard` mantenía `TextField`s montados activamente en la tarjeta todo el tiempo. Al tocar la nota para arrastrarla, `EditableText` consumía el `PointerDownEvent` e invocaba el teclado del sistema, provocando redibujados por `viewInsets` y cancelando el gesto de arrastre de Flutter.
+  2. Un `InteractiveViewer` no restringido con `constrained: false` sobre un área descomunal de 8000x8000 px obligaba al motor gráfico a gestionar matrices y límites infinitos sin restricción física.
+- **Fix**:
+  1. **Desacoplamiento Arrastrar vs Editar**: Se crearon dos modos claros en la tarjeta. En modo normal (`_isEditing == false`), la tarjeta renderiza solo `Text` y un `GestureDetector` unificado: arrastrar desde cualquier píxel de la nota la mueve con 120 FPS sin abrir el teclado. Tocar una sola vez sin arrastrar (`onTap`) activa el modo edición (`_isEditing = true`), abriendo los `TextField`s y el teclado en la misma tarjeta con un botón "Listo" en la cabecera. Tocar fuera de la tarjeta desactiva la edición y guarda los cambios.
+  2. **Lienzo Finito Acotado**: Tablero de dimensiones finitas (`2400 x 1600` px), bordes acotados (`boundaryMargin: EdgeInsets.all(60)`), cuadrícula de 3.750 puntos en lugar de 81.000, y clamping de todas las notas dentro de los límites del tablero.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - Nombre y "en línea" solapados y montados encima del círculo de avatar en ChatScreen~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/chat_screen.dart` (`_buildAppBar`)
+- **Qué pasaba**: El nombre de la pareja y el estado ("en línea" / "escribiendo...") estaban visualmente montados por encima del círculo del avatar del chat.
+- **Causa raíz**: El `AppBar` definía `leadingWidth: 78`, pero dentro de `leading` colocaba un `Row` con `IconButton` (48px) + `CircleAvatar` (38px de diámetro) + padding de 8px = 94px. Los 16px excedentes desbordaban hacia el espacio del `title` (que por defecto en Material se posiciona en un offset fijo respecto a `leadingWidth`), haciendo que el texto del título se dibujara encima del borde derecho del avatar.
+- **Fix**: Se reestructuró la cabecera: `leadingWidth: 44` conteniendo exclusivamente el botón de volver (`IconButton`), y se trasladó el `CircleAvatar` al widget `title` dentro de un `Row` con espaciado explícito (`SizedBox(width: 12)`) y `titleSpacing: 0`. Esto garantiza separación limpia e inequívoca de 12px entre el avatar y el texto y cero solapamiento.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Botones de notificación musical abrían la app en vez de controlar la música, usaban emojis y la música se cortaba al prender la pantalla~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/services/notification_service.dart`, `lib/providers/music_player_provider.dart`, `lib/services/sound_service.dart`, `lib/main.dart`, `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/res/drawable/`
+- **Qué pasaba**: 
+  1. Al pulsar las teclas de Anterior, Play/Pausa o Siguiente en la notificación del celular, la notificación abría la app en primer plano en vez de pausar o cambiar de tema directamente en segundo plano.
+  2. Los botones de la notificación mostraban emojis (`⏮️`, `▶️`, `⏸️`, `⏭️`) en lugar de iconos nativos multimedia.
+  3. Al reproducir música con la pantalla apagada funcionaba, pero al volver a encender la pantalla del celular la música se cortaba o se apagaba automáticamente.
+- **Causa raíz**:
+  1. `AndroidNotificationAction` tenía configurado `showsUserInterface: true`, lo cual fuerza a Android a lanzar la Activity (`MainActivity`) en primer plano con un `PendingIntent.getActivity` en cada toque. Además, faltaba `onDidReceiveBackgroundNotificationResponse` con aislamiento `@pragma('vm:entry-point')` y comunicación por `IsolateNameServer`.
+  2. Las acciones se definieron solo con strings de texto que contenían caracteres emoji unicode (`'⏮️'`, etc.) sin asociar recursos gráficos `DrawableResourceAndroidBitmap`.
+  3. En `main.dart`, el listener del ciclo de vida `didChangeAppLifecycleState` invocaba incondicionalmente `SoundService().startBackgroundMusic()` al recibir `AppLifecycleState.resumed` (evento emitido cada vez que el celular prende la pantalla y reactiva la ventana). `SoundService` solicitaba foco de audio exclusivo `AndroidAudioFocus.gain` para reproducir el loop de ambiente `musicaDeFondo.mp3`, provocando que el sistema operativo Android le revocara el foco de audio a `MusicPlayerProvider._player` y detuviera de inmediato la canción. Además, `MusicPlayerProvider._player` no tenía configurado `AudioContext` con `stayAwake: true` ni permisos `WAKE_LOCK` y `FOREGROUND_SERVICE_MEDIA_PLAYBACK`.
+- **Fix**:
+  1. Acciones de notificación con `showsUserInterface: false`, callback background `notificationTapBackground` con `@pragma('vm:entry-point')` y comunicación mediante puerto `IsolateNameServer` (`furi_music_isolate_port`).
+  2. Creación de 4 vector drawables nativos de Material en `res/drawable/` (`ic_music_prev.xml`, `ic_music_play.xml`, `ic_music_pause.xml`, `ic_music_next.xml`), textos limpios sin emojis ("Anterior", "Pausar"/"Reproducir", "Siguiente") y `MediaStyleInformation` con visibilidad pública para pantalla de bloqueo.
+  3. Bandera de exclusión `SoundService.isMusicPlaying` que impide que `SoundService().startBackgroundMusic()` arranque o robe el foco si el usuario está escuchando canciones. Configuración de `_mediaAudioContext` con `stayAwake: true`, `usageType: media`, `contentType: music`, `audioFocus: gain` y permisos `WAKE_LOCK`, `FOREGROUND_SERVICE` y `FOREGROUND_SERVICE_MEDIA_PLAYBACK` en `AndroidManifest.xml`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
 ### ~~ALTA - Sistema de vistos (ticks) roto y chat tosco sin diseño ni fluidez WhatsApp~~ ✅ RESUELTO 2026-10-19
 - **Dónde**: `lib/models/message.dart`, `lib/providers/chat_provider.dart`, `lib/services/notification_service.dart`, `bot-furi/server.js`, `lib/screens/chat_screen.dart`, `lib/screens/chat/widgets/chat_message_tile.dart`
 - **Qué pasaba**: El sistema de vistos no funcionaba correctamente: el doble check gris de entrega casi nunca se marcaba (porque solo se actualizaba si el destinatario ya tenía el chat abierto al instante del insert), los checks azules fallaban si `read` era true sin timestamp `readAt`, y el chat se sentía tosco (sin botón de volver, layout rígido con Stack y cálculo manual de teclado, fuentes cómic `Bangers` difíciles de leer).

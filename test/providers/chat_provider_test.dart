@@ -54,4 +54,42 @@ void main() {
     final p = build();
     expect(p.isDownloading(1), false);
   });
+
+  group('Paginación de mensajes (100 iniciales + carga de 100 anteriores)', () {
+    test('hasMore inicia en true y se actualiza', () {
+      final p = build();
+      expect(p.hasMore, true);
+      p.setHasMoreForTest(false);
+      expect(p.hasMore, false);
+    });
+
+    test('addOlderMessagesForTest antepone mensajes más antiguos al inicio', () {
+      final p = build();
+      final newestMsg = msg(id: 101);
+      p.setMessagesForTest([newestMsg]);
+
+      final olderBatch = [
+        msg(id: 99),
+        msg(id: 100),
+      ];
+      p.addOlderMessagesForTest(olderBatch);
+
+      expect(p.messages.length, 3);
+      expect(p.messages.map((m) => m.id).toList(), [99, 100, 101]);
+      // El mensaje más reciente sigue estando al final
+      expect(p.messages.last.id, 101);
+    });
+
+    test('addOlderMessagesForTest deduplica mensajes existentes', () {
+      final p = build();
+      p.setMessagesForTest([msg(id: 100), msg(id: 101)]);
+
+      // Intentamos cargar un lote que incluye id 100 ya cargado y uno nuevo 99
+      p.addOlderMessagesForTest([msg(id: 99), msg(id: 100)]);
+
+      expect(p.messages.length, 3);
+      expect(p.messages.map((m) => m.id).toList(), [99, 100, 101]);
+    });
+  });
 }
+

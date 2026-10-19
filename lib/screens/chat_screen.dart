@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -65,6 +66,7 @@ class _ChatViewState extends State<_ChatView> {
   bool _hasText = false;
   DateTime? _recordStarted;
   Timer? _recordTicker;
+  int? _lastNewestMessageId;
   int _lastMsgCount = 0;
 
   @override
@@ -84,9 +86,9 @@ class _ChatViewState extends State<_ChatView> {
   void _onScroll() {
     if (!_scrollCtrl.hasClients) return;
     final pv = context.read<ChatProvider>();
-    if (pv.messages.isEmpty) return;
+    if (pv.messages.isEmpty || !pv.hasMore || pv.loadingOlder) return;
     final pos = _scrollCtrl.position;
-    if (pos.pixels >= pos.maxScrollExtent - 40) {
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
       pv.loadOlderMessages();
     }
   }
@@ -536,9 +538,18 @@ class _ChatViewState extends State<_ChatView> {
     final chat = context.watch<ChatProvider>();
     final t = getTheme(widget.mode);
 
+    final currentNewestId =
+        chat.messages.isNotEmpty ? chat.messages.last.id : null;
     if (chat.messages.length != _lastMsgCount) {
+      final isNewMessageAppended = _lastMsgCount == 0 ||
+          (currentNewestId != null && currentNewestId != _lastNewestMessageId);
       _lastMsgCount = chat.messages.length;
-      _scrollToBottom();
+      _lastNewestMessageId = currentNewestId;
+      if (isNewMessageAppended) {
+        _scrollToBottom();
+      }
+    } else if (currentNewestId != _lastNewestMessageId) {
+      _lastNewestMessageId = currentNewestId;
     }
 
     return Scaffold(
@@ -569,91 +580,274 @@ class _ChatViewState extends State<_ChatView> {
     );
   }
 
+  ImageProvider? _getAvatarImageProvider(String? avatarUrl) {
+    if (avatarUrl == null || avatarUrl.isEmpty) return null;
+    if (avatarUrl.startsWith('data:image')) {
+      final comma = avatarUrl.indexOf(',');
+      if (comma != -1) {
+        final base64Str = avatarUrl.substring(comma + 1);
+        try {
+          return MemoryImage(base64Decode(base64Str));
+        } catch (_) {
+          return null;
+        }
+      }
+    } else if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+      return NetworkImage(avatarUrl);
+    } else if (File(avatarUrl).existsSync()) {
+      return FileImage(File(avatarUrl));
+    }
+    return null;
+  }
+
+  Future<void> _pickAndSetMyAvatar(BuildContext context) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: ChatStyle.panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Cambiar mi foto de perfil',
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: ChatStyle.primary),
+                title: Text(
+                  'Elegir de la galería',
+                  style: GoogleFonts.plusJakartaSans(color: Colors.white),
+                ),
+                onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: ChatStyle.primary),
+                title: Text(
+                  'Tomar foto con la cámara',
+                  style: GoogleFonts.plusJakartaSans(color: Colors.white),
+                ),
+                onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null || !context.mounted) return;
+
+    try {
+      final picked = await _picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 82,
+      );
+      if (picked == null || !context.mounted) return;
+
+      final bytes = await File(picked.path).readAsBytes();
+      final base64Image = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+
+      if (!context.mounted) return;
+      await context.read<ChatProvider>().updateMyAvatar(base64Image);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '¡Foto de perfil actualizada!',
+              style: GoogleFonts.plusJakartaSans(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFF25D366),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      developer.log('Error actualizando foto de perfil: $e');
+    }
+  }
+
+  void _showProfileDialog(BuildContext context, String partnerName, String? avatarUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: ChatStyle.panel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 54,
+                backgroundColor: const Color(0xFF2A2A2A),
+                backgroundImage: _getAvatarImageProvider(avatarUrl),
+                child: (avatarUrl == null || avatarUrl.isEmpty)
+                    ? Text(
+                        partnerName.isNotEmpty ? partnerName[0].toUpperCase() : 'P',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 42,
+                          color: Colors.white,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                partnerName,
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Pareja F.U.R.I',
+                style: GoogleFonts.plusJakartaSans(
+                  color: ChatStyle.subText,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ChatStyle.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                ),
+                icon: const Icon(Icons.camera_alt, size: 18),
+                label: Text(
+                  'Cambiar mi foto de perfil',
+                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _pickAndSetMyAvatar(context);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   PreferredSizeWidget _buildAppBar(BuildContext context, ChatProvider chat, ThemeSet t) {
     final partnerName = chat.partnerName.isNotEmpty
         ? chat.partnerName
         : (AppState.partnerName.isNotEmpty ? AppState.partnerName : 'Pareja');
     final initial = partnerName.isNotEmpty ? partnerName[0].toUpperCase() : 'P';
+    final partnerAvatar = chat.partnerAvatarUrl;
 
     return AppBar(
       backgroundColor: ChatStyle.appbarBg,
       elevation: 0,
       scrolledUnderElevation: 0,
-      leadingWidth: 78,
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
-            onPressed: () => Navigator.of(context).maybePop(),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 4),
-          CircleAvatar(
-            radius: 19,
-            backgroundColor: t.a,
-            child: Text(
-              initial,
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: t.dark,
-              ),
-            ),
-          ),
-        ],
+      leadingWidth: 44,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+        onPressed: () => Navigator.of(context).maybePop(),
+        padding: const EdgeInsets.only(left: 6),
       ),
-      titleSpacing: 4,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            partnerName,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 1),
-          if (chat.partnerTyping)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(
-                  width: 8,
-                  height: 8,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    color: Color(0xFF25D366),
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  'escribiendo...',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF25D366),
-                  ),
-                ),
-              ],
-            )
-          else
-            Text(
-              'en línea',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: ChatStyle.subText,
+      titleSpacing: 0,
+      title: InkWell(
+        onTap: () => _showProfileDialog(context, partnerName, partnerAvatar),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: t.a,
+                backgroundImage: _getAvatarImageProvider(partnerAvatar),
+                child: (partnerAvatar == null || partnerAvatar.isEmpty)
+                    ? Text(
+                        initial,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: t.dark,
+                        ),
+                      )
+                    : null,
               ),
-            ),
-        ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      partnerName,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 1),
+                    if (chat.partnerTyping)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 8,
+                            height: 8,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Color(0xFF25D366),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'escribiendo...',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF25D366),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Text(
+                        'en línea',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: ChatStyle.subText,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 22),
+          tooltip: 'Cambiar mi foto de perfil',
+          onPressed: () => _pickAndSetMyAvatar(context),
+        ),
         IconButton(
           icon: const Icon(Icons.refresh, color: Colors.white70, size: 22),
           tooltip: 'Recargar mensajes',
@@ -771,12 +965,56 @@ class _ChatViewState extends State<_ChatView> {
 
   Widget _buildChatList(ChatProvider chat, ThemeSet t) {
     final items = chat.messages.reversed.toList();
+    final bool showTopLoader = chat.loadingOlder;
+    final bool showStartBanner = !chat.hasMore && items.isNotEmpty;
+    final int extraTopItem = (showTopLoader || showStartBanner) ? 1 : 0;
+    final int itemCount = items.length + extraTopItem;
+
     return ListView.builder(
       controller: _scrollCtrl,
       reverse: true,
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-      itemCount: items.length,
+      itemCount: itemCount,
       itemBuilder: (ctx, i) {
+        if (i == items.length) {
+          if (showTopLoader) {
+            return Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: ChatStyle.primary,
+                  ),
+                ),
+              ),
+            );
+          }
+          if (showStartBanner) {
+            return Center(
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: ChatStyle.panel.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Inicio de los mensajes',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: ChatStyle.subText,
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+
         final m = items[i];
         final next = i + 1 < items.length ? items[i + 1] : null;
         final bool showDateHeader =

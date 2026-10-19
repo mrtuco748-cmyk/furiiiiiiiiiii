@@ -22,7 +22,7 @@ class ResponsiveWrapper extends StatelessWidget {
             return Container(
               color: const Color(0xFF0A0A0A),
               child: Center(
-                child: Container(
+                child: SizedBox(
                   width: maxContentWidth,
                   height: h,
                   child: builder(context, maxContentWidth, h),

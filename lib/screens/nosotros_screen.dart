@@ -248,7 +248,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         .order('created_at', ascending: false)
         .limit(1);
     if (data.isEmpty) return null;
-    final letter = data[0] as Map<String, dynamic>;
+    final letter = data[0];
     // No presentar cartas aún selladas (apertura programada en el futuro).
     final openRaw = letter['scheduled_open'];
     final openAt = openRaw == null ? null : DateTime.tryParse(openRaw.toString());
@@ -782,7 +782,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                           child: SingleChildScrollView(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               ..._myMoods.map((m) => _moodRow(m, 'Yo', t)),
-                              ..._partnerMoods.map((m) => _moodRow(m, 'Pareja', t)),
+                              ..._partnerMoods.map((m) => _moodRow(m, AppState.partnerName, t)),
                               if (_myMoods.isEmpty && _partnerMoods.isEmpty)
                                 Text('Sin emociones hoy', style: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.5), fontSize: 12)),
                             ]),

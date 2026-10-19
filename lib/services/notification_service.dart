@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -15,6 +17,17 @@ import '../supabase_config.dart';
 import '../app_state.dart';
 import '../firebase_options.dart';
 import 'local_cache.dart';
+
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse notificationResponse) {
+  final actionId = notificationResponse.actionId;
+  if (actionId != null && actionId.isNotEmpty) {
+    final sendPort = IsolateNameServer.lookupPortByName(NotificationService.musicPortName);
+    if (sendPort != null) {
+      sendPort.send(actionId);
+    }
+  }
+}
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -70,6 +83,8 @@ class NotificationService {
   /// Callback para acciones de la botonera musical desde la ventana flotante del celular
   static void Function(String actionId)? onMusicAction;
   static const int musicNotificationId = 99999;
+  static const String musicPortName = 'furi_music_isolate_port';
+  static ReceivePort? _musicReceivePort;
 
   /// Firebase Messaging solo tiene plugin nativo en Android/iOS.
   /// En desktop (Windows, macOS) el MethodChannel no existe y lanza
@@ -83,27 +98,42 @@ class NotificationService {
     if (_initialized) return;
     _initialized = true;
 
+    // Configurar canal de comunicación entre background isolate y main isolate para controles de música
+    try {
+      _musicReceivePort?.close();
+      _musicReceivePort = ReceivePort();
+      IsolateNameServer.removePortNameMapping(musicPortName);
+      IsolateNameServer.registerPortWithName(_musicReceivePort!.sendPort, musicPortName);
+      _musicReceivePort!.listen((message) {
+        if (message is String) {
+          onMusicAction?.call(message);
+        }
+      });
+    } catch (e) {
+      debugPrint('NotificationService isolate port setup error: $e');
+    }
+
     try {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
       _firebaseAvailable = true;
-      print('[FURI] Firebase core OK');
+      debugPrint('[FURI] Firebase core OK');
     } catch (e) {
       _firebaseAvailable = false;
-      print('[FURI] Firebase core error: $e');
+      debugPrint('[FURI] Firebase core error: $e');
     }
     if (_firebaseAvailable && _supportsMessaging) {
       try {
         _fcm = FirebaseMessaging.instance;
-        print('[FURI] Firebase messaging OK');
+        debugPrint('[FURI] Firebase messaging OK');
       } catch (e) {
         _firebaseAvailable = false;
-        print('[FURI] Firebase messaging error: $e');
+        debugPrint('[FURI] Firebase messaging error: $e');
       }
     } else {
       _fcm = null;
     }
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('@drawable/ic_notification_fox');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -124,6 +154,7 @@ class NotificationService {
           onNotificationTap?.call(data);
         }
       },
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
     if (_firebaseAvailable && _fcm != null) {
@@ -251,11 +282,22 @@ class NotificationService {
   ) async {
     final type = data['type'] as String? ?? 'notification';
     try {
-      // El push lo genera la actividad de la pareja (vía triggers), así que el
-      // remitente en la bandeja es el partner, NO el usuario activo.
+      final myName = (AppState.myName ?? AppState.identity ?? '').trim().toLowerCase().replaceAll('í', 'i');
+      final cleanTitle = title.trim().toLowerCase().replaceAll('í', 'i');
+
+      // Si el título es el nombre propio, el push fue generado por una acción propia
+      // y está destinado a la pareja (partnerId). Si no, vino de la pareja para mí (myId).
+      final bool isAuthoredByMe = myName.isNotEmpty &&
+          (cleanTitle == myName || (data['from_user'] != null && data['from_user'] == AppState.myId));
+
+      final targetUserId = isAuthoredByMe ? AppState.partnerId : AppState.myId;
+      final senderUserId = isAuthoredByMe ? AppState.myId : AppState.partnerId;
+
+      if (targetUserId == null) return;
+
       await SupabaseConfig.client.from('notifications').insert({
-        'user_id': AppState.myId,
-        'from_user': AppState.partnerId,
+        'user_id': targetUserId,
+        'from_user': senderUserId,
         'type': type,
         'title': title,
         'body': body,
@@ -283,6 +325,8 @@ class NotificationService {
         showWhen: true,
         enableVibration: true,
         playSound: true,
+        icon: '@drawable/ic_notification_fox',
+        color: Color(0xFFFF7A00),
       );
       const iosDetails = DarwinNotificationDetails(
         presentAlert: true,
@@ -331,20 +375,23 @@ class NotificationService {
       final actions = <AndroidNotificationAction>[
         const AndroidNotificationAction(
           'music_prev',
-          '⏮️',
-          showsUserInterface: true,
+          'Anterior',
+          icon: DrawableResourceAndroidBitmap('ic_music_prev'),
+          showsUserInterface: false,
           cancelNotification: false,
         ),
         AndroidNotificationAction(
           'music_play_pause',
-          isPlaying ? '⏸️' : '▶️',
-          showsUserInterface: true,
+          isPlaying ? 'Pausar' : 'Reproducir',
+          icon: DrawableResourceAndroidBitmap(isPlaying ? 'ic_music_pause' : 'ic_music_play'),
+          showsUserInterface: false,
           cancelNotification: false,
         ),
         const AndroidNotificationAction(
           'music_next',
-          '⏭️',
-          showsUserInterface: true,
+          'Siguiente',
+          icon: DrawableResourceAndroidBitmap('ic_music_next'),
+          showsUserInterface: false,
           cancelNotification: false,
         ),
       ];
@@ -364,6 +411,8 @@ class NotificationService {
         color: const Color(0xFF00F0FF),
         playSound: false,
         enableVibration: false,
+        visibility: NotificationVisibility.public,
+        styleInformation: const MediaStyleInformation(),
       );
 
       await _localNotifications.show(
@@ -466,6 +515,8 @@ class NotificationService {
         showWhen: true,
         enableVibration: true,
         playSound: true,
+        icon: '@drawable/ic_notification_fox',
+        color: Color(0xFFFF7A00),
       );
       const iosDetails = DarwinNotificationDetails(
         presentAlert: true,

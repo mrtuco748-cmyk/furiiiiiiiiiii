@@ -684,11 +684,6 @@ class _BrutalGridState extends State<_BrutalGrid>
     context.push(RouterRoutes.trivia, extra: _mode);
   }
 
-  void _openPoemas(double x, double y) {
-    context.read<DeckProvider>().load();
-    setState(() => _showPoemas = true);
-  }
-
   void _openMazo(double x, double y) {
     context.read<DeckProvider>().load();
     setState(() => _showDeck = true);
@@ -1049,7 +1044,7 @@ Widget tbLine({required Color color, required Color borderColor}) {
 /// notificaciones (leídas/no leídas), permite abrir y darse por aludido.
 class _NotificationPanel extends StatefulWidget {
   final ThemeSet theme;
-  const _NotificationPanel({Key? key, required this.theme}) : super(key: key);
+  const _NotificationPanel({super.key, required this.theme});
 
   @override
   State<_NotificationPanel> createState() => _NotificationPanelState();
@@ -1072,17 +1067,65 @@ class _NotificationPanelState extends State<_NotificationPanel> {
     setState(() { _loading = true; _error = null; });
     try {
       final list = await NotificationService.getNotifications();
-      if (mounted) setState(() { _items = list; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _items = list;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      if (mounted) { _loading = false; _error = e.toString(); }
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
   Future<void> _markAllRead() async {
     await NotificationService.markAllAsRead();
-    if (mounted) setState(() {
-      for (final n in _items) { n['read'] = true; }
-    });
+    if (mounted) {
+      setState(() {
+        for (final n in _items) {
+          n['read'] = true;
+        }
+      });
+    }
+  }
+
+  String _formatTitle(String? rawTitle) {
+    final title = (rawTitle ?? '').trim();
+    final myName = (AppState.myName ?? AppState.identity ?? 'Yo').trim();
+    final partnerName = AppState.partnerName;
+
+    if (_matchesName(title, myName)) {
+      return partnerName;
+    }
+    return title.isNotEmpty ? title : partnerName;
+  }
+
+  String _formatBody(String? rawBody) {
+    String body = (rawBody ?? '').trim();
+    if (body.isEmpty) return '';
+
+    final myName = (AppState.myName ?? AppState.identity ?? 'Yo').trim();
+    final partnerName = AppState.partnerName;
+
+    final myVariants = [myName, myName.replaceAll('í', 'i').replaceAll('Í', 'I')];
+    for (final v in myVariants) {
+      if (v.isNotEmpty && body.contains(v)) {
+        body = body.replaceAll(v, partnerName);
+      }
+    }
+    return body;
+  }
+
+  bool _matchesName(String text, String name) {
+    if (text.isEmpty || name.isEmpty) return false;
+    final t = text.trim().toLowerCase().replaceAll('í', 'i');
+    final n = name.trim().toLowerCase().replaceAll('í', 'i');
+    return t == n;
   }
 
   void _open(Map<String, dynamic> n) {
@@ -1100,9 +1143,9 @@ class _NotificationPanelState extends State<_NotificationPanel> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
         ),
-        title: Text(n['title']?.toString() ?? '',
+        title: Text(_formatTitle(n['title']?.toString()),
             style: GoogleFonts.bangers(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w900)),
-        content: Text(n['body']?.toString() ?? '',
+        content: Text(_formatBody(n['body']?.toString()),
             style: GoogleFonts.bangers(fontSize: 14, color: Colors.white70)),
         actions: [
           if (route != null)
@@ -1162,6 +1205,18 @@ class _NotificationPanelState extends State<_NotificationPanel> {
                         letterSpacing: 1.2,
                       ),
                     ),
+                    const Spacer(),
+                    if (_items.any((n) => n['read'] != true))
+                      GestureDetector(
+                        onTap: _markAllRead,
+                        child: Text(
+                          'LEER TODAS',
+                          style: GoogleFonts.bangers(
+                            color: t.b,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1230,11 +1285,11 @@ class _NotificationPanelState extends State<_NotificationPanel> {
                 Icon(read ? Icons.mark_email_read : Icons.markunread, color: color, size: 20),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(n['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  Text(_formatTitle(n['title']?.toString()), maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.bangers(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
                   if ((n['body']?.toString() ?? '').isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text(n['body'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                    Text(_formatBody(n['body']?.toString()), maxLines: 2, overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.bangers(color: Colors.white54, fontSize: 11)),
                   ],
                 ])),
@@ -1282,7 +1337,6 @@ class _ShortcutPanel extends StatelessWidget {
   final VoidCallback onManageShortcuts;
 
   const _ShortcutPanel({
-    super.key,
     required this.theme,
     required this.userShortcuts,
     required this.onAction,

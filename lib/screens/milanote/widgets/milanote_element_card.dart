@@ -51,6 +51,9 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
   late final TextEditingController _contentCtrl;
   Timer? _debounceTimer;
 
+  // Estado de edición in-place: arrastrar para mover, tocar para editar
+  bool _isEditing = false;
+
   // Arrastre suave local para 60/120 FPS sin reconstruir todo el árbol de widgets
   double _dragLocalDx = 0.0;
   double _dragLocalDy = 0.0;
@@ -73,6 +76,12 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
     if (oldWidget.element.id != widget.element.id) {
       _titleCtrl.text = widget.element.title;
       _contentCtrl.text = widget.element.content;
+      _isEditing = false;
+    } else if (oldWidget.isSelected && !widget.isSelected) {
+      if (_isEditing) {
+        _saveChanges();
+        _isEditing = false;
+      }
     }
   }
 
@@ -83,6 +92,26 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
     _contentCtrl.dispose();
     _newChecklistCtrl.dispose();
     super.dispose();
+  }
+
+  void _saveChanges() {
+    _debounceTimer?.cancel();
+    widget.onUpdate(widget.element.copyWith(
+      title: _titleCtrl.text,
+      content: _contentCtrl.text,
+    ));
+  }
+
+  void _finishEditing() {
+    FocusScope.of(context).unfocus();
+    _saveChanges();
+    setState(() => _isEditing = false);
+  }
+
+  void _startEditing() {
+    HapticFeedback.lightImpact();
+    widget.onTap();
+    setState(() => _isEditing = true);
   }
 
   void _handleDragStart() {
@@ -175,27 +204,19 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
       left: el.x + _dragLocalDx,
       top: el.y + _dragLocalDy,
       child: RepaintBoundary(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onTap,
-          onPanStart: (_) => _handleDragStart(),
-          onPanUpdate: _handleDragUpdate,
-          onPanEnd: (_) => _handleDragEnd(),
-          onPanCancel: _handleDragEnd,
-          child: Container(
-            width: el.width,
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(14),
-              border: (widget.isSelected || widget.isConnectingSource)
-                  ? Border.all(
-                      color: widget.isConnectingSource
-                          ? const Color(0xFF39FF14)
-                          : const Color(0xFF00E5FF),
-                      width: 2.5,
-                    )
-                  : null,
-              boxShadow: [
+        child: Container(
+          width: el.width,
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              if (widget.isConnectingSource)
+                BoxShadow(
+                  color: const Color(0xFF39FF14).withValues(alpha: 0.4),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                )
+              else
                 BoxShadow(
                   color: Colors.black.withValues(
                     alpha: _isDragging ? 0.45 : (widget.isSelected ? 0.35 : 0.15),
@@ -203,35 +224,68 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
                   blurRadius: _isDragging ? 22 : (widget.isSelected ? 14 : 6),
                   offset: _isDragging ? const Offset(0, 8) : const Offset(0, 3),
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. HEADER DE ARRASTRE Y TÍTULO DIRECTO (INLINE)
-                _buildHeaderWithDragHandle(textColor, isDark),
-
-                // 2. CUERPO EDITABLE DIRECTAMENTE SEGÚN TIPO
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: _buildCardBody(textColor, isDark),
-                ),
-
-                // 3. BARRA DE HERRAMIENTAS MILANOTE (si está seleccionada)
-                if (widget.isSelected)
-                  _buildMilanoteToolbar(isDark, textColor),
-              ],
-            ),
+            ],
           ),
+          child: _isEditing
+              ? _buildEditingCard(textColor, isDark)
+              : _buildDraggableCard(textColor, isDark),
         ),
       ),
     );
   }
 
-  Widget _buildHeaderWithDragHandle(Color textColor, bool isDark) {
+  Widget _buildDraggableCard(Color textColor, bool isDark) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _startEditing,
+      onPanStart: (_) => _handleDragStart(),
+      onPanUpdate: _handleDragUpdate,
+      onPanEnd: (_) => _handleDragEnd(),
+      onPanCancel: _handleDragEnd,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 1. HEADER (Limpio, sin drag handle, título nítido)
+          _buildDraggableHeader(textColor, isDark),
+
+          // 2. CUERPO EN TEXTO (sin TextFields, respuesta instantánea al drag)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: _buildViewCardBody(textColor, isDark),
+          ),
+
+          // 3. BARRA DE HERRAMIENTAS MILANOTE (si está seleccionada)
+          if (widget.isSelected)
+            _buildMilanoteToolbar(isDark, textColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditingCard(Color textColor, bool isDark) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // HEADER CON TEXTFIELD Y BOTÓN "LISTO" (✓)
+        _buildEditingHeader(textColor, isDark),
+
+        // CUERPO EDITABLE CON TEXTFIELD
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: _buildEditingCardBody(textColor, isDark),
+        ),
+
+        // BARRA DE HERRAMIENTAS MILANOTE
+        _buildMilanoteToolbar(isDark, textColor),
+      ],
+    );
+  }
+
+  Widget _buildDraggableHeader(Color textColor, bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: isDark
             ? Colors.white.withValues(alpha: 0.08)
@@ -240,49 +294,116 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
       ),
       child: Row(
         children: [
-          // Icono de agarre / Drag Handle
-          MouseRegion(
-            cursor: _isDragging ? SystemMouseCursors.grabbing : SystemMouseCursors.grab,
-            child: Icon(
-              Icons.drag_indicator_rounded,
-              size: 16,
-              color: textColor.withValues(alpha: 0.6),
-            ),
-          ),
-          const SizedBox(width: 4),
-
-          // Icono del tipo
           Icon(
             _typeIcon(widget.element.type),
             size: 15,
-            color: textColor.withValues(alpha: 0.7),
+            color: textColor.withValues(alpha: 0.75),
           ),
           const SizedBox(width: 8),
-
-          // TÍTULO EDITABLE DIRECTAMENTE EN LA NOTA (INLINE)
           Expanded(
-            child: TextField(
-              controller: _titleCtrl,
+            child: Text(
+              _titleCtrl.text.isNotEmpty
+                  ? _titleCtrl.text
+                  : _defaultTitleForType(widget.element.type),
               style: GoogleFonts.plusJakartaSans(
                 color: textColor,
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
               ),
-              decoration: InputDecoration(
-                hintText: _defaultTitleForType(widget.element.type),
-                hintStyle: GoogleFonts.plusJakartaSans(
-                  color: textColor.withValues(alpha: 0.4),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (widget.isSelected)
+            Icon(
+              Icons.touch_app_rounded,
+              size: 14,
+              color: textColor.withValues(alpha: 0.5),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditingHeader(Color textColor, bool isDark) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (_) => _handleDragStart(),
+      onPanUpdate: _handleDragUpdate,
+      onPanEnd: (_) => _handleDragEnd(),
+      onPanCancel: _handleDragEnd,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.black.withValues(alpha: 0.08),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              _typeIcon(widget.element.type),
+              size: 15,
+              color: textColor.withValues(alpha: 0.75),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _titleCtrl,
+                style: GoogleFonts.plusJakartaSans(
+                  color: textColor,
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
+                decoration: InputDecoration(
+                  hintText: _defaultTitleForType(widget.element.type),
+                  hintStyle: GoogleFonts.plusJakartaSans(
+                    color: textColor.withValues(alpha: 0.4),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: (_) => _onFieldChanged(),
               ),
-              onChanged: (_) => _onFieldChanged(),
             ),
-          ),
-        ],
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: _finishEditing,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.22)
+                      : Colors.black.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.check_rounded,
+                      size: 13,
+                      color: textColor,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Listo',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: textColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -325,12 +446,12 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
     }
   }
 
-  Widget _buildCardBody(Color textColor, bool isDark) {
+  Widget _buildViewCardBody(Color textColor, bool isDark) {
     switch (widget.element.type) {
       case 'board':
-        return _buildBoardBody(textColor);
+        return _buildViewBoardBody(textColor);
       case 'checklist':
-        return _buildChecklistBody(textColor);
+        return _buildViewChecklistBody(textColor);
       case 'colorSwatch':
         return _buildColorSwatchBody(textColor);
       case 'column':
@@ -338,21 +459,61 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
       case 'drawing':
         return _buildDrawingBody(textColor);
       case 'image':
-        return _buildImageBody(textColor);
+        return _buildViewImageBody(textColor);
       case 'note':
       default:
-        return _buildNoteBody(textColor);
+        return _buildViewNoteBody(textColor);
     }
   }
 
-  // NOTA: ESCRITURA TOTALMENTE DIRECTA E INLINE
-  Widget _buildNoteBody(Color textColor) {
+  Widget _buildEditingCardBody(Color textColor, bool isDark) {
+    switch (widget.element.type) {
+      case 'board':
+        return _buildEditingBoardBody(textColor);
+      case 'checklist':
+        return _buildEditingChecklistBody(textColor);
+      case 'colorSwatch':
+        return _buildColorSwatchBody(textColor);
+      case 'column':
+        return _buildColumnBody(textColor);
+      case 'drawing':
+        return _buildDrawingBody(textColor);
+      case 'image':
+        return _buildEditingImageBody(textColor);
+      case 'note':
+      default:
+        return _buildEditingNoteBody(textColor);
+    }
+  }
+
+  Widget _buildViewNoteBody(Color textColor) {
+    final text = _contentCtrl.text;
+    final hasText = text.trim().isNotEmpty;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      alignment: Alignment.topLeft,
+      child: Text(
+        hasText ? text : 'Toca una vez para editar...',
+        style: GoogleFonts.plusJakartaSans(
+          color: hasText
+              ? textColor.withValues(alpha: 0.9)
+              : textColor.withValues(alpha: 0.4),
+          fontSize: 13,
+          height: 1.45,
+          fontStyle: hasText ? FontStyle.normal : FontStyle.italic,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditingNoteBody(Color textColor) {
     return TextField(
       controller: _contentCtrl,
+      autofocus: true,
       maxLines: null,
       minLines: 3,
       style: GoogleFonts.plusJakartaSans(
-        color: textColor.withValues(alpha: 0.9),
+        color: textColor.withValues(alpha: 0.95),
         fontSize: 13,
         height: 1.45,
       ),
@@ -370,8 +531,63 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
     );
   }
 
-  // SUB-TABLERO MILANOTE
-  Widget _buildBoardBody(Color textColor) {
+  Widget _buildViewBoardBody(Color textColor) {
+    final text = _contentCtrl.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (text.isNotEmpty) ...[
+          Text(
+            text,
+            style: GoogleFonts.plusJakartaSans(
+              color: textColor.withValues(alpha: 0.8),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        GestureDetector(
+          onTap: () {
+            if (widget.onOpenSubBoard != null && widget.element.id != null) {
+              HapticFeedback.mediumImpact();
+              widget.onOpenSubBoard!(
+                widget.element.id!,
+                _titleCtrl.text.isNotEmpty ? _titleCtrl.text : 'Sub-Tablero',
+              );
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2024),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.folder_open_rounded,
+                  size: 16,
+                  color: Color(0xFF00E5FF),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Entrar al Tablero',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditingBoardBody(Color textColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -436,8 +652,77 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
     );
   }
 
-  // CHECKLIST DIRECTO E INTERACTIVO
-  Widget _buildChecklistBody(Color textColor) {
+  Widget _buildViewChecklistBody(Color textColor) {
+    final items = List<Map<String, dynamic>>.from(
+      (widget.element.data['items'] as List?) ?? [],
+    );
+
+    if (items.isEmpty) {
+      return Container(
+        constraints: const BoxConstraints(minHeight: 40),
+        alignment: Alignment.topLeft,
+        child: Text(
+          'Toca para añadir tareas...',
+          style: GoogleFonts.plusJakartaSans(
+            color: textColor.withValues(alpha: 0.4),
+            fontSize: 12,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ...List.generate(items.length, (idx) {
+          final item = items[idx];
+          final isChecked = item['checked'] == true;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    items[idx]['checked'] = !isChecked;
+                    final updatedData = Map<String, dynamic>.from(widget.element.data);
+                    updatedData['items'] = items;
+                    widget.onUpdate(widget.element.copyWith(data: updatedData));
+                  },
+                  child: Icon(
+                    isChecked
+                        ? Icons.check_box_rounded
+                        : Icons.check_box_outline_blank_rounded,
+                    size: 18,
+                    color: isChecked
+                        ? const Color(0xFF39FF14)
+                        : textColor.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    item['text']?.toString() ?? '',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: isChecked
+                          ? textColor.withValues(alpha: 0.4)
+                          : textColor.withValues(alpha: 0.9),
+                      fontSize: 12,
+                      decoration: isChecked ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildEditingChecklistBody(Color textColor) {
     final items = List<Map<String, dynamic>>.from(
       (widget.element.data['items'] as List?) ?? [],
     );
@@ -659,8 +944,60 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
     );
   }
 
-  // IMAGEN MILANOTE CON CARGA DIRECTA
-  Widget _buildImageBody(Color textColor) {
+  // IMAGEN MILANOTE: MODO VISTA
+  Widget _buildViewImageBody(Color textColor) {
+    final imgPath = widget.element.data['imagePath']?.toString() ?? widget.element.content;
+    final hasImage = imgPath.isNotEmpty && File(imgPath).existsSync();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          height: 150,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: hasImage
+              ? Image.file(File(imgPath), fit: BoxFit.cover)
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.image_rounded,
+                        size: 32,
+                        color: textColor.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Sin imagen (Toca para editar)',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: textColor.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        if (_contentCtrl.text.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            _contentCtrl.text,
+            style: GoogleFonts.plusJakartaSans(
+              color: textColor.withValues(alpha: 0.85),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // IMAGEN MILANOTE: MODO EDICIÓN
+  Widget _buildEditingImageBody(Color textColor) {
     final imgPath = widget.element.data['imagePath']?.toString() ?? widget.element.content;
     final hasImage = imgPath.isNotEmpty && File(imgPath).existsSync();
 
@@ -672,7 +1009,7 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
           child: Container(
             height: 150,
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.1),
+              color: Colors.black.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             clipBehavior: Clip.antiAlias,
@@ -704,7 +1041,7 @@ class _MilanoteElementCardState extends State<MilanoteElementCard> {
         TextField(
           controller: _contentCtrl,
           style: GoogleFonts.plusJakartaSans(
-            color: textColor.withValues(alpha: 0.8),
+            color: textColor.withValues(alpha: 0.9),
             fontSize: 11,
           ),
           decoration: InputDecoration(

@@ -101,7 +101,7 @@ void main() {
 
 class _CrashApp extends StatelessWidget {
   final String message;
-  const _CrashApp({super.key, required this.message});
+  const _CrashApp({required this.message});
   @override
   Widget build(BuildContext context) => MaterialApp(
       home: Scaffold(
@@ -140,7 +140,7 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance?.addObserver(this);
+    WidgetsBinding.instance.addObserver(this);
     // Navegación instantánea al tocar notificaciones
     NotificationService.onNotificationTap = (data) {
       final type = (data['type'] as String?) ?? '';
@@ -153,7 +153,7 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance?.removeObserver(this);
+    WidgetsBinding.instance.removeObserver(this);
     // Stop music when app is fully disposed
     SoundService().stopBackgroundMusic();
     super.dispose();
@@ -163,11 +163,13 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // App is backgrounded or being removed; stop music
+      // App is backgrounded or being removed; stop ambient music
       SoundService().stopBackgroundMusic();
     } else if (state == AppLifecycleState.resumed) {
-      // App returned to foreground; restart if enabled
-      SoundService().startBackgroundMusic();
+      // App returned to foreground / screen turned back on; restart ambient ONLY if music is not playing
+      if (!SoundService.isMusicPlaying) {
+        SoundService().startBackgroundMusic();
+      }
     }
   }
 

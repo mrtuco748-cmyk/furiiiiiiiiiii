@@ -225,10 +225,12 @@ class _FuriGlobalOverlayState extends State<FuriGlobalOverlay>
         }
 
         // Verificamos si la ruta activa es la pantalla completa de música
-        bool isMusicScreenActive = false;
+        bool isMusicScreenActive = musicPv.isMusicScreenOpen;
         try {
           final uri = appRouter.routerDelegate.currentConfiguration.uri.path;
-          isMusicScreenActive = uri.startsWith(RouterRoutes.music);
+          if (uri.startsWith(RouterRoutes.music)) {
+            isMusicScreenActive = true;
+          }
         } catch (_) {}
 
         final showMusicBar = currentTrack != null &&

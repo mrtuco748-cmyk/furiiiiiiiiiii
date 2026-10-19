@@ -9,11 +9,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_state.dart';
 import '../database/database_helper.dart';
+import '../models/download_queue_item.dart';
 import '../models/music_comment.dart';
 import '../models/music_playlist.dart';
 import '../models/music_track.dart';
 import '../services/music_download_service.dart';
 import '../services/notification_service.dart';
+import '../services/sound_service.dart';
 import '../supabase_config.dart';
 
 /// Provider central para el reproductor de música compartida de F.U.R.I.
@@ -21,6 +23,19 @@ import '../supabase_config.dart';
 /// comentarios y sincronización en tiempo real entre Facu y Rocío.
 class MusicPlayerProvider extends ChangeNotifier {
   static const _tableName = 'music_tracks';
+
+  static MusicPlayerProvider? _instance;
+  static MusicPlayerProvider? get currentInstance => _instance;
+
+  bool _isMusicScreenOpen = false;
+  bool get isMusicScreenOpen => _isMusicScreenOpen;
+
+  void setMusicScreenOpen(bool open) {
+    if (_isMusicScreenOpen != open) {
+      _isMusicScreenOpen = open;
+      notifyListeners();
+    }
+  }
 
   final AudioPlayer _player = AudioPlayer();
   final MusicDownloadService _downloadService = MusicDownloadService();
@@ -36,6 +51,10 @@ class MusicPlayerProvider extends ChangeNotifier {
   double _downloadProgress = 0.0;
   String _downloadStatus = '';
   String? _lastDownloadError;
+
+  // Cola de descargas secuencial
+  final List<DownloadQueueItem> _downloadQueue = [];
+  bool _isProcessingQueue = false;
 
   // Playlists y comentarios
   List<MusicPlaylist> _playlists = [];
@@ -67,16 +86,57 @@ class MusicPlayerProvider extends ChangeNotifier {
   String get downloadStatus => _downloadStatus;
   String? get lastDownloadError => _lastDownloadError;
 
+  // Getters de la cola de descargas
+  List<DownloadQueueItem> get downloadQueue => List.unmodifiable(_downloadQueue);
+  int get queuedCount => _downloadQueue.where((i) => i.isQueued).length;
+  int get activeOrQueuedCount => _downloadQueue.where((i) => i.isDownloading || i.isQueued).length;
+  DownloadQueueItem? get currentDownloadingItem =>
+      _downloadQueue.where((i) => i.isDownloading).firstOrNull;
+
+  bool isDownloadingItem(String youtubeId) =>
+      _downloadQueue.any((i) => i.id == youtubeId && i.isDownloading);
+
+  bool isQueuedItem(String youtubeId) =>
+      _downloadQueue.any((i) => i.id == youtubeId && i.isQueued);
+
+  DownloadQueueItem? getQueueItem(String youtubeId) =>
+      _downloadQueue.where((i) => i.id == youtubeId).firstOrNull;
+
+  int getQueuePosition(String youtubeId) {
+    final queuedList = _downloadQueue.where((i) => i.isQueued).toList();
+    final idx = queuedList.indexWhere((i) => i.id == youtubeId);
+    return idx != -1 ? idx + 1 : 0;
+  }
+
   List<MusicPlaylist> get playlists => _playlists;
   MusicPlaylist? get currentPlaylist => _currentPlaylist;
   Map<int, List<MusicComment>> get commentsByTrack => _commentsByTrack;
   Set<int> get localDownloadingIds => _localDownloadingIds;
 
+  static final AudioContext _mediaAudioContext = AudioContext(
+    android: AudioContextAndroid(
+      isSpeakerphoneOn: false,
+      stayAwake: true,
+      contentType: AndroidContentType.music,
+      usageType: AndroidUsageType.media,
+      audioFocus: AndroidAudioFocus.gain,
+    ),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playback,
+      options: {
+        AVAudioSessionOptions.mixWithOthers,
+      },
+    ),
+  );
+
   MusicPlayerProvider() {
+    _instance = this;
     _initAudioListeners();
   }
 
   void _initAudioListeners() {
+    _player.setAudioContext(_mediaAudioContext);
+
     NotificationService.onMusicAction = (actionId) {
       if (actionId == 'music_prev') {
         playPrevious();
@@ -99,6 +159,10 @@ class MusicPlayerProvider extends ChangeNotifier {
 
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       _playerState = s;
+      SoundService.isMusicPlaying = (s == PlayerState.playing || s == PlayerState.paused);
+      if (s == PlayerState.playing) {
+        SoundService().stopBackgroundMusic();
+      }
       notifyListeners();
       if (_currentTrack != null) {
         NotificationService.updateMusicNotification(
@@ -164,43 +228,146 @@ class MusicPlayerProvider extends ChangeNotifier {
     }
   }
 
-  // --- BÚSQUEDA Y SUBIDA A SUPABASE ---
+  // --- BÚSQUEDA Y SUBIDA A SUPABASE CON COLA SECUENCIAL ---
 
   Future<List<YouTubeSearchResult>> searchYouTube(String query) async {
     return await _downloadService.search(query);
   }
 
-  Future<MusicTrack?> downloadTrack(YouTubeSearchResult result) async {
-    _isDownloading = true;
-    _downloadProgress = 0.0;
-    _downloadStatus = 'Iniciando extracción...';
-    _lastDownloadError = null;
+  /// Añade una canción a la cola de descargas. Si ya existe en la biblioteca
+  /// compartida o ya se encuentra en cola/descargando, devuelve false.
+  bool addToDownloadQueue(YouTubeSearchResult result) {
+    // Si ya existe guardada en la biblioteca
+    if (_tracks.any((t) => t.youtubeId == result.id)) {
+      return false;
+    }
+
+    // Si ya está en la cola activa
+    final existing = getQueueItem(result.id);
+    if (existing != null) {
+      if (existing.isDownloading || existing.isQueued) {
+        return false;
+      }
+      // Si falló anteriormente, se remueve para re-encolar limpia
+      _downloadQueue.remove(existing);
+    }
+
+    final newItem = DownloadQueueItem(searchResult: result);
+    _downloadQueue.add(newItem);
     notifyListeners();
 
-    try {
-      final track = await _downloadService.downloadAndUploadTrack(
-        result,
-        onProgress: (p, s) {
-          _downloadProgress = p;
-          _downloadStatus = s;
-          notifyListeners();
-        },
-      );
+    _processQueue();
+    return true;
+  }
 
-      if (track != null) {
-        await _reloadFromLocal();
+  /// Remueve una canción de la cola (si aún no empezó a descargarse)
+  void removeFromQueue(String youtubeId) {
+    _downloadQueue.removeWhere((i) => i.id == youtubeId && !i.isDownloading);
+    notifyListeners();
+  }
+
+  /// Reintenta una descarga que falló
+  void retryDownload(String youtubeId) {
+    final item = getQueueItem(youtubeId);
+    if (item != null && item.isFailed) {
+      item.status = DownloadItemStatus.queued;
+      item.progress = 0.0;
+      item.statusMessage = 'En cola...';
+      item.errorMessage = null;
+      notifyListeners();
+      _processQueue();
+    }
+  }
+
+  /// Limpia de la lista visual las descargas completadas o fallidas
+  void clearFinishedDownloads() {
+    _downloadQueue.removeWhere((i) => i.isCompleted || i.isFailed || i.isCancelled);
+    notifyListeners();
+  }
+
+  /// Procesa secuencialmente los elementos encolados uno a uno para garantizar
+  /// que ninguna descarga se pierda ni se bloquee por concurrencia.
+  Future<void> _processQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
+    while (true) {
+      final nextIdx = _downloadQueue.indexWhere((i) => i.isQueued);
+      if (nextIdx == -1) break;
+
+      final currentItem = _downloadQueue[nextIdx];
+      currentItem.status = DownloadItemStatus.downloading;
+      currentItem.progress = 0.05;
+      currentItem.statusMessage = 'Iniciando extracción...';
+
+      _isDownloading = true;
+      _downloadProgress = 0.05;
+      _downloadStatus = 'Descargando: ${currentItem.title}';
+      _lastDownloadError = null;
+      notifyListeners();
+
+      try {
+        final track = await _downloadService.downloadAndUploadTrack(
+          currentItem.searchResult,
+          onProgress: (p, s) {
+            currentItem.progress = p;
+            currentItem.statusMessage = s;
+            _downloadProgress = p;
+            _downloadStatus = '${currentItem.title} ($s)';
+            notifyListeners();
+          },
+        );
+
+        if (track != null) {
+          currentItem.status = DownloadItemStatus.completed;
+          currentItem.progress = 1.0;
+          currentItem.statusMessage = '¡Guardada en Supabase!';
+          currentItem.savedTrack = track;
+          await _reloadFromLocal();
+
+          // Notificación flotante in-app (visible en cualquier pantalla de F.U.R.I)
+          NotificationService.showInAppNotification(InAppNotificationItem(
+            title: 'Música guardada',
+            body: '¡"${currentItem.title}" ya está disponible en la música compartida!',
+            data: {'type': 'music'},
+          ));
+        } else {
+          currentItem.status = DownloadItemStatus.failed;
+          currentItem.errorMessage = 'No se pudo guardar la canción';
+          currentItem.statusMessage = 'Error al guardar';
+        }
+      } catch (e) {
+        developer.log('MusicPlayerProvider._processQueue error en ${currentItem.title}: $e');
+        currentItem.status = DownloadItemStatus.failed;
+        final cleanMsg = e.toString().replaceAll('Exception: ', '');
+        currentItem.errorMessage = cleanMsg;
+        currentItem.statusMessage = 'Error: $cleanMsg';
+        _lastDownloadError = cleanMsg;
+      } finally {
         notifyListeners();
       }
-      return track;
-    } catch (e) {
-      developer.log('MusicPlayerProvider.downloadTrack error: $e');
-      _lastDownloadError = e.toString().replaceAll('Exception: ', '');
-      return null;
-    } finally {
-      _isDownloading = false;
-      _downloadProgress = 0.0;
-      _downloadStatus = '';
-      notifyListeners();
+    }
+
+    _isDownloading = false;
+    _downloadProgress = 0.0;
+    _downloadStatus = '';
+    _isProcessingQueue = false;
+    notifyListeners();
+  }
+
+  /// Método compatible que encola y aguarda la descarga individual
+  Future<MusicTrack?> downloadTrack(YouTubeSearchResult result) async {
+    final existing = _tracks.where((t) => t.youtubeId == result.id).firstOrNull;
+    if (existing != null) return existing;
+
+    addToDownloadQueue(result);
+
+    while (true) {
+      final item = getQueueItem(result.id);
+      if (item == null) return null;
+      if (item.isCompleted) return item.savedTrack;
+      if (item.isFailed || item.isCancelled) return null;
+      await Future.delayed(const Duration(milliseconds: 250));
     }
   }
 
@@ -298,9 +465,12 @@ class MusicPlayerProvider extends ChangeNotifier {
 
   Future<void> play(MusicTrack track) async {
     _currentTrack = track;
+    SoundService.isMusicPlaying = true;
+    SoundService().stopBackgroundMusic();
     notifyListeners();
 
     try {
+      await _player.setAudioContext(_mediaAudioContext);
       Source source;
       if (track.localPath.isNotEmpty && await File(track.localPath).exists()) {
         source = DeviceFileSource(track.localPath);
@@ -323,6 +493,9 @@ class MusicPlayerProvider extends ChangeNotifier {
   }
 
   Future<void> resume() async {
+    await _player.setAudioContext(_mediaAudioContext);
+    SoundService.isMusicPlaying = true;
+    SoundService().stopBackgroundMusic();
     await _player.resume();
   }
 
@@ -342,6 +515,7 @@ class MusicPlayerProvider extends ChangeNotifier {
     await _player.stop();
     _currentTrack = null;
     _position = Duration.zero;
+    SoundService.isMusicPlaying = false;
     NotificationService.cancelMusicNotification();
     notifyListeners();
   }

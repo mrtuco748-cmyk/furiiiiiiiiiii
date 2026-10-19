@@ -27,8 +27,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final pv = widget.provider;
     final t = widget.theme;
-    final myAnswers = pv.answers.where((a) => a.userId == pv.myId).toList();
-    myAnswers.sort((a, b) => (b.date ?? '').compareTo(a.date ?? ''));
+    final myAnswers = pv.answers.where((a) => a.userId == pv.myId && a.answer.isNotEmpty).toList();
+    myAnswers.sort((a, b) {
+      final dateCmp = (b.date ?? '').compareTo(a.date ?? '');
+      if (dateCmp != 0) return dateCmp;
+      return (b.id ?? 0).compareTo(a.id ?? 0);
+    });
 
     // Agrupar por pregunta para mostrar respuesta de la pareja
     final partnerAnswers = <int, TriviaAnswer>{};
@@ -80,7 +84,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           : ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: myAnswers.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (_, i) => HistoryItem(
                 theme: t,
                 myAnswer: myAnswers[i],

@@ -25,6 +25,9 @@ class SoundService {
   static final AudioPlayer _bgPlayer = AudioPlayer()..audioCache.prefix = '';
   static bool _bgStarted = false;
 
+  /// Bandera para indicar si el usuario está reproduciendo música en MusicPlayerProvider
+  static bool isMusicPlaying = false;
+
   // Contexto de audio para SFX: pide foco "transient may duck" en Android para
   // que, al sonar un click/pop, NO pause la música de fondo (solo la baja un
   // instante) y en iOS mezcle con la música en vez de cortarla. Sin esto,
@@ -114,6 +117,7 @@ class SoundService {
   /// vuelve a llamar si se re-enciende el sonido en Configuración.
   Future<void> startBackgroundMusic() async {
     if (_bgStarted) return;
+    if (isMusicPlaying) return;
     if (!SettingsService().enableSound) return;
     try {
       _bgStarted = true;
