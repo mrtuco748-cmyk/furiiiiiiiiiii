@@ -1,5 +1,106 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-19] - FEATURE - Sistema de Presencia en Tiempo Real ("En línea") y "Última vez" en Chat
+
+**Resumen**:
+- **Requerimiento**:
+  - Implementar un sistema real de "en línea" y "última vez" (last seen) para Facu y Rocío en el chat, eliminando el texto estático hardcodeado `'en línea'`.
+- **Implementación**:
+  1. **Presencia en Tiempo Real con Supabase Realtime Channels**:
+     - Se implementó un canal dedicado de presencia (`presence-furi`) usando la API nativa de Presence de Supabase Realtime (`onPresenceSync`, `onPresenceJoin`, `onPresenceLeave`).
+     - Al conectarse, cada usuario publica su presencia con `track({'user_id': myId, 'online_at': ...})`. Si el WebSocket se desconecta o la app se cierra, Supabase notifica automáticamente la salida a la pareja.
+  2. **Persistencia y Respaldo de "Última vez" (`chat_typing`)**:
+     - Se utiliza la columna `updated_at` de la tabla `chat_typing` en Supabase para registrar y persistir con precisión la última actividad del usuario.
+     - `ChatProvider.loadPartnerPresence()` consulta `updated_at` al inicio para disponer de la última vez vista incluso antes de que la pareja se conecte.
+     - Cualquier cambio recibido en el canal realtime de `chat_typing` actualiza en memoria el timestamp de `_partnerLastSeen`.
+     - Se añadió un heartbeat periódico de actividad (cada 45s) y actualización en cada evento de escritura y cambio de ciclo de vida.
+  3. **Gestión de Ciclo de Vida de la App**:
+     - `ChatProvider` implementa `WidgetsBindingObserver`.
+     - Cuando la app pasa a segundo plano (`paused` / `detached`), automáticamente despublica la presencia (`untrack()`) y actualiza `updated_at` en `chat_typing`.
+     - Al volver al primer plano (`resumed`), reanuda el rastreo de presencia en tiempo real (`track()`).
+  4. **Formateo Inteligente y Jerarquía de Estado en UI**:
+     - En `ChatProvider`, `partnerStatusText` evalúa en orden:
+       1. `partnerTyping`: `'escribiendo...'`
+       2. `isPartnerOnline`: `'en línea'`
+       3. `partnerLastSeen != null`: Formatea según cercanía temporal:
+          - Mismo día: `'últ. vez hoy a las HH:mm'`
+          - Día anterior: `'últ. vez ayer a las HH:mm'`
+          - Mismo año: `'últ. vez DD/MM a las HH:mm'`
+          - Años anteriores: `'últ. vez DD/MM/AAAA'`
+       4. Fallback: `'desconectado'`
+  5. **Diseño Visual Brutalista / Chat**:
+     - En `ChatScreen`, se agregó un indicador circular verde `Color(0xFF25D366)` como insignia sobre el avatar de la pareja cuando está online, y en la barra superior se muestra el punto indicador junto al estado dinámico ('en línea' o 'últ. vez...').
+- **Verificación**:
+  - 12 unit tests dedicados en `test/providers/chat_provider_test.dart` cubriendo todos los casos de formateo, prioridades (typing sobre online) y cambios de estado.
+  - La suite completa de 318 pruebas pasa con éxito (`flutter test`).
+  - `flutter analyze` pasa sin errores ni advertencias en el código modificado.
+
+**Archivos impactados**:
+- `lib/providers/chat_provider.dart`
+- `lib/screens/chat_screen.dart`
+- `test/providers/chat_provider_test.dart`
+- `docs/contexto/historial.md`
+
+---
+
+## [2026-10-19] - BUGFIX / NOTIFICATIONS - Botonera Multimedia de Música en Panel de Notificaciones de Android
+
+**Resumen**:
+- **Problema previo**:
+  - Al reproducir música en la aplicación, no aparecía en la barra / panel de notificaciones de Android la botonera con los controles multimedia interactivos (Anterior, Pausar/Reproducir, Siguiente).
+- **Causa raíz**:
+  1. En `AndroidManifest.xml` no estaba registrado `<receiver android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" android:exported="false" />`. La documentación oficial de `flutter_local_notifications` especifica que sin este receptor registrado, el sistema Android no puede rutear las acciones de notificación hacia el plugin.
+  2. En Android 13+ (API 33+), el permiso `POST_NOTIFICATIONS` debe solicitarse en tiempo de ejecución para notificaciones locales mediante `requestNotificationsPermission()`. `NotificationService.initialize()` solo solicitaba permisos mediante FCM (remoto), por lo que en dispositivos modernos con Android 13/14 el sistema operativo bloqueaba silenciosamente la presentación de notificaciones locales.
+  3. El canal `furi_music_channel` no se creaba explícitamente en el arranque del servicio y se utilizaba `importance: Importance.low` / `priority: Priority.low`. En capas de personalización como MIUI / HyperOS (dispositivos Xiaomi), las notificaciones de baja importancia se ocultan en la sección de "Silenciosas" o minimizadas, escondiendo completamente las botoneras de acciones.
+  4. Se usaba `styleInformation: const MediaStyleInformation()`. En Android 11+, `MediaStyle` sin `MediaSession` ni `setShowActionsInCompactView` colapsa u oculta los botones.
+- **Solución implementada**:
+  - Se declararon `ActionBroadcastReceiver`, `ScheduledNotificationReceiver` y `ScheduledNotificationBootReceiver` en `AndroidManifest.xml`.
+  - En `NotificationService.initialize()`, se agregó la solicitud explícita de permisos `requestNotificationsPermission()` en Android y se registró el canal `furi_music_channel` con `Importance.defaultImportance`, `playSound: false`, `enableVibration: false`.
+  - En `NotificationService.updateMusicNotification()`, se configuró `importance: Importance.defaultImportance` y `priority: Priority.defaultPriority`, eliminando `MediaStyleInformation` para que Android presente directamente los botones de acción (`NotificationCompat.Action`) con sus íconos vectoriales y textos legibles.
+  - En `MusicPlayerProvider.play()`, se despacha inmediatamente la notificación con el estado `isPlaying: true` para que aparezca al instante al comenzar a sonar una pista.
+- **Lecciones aprendidas**:
+  - Para acciones de notificación en segundo plano en Android (`showsUserInterface: false`), `ActionBroadcastReceiver` en el `AndroidManifest.xml` es un requisito indispensable.
+  - En Android 13+, las notificaciones locales requieren `requestNotificationsPermission()` a través del plugin de notificaciones locales de Android.
+
+**Archivos impactados**:
+- `android/app/src/main/AndroidManifest.xml`
+- `lib/services/notification_service.dart`
+- `lib/providers/music_player_provider.dart`
+- `docs/contexto/historial.md`
+- `docs/contexto/errores-conocidos.md`
+
+---
+
+## [2026-10-19] - BUGFIX / STABILITY - Corrección de Crash en Pinterest, SQLite Mismatch en Milanote y Timeout en Trivia
+
+**Resumen**:
+- **Problemas resueltos**:
+  1. **Pinterest se salía tras unos segundos**:
+     - Al entrar a `PinterestScreen`, la web móvil de Pinterest intentaba redirigir de forma automática o mediante enlaces sintéticos a esquemas externos (`intent://`, `pinterest://`, `market://`). Al no estar interceptados en el `NavigationDelegate`, Android WebView intentaba resolverlos como URLs web o invocaba intents de actividades externas, provocando errores `ERR_UNKNOWN_URL_SCHEME` y saliéndose de la pantalla.
+  2. **Pantalla roja con `DatabaseException(datatype mismatch SQLITE_MISMATCH: UPDATE board_elements SET id = NULL...)`**:
+     - En `BoardDataProvider._pullFromCloud()` y `_handleRealtimePayload()`, al actualizar elementos modificados en la nube o por la pareja, se invocaba `db.update(_tableName, incoming.toMap(), ...)`. Dado que `incoming` se construía desde `fromCloudRow` (donde `id` de SQLite era `null`), `toMap()` incluía `'id': null`. En SQLite, intentar hacer `SET id = NULL` sobre una columna `id INTEGER PRIMARY KEY AUTOINCREMENT` provoca una violación de restricción / datatype mismatch (código 20).
+     - La llamada asíncrona dentro de `.then(...)` no capturaba el error, haciendo que escapara al gestor global de excepciones.
+  3. **Pantalla roja con `TimeoutException: Future not completed en TriviaProvider._loadAnswers`**:
+     - En `TriviaProvider`, las consultas de recarga en tiempo real (`_reloadAnswers()` y `_reloadQuestions()`) ejecutaban `_loadAnswers()` y `_loadQuestions()` sin un bloque defensivo `try-catch`. Si la red tenía latencia o Supabase tardaba más de 8 segundos, el timeout lanzaba una excepción no capturada.
+  4. **Gestión global de errores en `main.dart`**:
+     - `runZonedGuarded` llamaba incondicionalmente a `runApp(_CrashApp(...))`. En lugar de registrar los errores asíncronos de fondo sin interrumpir la experiencia de usuario, cualquier error menor o timeout destruía la aplicación activa (`FuriApp`) y la reemplazaba con la pantalla roja de error.
+- **Solución implementada**:
+  - **Pinterest**: Se implementó `onNavigationRequest` en `PinterestScreen`, bloqueando de raíz navegaciones no deseadas a `intent://`, `pinterest://`, `market://` y `android-app://`.
+  - **SQLite en Milanote**: Se actualizó `BoardElement.toMap({bool includeId = true})` para que nunca incluya `'id'` si es nulo. En todas las operaciones de actualización (`_pullFromCloud`, `updateElement`, `_handleRealtimePayload`), se invoca con `includeId: false` y se envolvieron las operaciones en `try-catch` y `.catchError(...)`.
+  - **Trivia**: Se protegieron `_loadQuestions()`, `_loadAnswers()`, `_reloadQuestions()` y `_reloadAnswers()` con `try-catch` y fallback automático a la caché persistente (`LocalCache`).
+  - **Main**: Se agregó la bandera `appStarted`. Una vez que `FuriApp` arranca con éxito, los errores asíncronos imprevistos se registran en los logs de desarrollo con `developer.log` y jamás sustituyen ni destruyen la interfaz gráfica del usuario.
+
+**Archivos impactados**:
+- `lib/main.dart`
+- `lib/models/board_element.dart`
+- `lib/providers/board_data_provider.dart`
+- `lib/providers/trivia_provider.dart`
+- `lib/screens/galeria/pinterest_screen.dart`
+- `docs/contexto/historial.md`
+- `docs/contexto/errores-conocidos.md`
+
+---
+
 ## [2026-10-19] - RELEASE - Publicación de FURI v1.0.8 en GitHub Releases
 - **Release tag**: `v1.0.8` en GitHub (`https://github.com/mrtuco748-cmyk/furiiiiiiiiiii/releases/tag/v1.0.8`)
 - **Artefactos publicados**:

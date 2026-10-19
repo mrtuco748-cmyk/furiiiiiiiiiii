@@ -59,6 +59,18 @@ class _PinterestScreenState extends State<PinterestScreen> {
           onWebResourceError: (WebResourceError error) {
             debugPrint('Pinterest WebView Error: ${error.description}');
           },
+          onNavigationRequest: (NavigationRequest request) {
+            final url = request.url.toLowerCase();
+            // Evitar que Pinterest redirija a esquemas nativos o a la tienda que rompan el webview
+            if (url.startsWith('intent://') ||
+                url.startsWith('pinterest://') ||
+                url.startsWith('market://') ||
+                url.startsWith('android-app://')) {
+              debugPrint('Pinterest external redirect prevented: ${request.url}');
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
         ),
       )
       ..setUserAgent(

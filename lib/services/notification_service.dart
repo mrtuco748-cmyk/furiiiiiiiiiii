@@ -157,6 +157,25 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
+    if (Platform.isAndroid) {
+      final androidImpl = _localNotifications
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImpl != null) {
+        await androidImpl.requestNotificationsPermission();
+
+        const musicChannel = AndroidNotificationChannel(
+          'furi_music_channel',
+          'F.U.R.I Música',
+          description: 'Controles multimedia de música de F.U.R.I',
+          importance: Importance.defaultImportance,
+          playSound: false,
+          enableVibration: false,
+          showBadge: false,
+        );
+        await androidImpl.createNotificationChannel(musicChannel);
+      }
+    }
+
     if (_firebaseAvailable && _fcm != null) {
       await _requestPermission();
       _listenFCMForeground();
@@ -400,8 +419,8 @@ class NotificationService {
         'furi_music_channel',
         'F.U.R.I Música',
         channelDescription: 'Controles multimedia de música de F.U.R.I',
-        importance: Importance.low,
-        priority: Priority.low,
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
         ongoing: isPlaying,
         autoCancel: false,
         onlyAlertOnce: true,
@@ -412,7 +431,6 @@ class NotificationService {
         playSound: false,
         enableVibration: false,
         visibility: NotificationVisibility.public,
-        styleInformation: const MediaStyleInformation(),
       );
 
       await _localNotifications.show(

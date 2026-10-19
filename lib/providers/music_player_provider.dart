@@ -467,6 +467,11 @@ class MusicPlayerProvider extends ChangeNotifier {
     _currentTrack = track;
     SoundService.isMusicPlaying = true;
     SoundService().stopBackgroundMusic();
+    NotificationService.updateMusicNotification(
+      title: track.title,
+      artist: track.artist,
+      isPlaying: true,
+    );
     notifyListeners();
 
     try {

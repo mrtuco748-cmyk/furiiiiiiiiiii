@@ -261,37 +261,62 @@ class TriviaProvider extends ChangeNotifier {
   }
 
   Future<void> _loadQuestions() async {
-    final data = await SupabaseConfig.client
-        .from(_qTable)
-        .select()
-        .order('id', ascending: true)
-        .timeout(const Duration(seconds: 8));
-    final list = (data as List)
-        .map((r) => TriviaQuestion.fromMap(Map<String, dynamic>.from(r as Map)))
-        .toList();
-    if (list.isNotEmpty) {
-      _questions = list;
-      await LocalCache.setList('cache_trivia_questions', _questions.map((q) => q.toMap()).toList());
+    try {
+      final data = await SupabaseConfig.client
+          .from(_qTable)
+          .select()
+          .order('id', ascending: true)
+          .timeout(const Duration(seconds: 12));
+      final list = (data as List)
+          .map((r) => TriviaQuestion.fromMap(Map<String, dynamic>.from(r as Map)))
+          .toList();
+      if (list.isNotEmpty) {
+        _questions = list;
+        await LocalCache.setList('cache_trivia_questions', _questions.map((q) => q.toMap()).toList());
+      }
+    } catch (e) {
+      developer.log('TriviaProvider._loadQuestions error: $e');
+      if (_questions.isEmpty) {
+        final cached = await LocalCache.getList('cache_trivia_questions');
+        if (cached.isNotEmpty) {
+          _questions = cached.map((m) => TriviaQuestion.fromMap(m)).toList();
+        }
+      }
     }
   }
 
   Future<void> _loadAnswers() async {
-    final data = await SupabaseConfig.client
-        .from(_aTable)
-        .select()
-        .order('id', ascending: true)
-        .timeout(const Duration(seconds: 8));
-    final rawList = (data as List)
-        .map((r) => TriviaAnswer.fromMap(Map<String, dynamic>.from(r as Map)))
-        .toList();
+    try {
+      final data = await SupabaseConfig.client
+          .from(_aTable)
+          .select()
+          .order('id', ascending: true)
+          .timeout(const Duration(seconds: 12));
+      final rawList = (data as List)
+          .map((r) => TriviaAnswer.fromMap(Map<String, dynamic>.from(r as Map)))
+          .toList();
 
-    // Deduplicar en memoria dejando la respuesta más reciente por (userId, questionId)
-    final uniqueMap = <String, TriviaAnswer>{};
-    for (final a in rawList) {
-      uniqueMap['${a.userId}_${a.questionId}'] = a;
+      // Deduplicar en memoria dejando la respuesta más reciente por (userId, questionId)
+      final uniqueMap = <String, TriviaAnswer>{};
+      for (final a in rawList) {
+        uniqueMap['${a.userId}_${a.questionId}'] = a;
+      }
+      _answers = uniqueMap.values.toList();
+      await LocalCache.setList('cache_trivia_answers', _answers.map((a) => a.toMap()).toList());
+    } catch (e) {
+      developer.log('TriviaProvider._loadAnswers error: $e');
+      if (_answers.isEmpty) {
+        final cached = await LocalCache.getList('cache_trivia_answers');
+        if (cached.isNotEmpty) {
+          final uniqueMap = <String, TriviaAnswer>{};
+          for (final m in cached) {
+            final a = TriviaAnswer.fromMap(m);
+            uniqueMap['${a.userId}_${a.questionId}'] = a;
+          }
+          _answers = uniqueMap.values.toList();
+        }
+      }
     }
-    _answers = uniqueMap.values.toList();
-    await LocalCache.setList('cache_trivia_answers', _answers.map((a) => a.toMap()).toList());
   }
 
   // ─── ENVÍO ────────────────────────────────────────────────────
@@ -393,13 +418,21 @@ class TriviaProvider extends ChangeNotifier {
   }
 
   Future<void> _reloadQuestions() async {
-    await _loadQuestions();
-    notifyListeners();
+    try {
+      await _loadQuestions();
+      notifyListeners();
+    } catch (e) {
+      developer.log('TriviaProvider._reloadQuestions error: $e');
+    }
   }
 
   Future<void> _reloadAnswers() async {
-    await _loadAnswers();
-    notifyListeners();
+    try {
+      await _loadAnswers();
+      notifyListeners();
+    } catch (e) {
+      developer.log('TriviaProvider._reloadAnswers error: $e');
+    }
   }
 
   @override

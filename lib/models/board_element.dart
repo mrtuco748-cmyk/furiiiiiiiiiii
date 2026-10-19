@@ -40,9 +40,9 @@ class BoardElement {
     this.updatedAt,
   }) : data = data ?? const {};
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toMap({bool includeId = true}) {
     return {
-      'id': id,
+      if (includeId && id != null) 'id': id,
       'cloud_id': cloudId,
       'board_id': boardId,
       'user_id': userId,

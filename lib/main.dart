@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -37,6 +38,7 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 void main() {
+  bool appStarted = false;
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
@@ -93,9 +95,13 @@ void main() {
       return;
     }
 
+    appStarted = true;
     runApp(const FuriApp());
   }, (error, stack) {
-    runApp(_CrashApp(message: 'UNCAUGHT: $error\n$stack'));
+    developer.log('UNCAUGHT ASYNC ERROR: $error', error: error, stackTrace: stack);
+    if (!appStarted) {
+      runApp(_CrashApp(message: 'UNCAUGHT: $error\n$stack'));
+    }
   });
 }
 

@@ -7,6 +7,48 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~MEDIA - No aparecía la botonera de música en la ventana de notificaciones de Android~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `android/app/src/main/AndroidManifest.xml`, `lib/services/notification_service.dart`, `lib/providers/music_player_provider.dart`
+- **Qué pasaba**: Al reproducir música, no se mostraba la botonera con controles en la bandeja de notificaciones de Android.
+- **Causa raíz**:
+  1. En `AndroidManifest.xml` no estaba registrado `ActionBroadcastReceiver`.
+  2. En Android 13+ (API 33+), se omitía la llamada a `requestNotificationsPermission()` para notificaciones locales, por lo que el SO descartaba la notificación.
+  3. El canal `furi_music_channel` no se creaba al inicio y se usaba `Importance.low` y `MediaStyleInformation` sin MediaSession token, lo que en capas como MIUI / HyperOS minimizaba y ocultaba las acciones de la notificación.
+- **Fix**:
+  1. Se declaró `ActionBroadcastReceiver` en `AndroidManifest.xml`.
+  2. Se invocó `requestNotificationsPermission()` y se registró el canal de música con `Importance.defaultImportance`.
+  3. Se removió `MediaStyleInformation`, permitiendo que Android dibuje los botones de acción estándar (`NotificationCompat.Action`) de forma visible e interactiva.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Crash al entrar a Pinterest por redirección no controlada a intents externos~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`
+- **Qué pasaba**: Al entrar a la sección de Pinterest embebida, a los pocos segundos la pantalla se cerraba o expulsaba al usuario.
+- **Causa raíz**: La página web móvil de Pinterest ejecuta scripts que intentan redirigir automáticamente al deep link de la app nativa o a la tienda (`intent://`, `pinterest://`, `market://`). Al no tener implementado un `onNavigationRequest` en `NavigationDelegate`, Android WebView intentaba cargarlos como URL estándar o disparaba errores de navegación y cierres no controlados.
+- **Fix**: Se implementó `onNavigationRequest` en `PinterestScreen`, bloqueando de forma explícita cualquier esquema ajeno a la web (`intent://`, `pinterest://`, `market://`, `android-app://`).
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Pantalla roja con SQLite mismatch (UPDATE board_elements SET id = NULL)~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/providers/board_data_provider.dart`, `lib/models/board_element.dart`
+- **Qué pasaba**: Aparecía una pantalla roja de crash con `DatabaseException(datatype mismatch (code 20 SQLITE_MISMATCH)) sql 'UPDATE board_elements SET id = NULL...'`.
+- **Causa raíz**: Al sincronizar con Supabase o recibir payloads en tiempo real, `BoardElement.fromCloudRow` no tenía el `id` local de SQLite (quedaba en `null`). Al llamar a `db.update(_tableName, element.toMap(), ...)`, `toMap()` incluía `'id': null`. En SQLite, intentar actualizar una clave primaria autoincremental con `NULL` dispara error de mismatch. Además, las llamadas en `.then(...)` carecían de `.catchError`.
+- **Fix**:
+  1. `BoardElement.toMap({bool includeId = true})` omite la clave `'id'` si es nula.
+  2. En todas las actualizaciones de SQLite (`_pullFromCloud`, `updateElement`, `_handleRealtimePayload`), se invoca con `includeId: false`.
+  3. Se aseguraron bloques `try-catch` y `.catchError(...)` en todas las operaciones de persistencia en segundo plano.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - TimeoutException no capturado en TriviaProvider._loadAnswers provocaba pantalla roja~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/providers/trivia_provider.dart`, `lib/main.dart`
+- **Qué pasaba**: Pantalla roja con `UNCAUGHT: TimeoutException after 0:00:08.000000: Future not completed en TriviaProvider._loadAnswers`.
+- **Causa raíz**:
+  1. En `TriviaProvider`, las funciones de recarga `_reloadAnswers()` y `_reloadQuestions()` eran ejecutadas como callbacks de Supabase Realtime sin `try-catch`.
+  2. Al demorarse la red más de 8 segundos, el timeout lanzaba una excepción no capturada que llegaba a `runZonedGuarded` en `main.dart`.
+  3. `runZonedGuarded` ejecutaba `runApp(_CrashApp(...))`, sustituyendo la app entera por la pantalla roja.
+- **Fix**:
+  1. Se protegieron `_loadQuestions()`, `_loadAnswers()`, `_reloadQuestions()` y `_reloadAnswers()` con `try-catch` y fallback automático a `LocalCache`.
+  2. En `main.dart`, se implementó la bandera `appStarted`: los errores asíncronos posteriores al arranque se registran en logs sin tumbar la interfaz ni desmontar `FuriApp`.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
 ### ~~MEDIA - Doble barra de control de música en la pantalla MusicScreen~~ ✅ RESUELTO 2026-10-19
 - **Dónde**: `lib/widgets/furi_global_overlay.dart`, `lib/screens/music/music_screen.dart`, `lib/providers/music_player_provider.dart`
 - **Qué pasaba**: Al reproducir una canción dentro de `MusicScreen`, aparecían simultáneamente dos barras de control de música superpuestas (la barra inferior completa de la pantalla y la barra flotante global de la aplicación).

@@ -172,7 +172,7 @@ class BoardDataProvider extends ChangeNotifier {
       cloudIds.add(c.cloudId!);
       final local = localByCloud[c.cloudId!];
       if (local == null) {
-        await db.insert(_tableName, c.toMap());
+        await db.insert(_tableName, c.toMap(includeId: false));
       } else {
         // Si el cloud es más reciente o el local está sincronizado, mergear
         final localUp = DateTime.tryParse(local.updatedAt ?? '') ?? DateTime(1970);
@@ -180,7 +180,7 @@ class BoardDataProvider extends ChangeNotifier {
         if (cloudUp.isAfter(localUp) && local.synced == 1) {
           await db.update(
             _tableName,
-            c.toMap(),
+            c.toMap(includeId: false),
             where: 'id = ?',
             whereArgs: [local.id],
           );
@@ -385,7 +385,7 @@ class BoardDataProvider extends ChangeNotifier {
       final db = await DatabaseHelper().database;
       await db.update(
         _tableName,
-        withTime.toMap(),
+        withTime.toMap(includeId: false),
         where: 'id = ?',
         whereArgs: [updated.id],
       );
@@ -464,8 +464,18 @@ class BoardDataProvider extends ChangeNotifier {
         // Elemento nuevo insertado por la pareja
         _elements.add(incoming);
         notifyListeners();
-        DatabaseHelper().database.then((db) {
-          db.insert(_tableName, incoming.toMap());
+        DatabaseHelper().database.then((db) async {
+          try {
+            final newId = await db.insert(_tableName, incoming.toMap(includeId: false));
+            final insertedIdx = _elements.indexWhere((e) => e.cloudId == incoming.cloudId);
+            if (insertedIdx != -1) {
+              _elements[insertedIdx] = incoming.copyWith(id: newId);
+            }
+          } catch (e) {
+            developer.log('BoardDataProvider realtime insert db error: $e');
+          }
+        }).catchError((e) {
+          developer.log('BoardDataProvider realtime insert error: $e');
         });
       } else {
         // Elemento existente actualizado
@@ -476,8 +486,19 @@ class BoardDataProvider extends ChangeNotifier {
         if (incomingUp.isAfter(currentUp) || incomingUp.isAtSameMomentAs(currentUp)) {
           _elements[idx] = incoming.copyWith(id: current.id);
           notifyListeners();
-          DatabaseHelper().database.then((db) {
-            db.update(_tableName, incoming.toMap(), where: 'id = ?', whereArgs: [current.id]);
+          DatabaseHelper().database.then((db) async {
+            try {
+              await db.update(
+                _tableName,
+                incoming.toMap(includeId: false),
+                where: 'id = ?',
+                whereArgs: [current.id],
+              );
+            } catch (e) {
+              developer.log('BoardDataProvider realtime update db error: $e');
+            }
+          }).catchError((e) {
+            developer.log('BoardDataProvider realtime update error: $e');
           });
         }
       }

@@ -771,20 +771,42 @@ class _ChatViewState extends State<_ChatView> {
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: t.a,
-                backgroundImage: _getAvatarImageProvider(partnerAvatar),
-                child: (partnerAvatar == null || partnerAvatar.isEmpty)
-                    ? Text(
-                        initial,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: t.dark,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: t.a,
+                    backgroundImage: _getAvatarImageProvider(partnerAvatar),
+                    child: (partnerAvatar == null || partnerAvatar.isEmpty)
+                        ? Text(
+                            initial,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: t.dark,
+                            ),
+                          )
+                        : null,
+                  ),
+                  if (chat.isPartnerOnline)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF25D366),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF1E1E1E),
+                            width: 2,
+                          ),
                         ),
-                      )
-                    : null,
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -826,14 +848,39 @@ class _ChatViewState extends State<_ChatView> {
                           ),
                         ],
                       )
+                    else if (chat.isPartnerOnline)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF25D366),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'en línea',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF25D366),
+                            ),
+                          ),
+                        ],
+                      )
                     else
                       Text(
-                        'en línea',
+                        chat.partnerStatusText,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                           color: ChatStyle.subText,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
