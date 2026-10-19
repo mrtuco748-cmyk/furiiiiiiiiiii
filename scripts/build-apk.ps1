@@ -11,14 +11,23 @@ Write-Host '=== F.U.R.I - Build APK (release, split-per-abi) ===' -ForegroundCol
 
 # Verificar Flutter en PATH
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
-  Write-Host 'ERROR: flutter no esta en PATH. Agrega D:\flutter\bin al PATH.' -ForegroundColor Red
-  exit 1
+  if (Test-Path "D:\flutter\bin") {
+    $env:PATH = "D:\flutter\bin;$env:PATH"
+  } else {
+    Write-Host 'ERROR: flutter no esta en PATH. Agrega D:\flutter\bin al PATH.' -ForegroundColor Red
+    exit 1
+  }
 }
 
 # Verificar JAVA_HOME
 if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {
-  Write-Host 'ERROR: JAVA_HOME no definido o invalido. Debe apuntar a D:\jdk17\jdk17.' -ForegroundColor Red
-  exit 1
+  if (Test-Path "D:\jdk17\jdk17") {
+    $env:JAVA_HOME = "D:\jdk17\jdk17"
+    $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+  } else {
+    Write-Host 'ERROR: JAVA_HOME no definido o invalido. Debe apuntar a D:\jdk17\jdk17.' -ForegroundColor Red
+    exit 1
+  }
 }
 
 # Limpiar APKs viejos del directorio de output

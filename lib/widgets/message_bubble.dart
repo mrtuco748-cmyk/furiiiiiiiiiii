@@ -18,7 +18,6 @@ class DateDividerPill extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
           decoration: BoxDecoration(
             color: t.dark,
-            border: Border.all(color: t.light.withValues(alpha: 0.15), width: 1),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(label, style: TextStyle(
@@ -89,7 +88,6 @@ class MessageBubble extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
                       decoration: BoxDecoration(
                         color: isMine ? theme.a : theme.mid,
-                        border: Border.all(color: isMine ? theme.dark : theme.light.withValues(alpha: 0.15), width: isMine ? 3 : 1),
                         borderRadius: isFirst
                             ? BorderRadius.only(
                                 topLeft: Radius.circular(isMine ? 16 : 4),
@@ -101,7 +99,6 @@ class MessageBubble extends StatelessWidget {
                                 topLeft: const Radius.circular(4), topRight: const Radius.circular(4),
                                 bottomLeft: const Radius.circular(16), bottomRight: const Radius.circular(16),
                               ),
-                        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2), blurRadius: 0)],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,7 +111,6 @@ class MessageBubble extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: (isMine ? theme.dark : theme.dark).withValues(alpha: 0.3),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border(left: BorderSide(color: theme.c, width: 3)),
                               ),
                               child: Text(message.replyContent!, maxLines: 2, overflow: TextOverflow.ellipsis,
                                 style: TextStyle(fontSize: 11, color: (isMine ? theme.dark : theme.light).withValues(alpha: 0.7), fontFamily: 'monospace')),

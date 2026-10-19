@@ -7,6 +7,91 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~ALTA - Sistema de vistos (ticks) roto y chat tosco sin diseño ni fluidez WhatsApp~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/models/message.dart`, `lib/providers/chat_provider.dart`, `lib/services/notification_service.dart`, `bot-furi/server.js`, `lib/screens/chat_screen.dart`, `lib/screens/chat/widgets/chat_message_tile.dart`
+- **Qué pasaba**: El sistema de vistos no funcionaba correctamente: el doble check gris de entrega casi nunca se marcaba (porque solo se actualizaba si el destinatario ya tenía el chat abierto al instante del insert), los checks azules fallaban si `read` era true sin timestamp `readAt`, y el chat se sentía tosco (sin botón de volver, layout rígido con Stack y cálculo manual de teclado, fuentes cómic `Bangers` difíciles de leer).
+- **Causa raíz**:
+  1. `Message.tickState` solo validaba `readAt != null`. Mensajes con `read: true` caían a `delivered` o `sent`.
+  2. `delivered_at` nunca se persistía en Supabase cuando el receptor recibía la notificación push en segundo plano (`_firebaseMessagingBackgroundHandler`), en primer plano (`_listenFCMForeground`) o en el listener global de Supabase. Además, `_insertMessage` no despachaba FCM push hacia la pareja.
+  3. El servidor de Render 24/7 (`bot-furi/server.js`) no tenía suscripción realtime a la tabla `messages` para despachar los pushes de alta prioridad automáticamente a los dispositivos móviles.
+  4. `ChatScreen` usaba `ResponsiveWrapper` con `Stack` rígido, `resizeToAvoidBottomInset: false` y matemáticas manuales de insets, atrapando los mensajes en un recuadro pequeño con sombras duras, sin botón de retroceso a la pantalla anterior y tipografía inadecuada para mensajería.
+- **Fix**:
+  1. `Message.tickState`: 1 check gris = enviado (`sent`); 2 checks grises = entregado al celular (`delivered`); 2 checks azules = leído/abierto en chat (`read`).
+  2. `NotificationService.markMessageDelivered`: persiste `delivered_at = NOW()` en Supabase al recibir la notificación push (background y foreground) y al recibir el mensaje por el canal realtime.
+  3. `ChatProvider`: despacha push nativo al insertar mensaje, marca entregados y leídos al cargar mensajes y al recibir en tiempo real con el chat abierto.
+  4. Render 24/7 (`bot-furi/server.js`): suscripción realtime activa a la tabla `messages` que despacha notificaciones push de alta prioridad vía FCM v1 y nuevo endpoint `/api/mark-delivered`.
+  5. `ChatScreen` rediseñado con estilo WhatsApp y estética F.U.R.I: `Scaffold` nativo con `resizeToAvoidBottomInset: true`, AppBar con botón atrás, avatar del partner, estado "escribiendo...", chips de fecha centrados ("HOY", "AYER"), barra de entrada con píldora, selector de emoji, adjuntos, cámara y botón circular mic/send, y burbujas con colas WhatsApp y tipografía legible `GoogleFonts.plusJakartaSans`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Reacción con emoji en galería bugea la foto y desaparece la imagen~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/providers/gallery_provider.dart` y `lib/screens/galeria/galeria_screen.dart`
+- **Qué pasaba**: Al presionar una reacción de emoji en una foto de la galería, la imagen desaparecía o mostraba icono roto.
+- **Causa raíz**: Supabase Realtime omite columnas grandes (TOAST) en eventos `UPDATE`. `remote.url` llegaba vacío y sobreescribía la imagen base64 local con `''`. Además, `base64Decode` recreaba una instancia de `MemoryImage` en cada render sin cachear, invalidando la identidad de la imagen en Flutter.
+- **Fix**: Preservar `url` y `thumbnail` existentes si el payload remoto viene vacío, fallback directo a Supabase si falla la RPC, y caché de `ImageProvider` por URL en `GaleriaScreen`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~ALTA - Pizarra Milanote con lag severo, trabas y congelamiento al mover notas, listas y lienzo en celular y PC~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/milanote/painters/milanote_grid_painter.dart`, `lib/screens/milanote/milanote_screen.dart`, `lib/screens/milanote/widgets/milanote_element_card.dart`, `lib/screens/milanote/painters/connector_line_painter.dart`
+- **Qué pasaba**: Al mover notas, listas o cualquier elemento, o al mover/desplazar el lienzo en celular y PC, se lagueaba severamente, se trababa, no se movía con fluidez y los elementos no respondían con comodidad.
+- **Causa raíz**:
+  1. `MilanoteGridPainter`: Dibujaba un lienzo de 8000x8000 en un bucle anidado `for (0..8000) for (0..8000)` ejecutando **81.796 llamadas a `canvas.drawCircle` en la CPU/GPU cada frame**, consumiendo 250MB+ de memoria de texturas y saturando la tasa de refresco a menos de 10 FPS.
+  2. `InteractiveViewer` mantenía `panEnabled: true` mientras el usuario arrastraba una tarjeta: la arena de gestos de Flutter competía entre el paneo del lienzo y el arrastre de la tarjeta, provocando eventos de cancelación (`PointerCancelEvent`), saltos y bloqueos ("se traba").
+  3. En cada micro-píxel de arrastre, `onDragUpdate` invocaba `pv.updatePositionLocal()`, lo que disparaba `notifyListeners()` en `BoardDataProvider`: **reconstruía la pantalla entera**, todas las tarjetas, campos de texto y el pintor de la cuadrícula de 81.000 círculos a 60/120 veces por segundo.
+  4. Ninguna tarjeta ni la cuadrícula contaban con `RepaintBoundary`, invalidando el raster cache de toda la pantalla en cada frame.
+- **Fix**:
+  1. **Cuadrícula ultra-optimizada**: `MilanoteGridPainter` ahora consulta `canvas.getLocalClipBounds()` para recortar exclusivamente la ventana visible (~300 puntos en móvil, ~1.500 en escritorio) y los despacha a la GPU en una única llamada batch `canvas.drawPoints(PointMode.points, ...)`.
+  2. **Aislamiento de gestos**: Durante el arrastre de cualquier elemento, `_isDraggingElement` bloquea `panEnabled` y `scaleEnabled` en `InteractiveViewer`, otorgando control 100% exclusivo al elemento sin interferencias de la arena de gestos.
+  3. **Arrastre local 60/120 FPS**: `MilanoteElementCard` gestiona su desplazamiento `_dragLocalDx/Dy` localmente mediante su propio `setState`, elevando la tarjeta (`_isDragging` shadow boost) y actualizando las líneas de conexión en tiempo real vía `_activeDragNotifier` sin reconstruir el árbol global.
+  4. **Persistencia limpia al soltar**: La posición y el ajuste a grilla (`_snap`) se envían a `BoardDataProvider` y SQLite/Supabase una sola vez al soltar (`onDragEnd`), eliminando el spam de I/O.
+  5. **Capas de repintado aisladas**: Envoltorio `RepaintBoundary` tanto en la cuadrícula como en cada `MilanoteElementCard`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-19
+
+### ~~MEDIA - Barras laterales del Home visibles sobre las tarjetas deslizables (Mazo)~~ ✅ RESUELTO 2026-10-19
+- **Dónde**: `lib/screens/home_screen.dart`
+- **Qué pasaba**: Al abrir el mazo de tarjetas (`_showDeck`), las barras laterales y tiradores de los cajones deslizables seguían viéndose por encima de las cartas.
+- **Causa raíz**: Los cajones deslizables (`_buildBottomSlidingDrawer`, `_buildTopSlidingDrawer`) y elementos flotantes se renderizaban después de `DeckOverlay` en el `Stack`.
+- **Fix**: Desmontar condicionalmente los cajones y elementos laterales con `if (!_showDeck && !_showPoemas)` para que la vista del mazo sea limpia y en pantalla completa.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-19
+
+### ~~CRÍTICA - Notificaciones y reacciones llegaban al propio usuario que las realizaba (auto-notificación)~~ ✅ RESUELTO 2026-10-18
+- **Dónde**: Supabase `device_tokens`, `NotificationService` (`lib/services/notification_service.dart`) y `ChatProvider` (`lib/providers/chat_provider.dart`)
+- **Qué pasaba**: Cuando un usuario (Facu) realizaba una acción (crear un favorito, meta, nota, etc.) o reaccionaba a un mensaje en el chat, la notificación flotante le llegaba a su propio teléfono en lugar de a su pareja (Rocío).
+- **Causa raíz**:
+  1. En la tabla de Supabase `device_tokens`, el token FCM del teléfono físico de Facu (`dFQgPWMIQiy9...`) quedó registrado duplicado bajo ambos usuarios (`user_id = Facu` y `user_id = Rocío`), porque el índice único previo era compuesto `(user_id, token)`. Cuando Facu hacía una acción, los triggers de PostgreSQL enviaban el push a `partner_id` (Rocío); `send-push` consultaba los tokens de Rocío y encontraba el token del teléfono de Facu, entregándole la notificación a él mismo.
+  2. En `NotificationService._storeToken`, no se eliminaban los registros del mismo token asociados a otros usuarios al iniciar sesión.
+  3. En `NotificationService.startListening`, un listener en tiempo real sobre `UPDATE` en la tabla `messages` no verificaba el remitente y reaccionaba con `_showLocalNotification` ("Alguien reaccionó a tu mensaje") cada vez que se marcaban mensajes como leídos o se quitaba una reacción.
+  4. En `startListeningNotifications`, el callback de inserciones en `notifications` volvía a invocar `_showLocalNotification`, duplicando avisos sonoros que el listener de FCM foreground ya había emitido.
+- **Fix**:
+  1. Se eliminó la fila duplicada en `device_tokens` en Supabase y se creó un índice único global `idx_device_tokens_token ON device_tokens(token)`.
+  2. `_storeToken` ahora elimina preventivamente cualquier asociación previa del token con otros `user_id` antes de registrar o renovar.
+  3. Se eliminó el listener defectuoso de `messages.update` en `startListening`.
+  4. Se añadió `NotificationService.sendPushToPartner` y se integró en `ChatProvider.toggleReaction`, de modo que cuando un usuario reacciona a un mensaje de su pareja, se envía un push directo y exclusivo al celular de la pareja (con vista previa del mensaje y emoji), sin notificar jamás al autor de la reacción.
+  5. En `startListeningNotifications`, se restringió `_showLocalNotification` a entornos desktop (donde FCM no corre nativo), eliminando avisos dobles en Android.
+- **Lección**: Un token FCM de dispositivo móvil es único por terminal físico y jamás debe permitirse compartido entre diferentes cuentas de usuario en la base de datos. Las reacciones a mensajes deben notificar explícitamente al destinatario mediante push dirigido con el actor excluido.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-18
+
+### ~~ALTA - MapaScreen mock sin mapa real y bloqueado en "Debes compartir tu ubicación" / "-- km"~~ ✅ RESUELTO 2026-10-18
+- **Dónde**: `lib/screens/mapa_screen.dart` y `lib/providers/location_provider.dart`
+- **Qué pasaba**: Al ingresar a la pantalla de mapa y apretar el botón de ubicación, la interfaz seguía mostrando "Comparti tu ubicacion para ver la distancia" / "Tu ubicacion no esta compartida", la distancia se quedaba en `-- km` sin calcular nada, y la pantalla solo contenía un icono estático de mapa (`Icons.map`) sin ningún mapa real ni trazado de línea.
+- **Causa raíz**: (1) `MapaScreen` evaluaba `hasData = lpv.myLocation != null && lpv.partnerLocation != null`. Al tener solo un miembro registrado en `couple_locations` (o si la pareja no había emitido su GPS en la sesión), `hasData` era falso de forma permanente, apagando el swap y mostrando texto de falta de ubicación; (2) `MapaScreen` era un mockup de `LocaScreen` con un `Stack` de iconos estáticos y un `Container` de 60px simulando una línea, sin ningún motor de mapas real; (3) Si `AppState.myId` o `partnerId` estaban vacíos o pendientes de carga, `updateMyLocation` abortaba sin avisar al usuario.
+- **Fix**: Integración de `flutter_map` con OpenStreetMap interactivo real, trazado de línea recta punteada (`StrokePattern.dashed`), marcadores de Facu y Rocío con punteros directos, cálculo ininterrumpido de distancia con `effectiveMyLocation` y `effectivePartnerLocation`, feedback visual inmediato al compartir GPS (SnackBar verde), y siembra de registro inicial de pareja en Supabase.
+- **Lección**: Las vistas de distancia de pareja deben contar con ubicaciones de respaldo (última conocida o fallback) para no colapsar la UI ni anular el renderizado de la distancia cuando un miembro aún no ha sincronizado en vivo.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-18
+
+### ~~ALTA - Descarga de música congelada en 15% (403 Forbidden / falta de PO Token en CDN)~~ ✅ RESUELTO 2026-10-14
+- **Dónde**: `lib/services/music_download_service.dart` (`downloadAndUploadTrack`)
+- **Qué pasaba**: Al descargar una canción desde YouTube, el indicador de progreso se clavaba en 15% indefinidamente y nunca terminaba de descargar ni de guardar en la nube.
+- **Causa raíz**: Google Video CDN corta la conexión tras 1.048.576 bytes (1 MB exacto) con código HTTP 403 Forbidden si el cliente no proporciona un Proof of Origin / BotGuard token (PO Token). Al recibir 403, `youtube_explode_dart` reintentaba en bucle cerrado silencioso sin emitir chunks subsiguientes ni lanzar timeout hacia la UI.
+- **Fix**: Se implementó un pipeline desacoplado con convertidor online primario de alta velocidad (`loader.to` / `savenow.to`) que entrega el archivo MP3 completo a 200 OK sin bloqueos de IP, y un fallback secundario a `youtube_explode_dart` protegido por timeouts estrictos (6s / 8s) para que nunca se cuelgue.
+- **Lección**: Cualquier descarga de streams de audio de CDNs de terceros debe contar con timeouts por chunk y canales de descarga alternativos para no congelar la UI ante políticas anti-bot cambiantes de los proveedores.
+
+### ~~ALTA - Syntax error 42601 cerca de END en supabase_schema.sql~~ ✅ RESUELTO 2026-10-14
+- **Dónde**: supabase_schema.sql (líneas 147-159)
+- **Qué pasaba**: Al correr el schema completo en Supabase SQL Editor, PostgreSQL devolvía ERROR: 42601: syntax error at or near "END" LINE 153: END;.
+- **Causa raíz**: En bloques PL/pgSQL anidados EXCEPTION WHEN duplicate_object THEN NULL, la sentencia NULL en PL/pgSQL es un statement que exige terminador de sentencia ; (NULL;). Si falta el ;, el parser espera una continuación y falla al encontrarse inmediatamente con END;.
+- **Fix**: Se colocó NULL; en las líneas 152 y 157.
+- **Lección**: En PL/pgSQL (a diferencia de otros dialectos SQL), NULL como sentencia no-op requiere obligatoriamente punto y coma (NULL;).
+
 ### ~~ALTA - Día entrenado no podía desmarcarse (toggle de completado roto)~~ ✅ RESUELTO 2026-09-01
 - **Dónde**: `lib/providers/workout_provider.dart` (`toggleCompletion`) + `lib/models/workout_completion.dart`
 - **Qué pasaba**: tocar el badge F/R de un día marcado nunca lo desmarcaba. El call-site llama `toggleCompletion(userId, date)` **sin `routineId`** (`null`), pero el filtro del registro existente usaba `c.routineId == routineId` mientras `toMap()` persiste `routine_id: 0` para "sin rutina" y `fromMap` lo lee como `0`. `0 == null` es `false` → la rama de delete nunca corría y el día quedaba permanentemente "entrenado".

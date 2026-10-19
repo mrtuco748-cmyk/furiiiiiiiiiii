@@ -48,9 +48,9 @@
 | Notification | Notificación in-app | `notifications` |
 | ChatTyping | Indicador "escribiendo..." del chat (1 fila por usuario: is_typing, updated_at); la pareja lo ve con realtime | `chat_typing` |
 | Note | Nota de la sección "Notas" (antes pizarrón). Tiene `title`/`content`/`color`; se comparte con la pareja (sync Supabase offline-first con `cloudId` + dirty flag `synced` + realtime). Autor en `user_id` | SQLite `notes` + Supabase `notes` |
-| Pizarra v2 | ~~Lienzo infinito colaborativo~~ → ELIMINADO 2026-09-01: la sección "Notas" lo reemplazó (decisión del usuario). La tabla `notes` es la que persiste las notas compartidas. | Provisto por `NotesProvider` |
+| BoardElement | Elemento del Pizarrón Infinito colaborativo (nota, checklist, dibujo). Coordenadas (x, y), dimensiones, autoría (Facu/Rocío), color brutalista y sync realtime + offline-first | SQLite `board_elements` + Supabase `board_elements` |
 | DeviceToken | Token FCM | `device_tokens` |
-| Schedule | Evento de calendario; `cloudId` = id cloud (BIGSERIAL de Supabase) distinto del id local de SQLite; `user_id` en cloud = autor (colores F/R) | SQLite `schedules` + Supabase `schedules` |
+| Schedule | Evento de calendario (único o recurrente vía `recurrence`: weekly, every:N, monthly, yearly); `cloudId` = id cloud (BIGSERIAL de Supabase) distinto del id local de SQLite; `user_id` en cloud = autor (colores F/R) | SQLite `schedules` + Supabase `schedules` |
 | ClassSchedule | Clase recurrente por día de la semana; `cloudId` = id cloud (BIGSERIAL de Supabase) distinto del id local de SQLite | SQLite `class_schedules` + Supabase `class_schedules` |
 | EventType | Tipo de evento del calendario (nombre, color, icono); gestión desde el formulario de evento | SQLite `event_types` |
 | ClassType | Tipo de clase recurrente (nombre, color); gestión desde `ClassBoardScreen` | SQLite `class_types` |
@@ -64,6 +64,9 @@
 | Favorite | Favorito por categoría, con `rating_facu`/`rating_rocio` (rating dual por usuario) y `critica` texto compartido | `favorites` |
 | CoupleStreak/Racha de pareja | Cálculo derivado (sin tabla) de días en que ambos estuvieron activos, vía `CoupleStats.activeByDay`/`bothActiveDays` | Se deriva de `moods` + `workout_completions` |
 | CoupleAchievement/Logro | Insignia de pareja desbloqueada al cumplir un hito; `achievement_code` UNIQUE | `couple_achievements` |
+| MusicTrack | Canción de la biblioteca compartida descargada comprimida desde YouTube con streaming y cache local | SQLite `music_tracks` + Supabase `music_tracks` |
+| MusicPlaylist | Playlist colaborativa con canciones ordenadas compartidas entre la pareja | SQLite `music_playlists` + Supabase `music_playlists` |
+| MusicComment | Comentario o nota colaborativa en una canción compartida | SQLite `music_comments` + Supabase `music_comments` |
 
 ## Siglas y Acrónimos
 

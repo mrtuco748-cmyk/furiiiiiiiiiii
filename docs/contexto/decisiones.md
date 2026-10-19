@@ -129,3 +129,19 @@
 - **Alternativas descartadas**: seguir con el merge client-side en realtime (parche, no garantiza consistencia en el origen), triggers por tabla.
 - **Impacto**: `workout_provider.dart` rewireado, `_saveLog`/`_saveRoutineSocial` eliminados (muertos), `supabase/migration_workout_comments_rpc.sql` + `supabase_schema.sql` (sección 29c), SQL ejecutado en prod vía Management API.
 - **Revisable**: Sí — la whitelist limita a `workout_*`; si se agregan tablas con comentarios, sumarlas.
+
+### D-17: Calendario unificado y repetición en una sola pantalla
+- **Fecha**: 2026-10-14
+- **Qué se decidió**: Eliminar la fragmentación del calendario (CalendarMosaico, CalendarHomeScreen, DailyEventsScreen, ClassBoardScreen, ClassSetupWizard, ScheduleFormScreen) y unificar en UNA sola pantalla (CalendarScreen) con vista mensual arriba y agenda del día abajo, más un único modal (EventSheet) con selector de repetición compacto (único, semanal, cada N días, mensual, anual).
+- **Por qué**: La experiencia anterior era confusa: botones dispersos, wizards intrusivos en arranque, múltiples pantallas para ver eventos vs clases, y estilos no alineados con la identidad visual de la app.
+- **Sincronización pareja**: Se conserva el sync bidireccional offline-first en tiempo real con Supabase (schedules) e identificación por userId (Facu/Rocío). Los datos heredados de class_schedules se integran a la agenda diaria sin pérdida.
+- **Impacto**: Reducción de 5 pantallas a 1 pantalla + 1 bottom sheet. SQLite v13 agrega columna ecurrence a schedules. 33 tests automatizados verdes.
+- **Revisable**: No — simplificación integral aprobada por el usuario.
+
+### D-18: Servidor Web 24/7 en Render con endpoint `/ping` Keep-Alive y Geolocalización Automática
+- **Fecha**: 2026-10-18
+- **Qué se decidió**: Migrar `bot-furi` de un script one-shot a un servidor HTTP nativo (`server.js`) alojado en Render con un endpoint `/ping` consumible cada 10 minutos por servicios de ping externos (ej. cron-job.org / UptimeRobot), y habilitar geolocalización automática de arranque en Flutter (`initAutoLocation`).
+- **Por qué**: GitHub Actions cron sufría retrasos impredecibles de horas en su tier gratuito, mientras que las instancias gratuitas de Render se congelan tras 15 minutos sin peticiones HTTP. El endpoint `/ping` cumple dos objetivos en uno: evita que Render se duerma y activa un ciclo de verificación cada 10 minutos. En geolocalización, el requisito de abrir manualmente `MapaScreen` provocaba que la distancia figurara en `-- km`.
+- **Alternativas descartadas**: Pagar instancia Render sin sleep (costo innecesario cuando un ping HTTP resuelve el keep-alive), Webhooks puros sin cron de respaldo (si la red falla se pierden eventos).
+- **Impacto**: `bot-furi/server.js`, `bot-furi/render.yaml`, `LocationProvider.initAutoLocation()`, `NotificationService.registerToken()` en arranque.
+- **Revisable**: Sí — si se migra a Cloud Functions dedicadas o VPS propio.

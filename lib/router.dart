@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 
 import 'app_state.dart';
 import 'theme/app_theme.dart';
-import 'models/schedule.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
@@ -12,8 +11,9 @@ import 'screens/nosotros_screen.dart';
 import 'screens/trivia/trivia_screen.dart';
 import 'screens/finanzas/finanzas_screen.dart';
 import 'screens/galeria/galeria_screen.dart';
+import 'screens/galeria/pinterest_screen.dart';
 import 'screens/favoritos/favoritos_screen.dart';
-import 'screens/notes/notes_screen.dart';
+import 'screens/calendar/calendar_screen.dart';
 import 'screens/ejercicios/ejercicios_screen.dart';
 import 'screens/logros/logros_screen.dart';
 import 'screens/recompensas/rewards_screen.dart';
@@ -22,11 +22,8 @@ import 'screens/retos_screen.dart';
 import 'screens/letters_screen.dart';
 import 'screens/metas_screen.dart';
 import 'screens/mapa_screen.dart';
-import 'screens/calendar/calendar_home_screen.dart';
-import 'screens/calendar/schedule_form_screen.dart';
-import 'screens/calendar/daily_events_screen.dart';
-import 'screens/calendar/class_board_screen.dart';
-import 'screens/calendar/class_setup_wizard.dart';
+import 'screens/milanote/milanote_screen.dart';
+import 'screens/music/music_screen.dart';
 import 'screens/mosaico_wrappers.dart';
 
 /// Nombres canónicos de ruta. Las pantallas pasan su `AppMode` por [GoRouterState.extra];
@@ -41,8 +38,12 @@ abstract final class RouterRoutes {
   static const String trivia = '/trivia';
   static const String finanzas = '/finanzas';
   static const String galeria = '/galeria';
+  static const String pinterest = '/pinterest';
   static const String favoritos = '/favoritos';
+  static const String milanote = '/milanote';
   static const String notes = '/notes';
+  static const String pizarra = '/pizarra';
+  static const String music = '/music';
   static const String ejercicios = '/ejercicios';
   static const String logros = '/logros';
   static const String rewards = '/rewards';
@@ -81,7 +82,8 @@ String? routeForNotificationType(String type) {
     case 'challenge':
       return RouterRoutes.retos;
     case 'note':
-      return RouterRoutes.notes;
+    case 'pizarra':
+      return RouterRoutes.milanote;
     case 'transaction':
       return RouterRoutes.finanzas;
     case 'favorite':
@@ -98,8 +100,14 @@ String? routeForNotificationType(String type) {
     case 'workout_completion':
     case 'workout_challenge':
       return RouterRoutes.ejercicios;
+    case 'music':
+      return RouterRoutes.music;
+    case 'trivia':
+      return RouterRoutes.trivia;
+    case 'mapa':
+      return RouterRoutes.mapa;
     default:
-      return null;
+      return RouterRoutes.notifications;
   }
 }
 
@@ -144,7 +152,14 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: RouterRoutes.calendar,
-      builder: (_, _) => const CalendarHomeScreen(),
+      builder: (_, state) {
+        final extra = state.extra;
+        final openCreate = extra is Map &&
+            (extra['create'] == true ||
+                extra['createClass'] == true ||
+                extra['createReminder'] == true);
+        return CalendarScreen(openCreate: openCreate);
+      },
     ),
     GoRoute(
       path: RouterRoutes.trivia,
@@ -159,19 +174,43 @@ final GoRouter appRouter = GoRouter(
       builder: (_, _) => const GaleriaScreen(),
     ),
     GoRoute(
+      path: RouterRoutes.pinterest,
+      builder: (_, _) => const PinterestScreen(),
+    ),
+    GoRoute(
       path: RouterRoutes.favoritos,
       builder: (_, _) => const FavoritosScreen(),
     ),
     GoRoute(
+      path: RouterRoutes.milanote,
+      builder: (_, state) => MilanoteScreen(mode: _mode(state)),
+    ),
+    GoRoute(
       path: RouterRoutes.notes,
-      builder: (_, state) => NotesScreen(),
+      builder: (_, state) => MilanoteScreen(mode: _mode(state)),
+    ),
+    GoRoute(
+      path: RouterRoutes.pizarra,
+      builder: (_, state) => MilanoteScreen(mode: _mode(state)),
+    ),
+    GoRoute(
+      path: RouterRoutes.music,
+      builder: (_, state) {
+        final extra = state.extra;
+        final tab = (extra is Map && extra['tab'] is int) ? (extra['tab'] as int) : 0;
+        return MusicScreen(initialTab: tab);
+      },
     ),
     GoRoute(
       path: RouterRoutes.ejercicios,
       builder: (_, state) {
         final extra = state.extra;
         if (extra is EjerciciosArgs) {
-          return EjerciciosScreen(mode: extra.mode, initialTab: extra.tab);
+          return EjerciciosScreen(
+            mode: extra.mode,
+            initialTab: extra.tab,
+            isPopup: extra.isPopup,
+          );
         }
         return EjerciciosScreen(mode: _mode(state));
       },
@@ -211,32 +250,30 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: RouterRoutes.scheduleForm,
-      builder: (_, state) {
-        final extra = state.extra;
-        if (extra is Schedule) return ScheduleFormScreen(schedule: extra);
-        if (extra is DateTime) {
-          return ScheduleFormScreen(initialDate: extra);
-        }
-        return ScheduleFormScreen();
-      },
+      builder: (_, _) => const CalendarScreen(openCreate: true),
     ),
     GoRoute(
       path: RouterRoutes.dailyEvents,
-      builder: (_, state) => DailyEventsScreen(
-        initialDate: state.extra is DateTime ? state.extra as DateTime : DateTime.now(),
-      ),
+      builder: (_, _) => const CalendarScreen(),
     ),
     GoRoute(
       path: RouterRoutes.classBoard,
-      builder: (_, _) => const ClassBoardScreen(),
+      builder: (_, _) => const CalendarScreen(),
     ),
     GoRoute(
       path: RouterRoutes.classSetup,
-      builder: (_, _) => const ClassSetupWizard(),
+      builder: (_, _) => const CalendarScreen(),
     ),
     GoRoute(
       path: RouterRoutes.calendarMosaico,
-      builder: (_, _) => const CalendarMosaicoScreen(),
+      builder: (_, state) {
+        final extra = state.extra;
+        final openCreate = extra is Map &&
+            (extra['create'] == true ||
+                extra['createClass'] == true ||
+                extra['createReminder'] == true);
+        return CalendarScreen(openCreate: openCreate);
+      },
     ),
     GoRoute(
       path: RouterRoutes.notesMosaico,

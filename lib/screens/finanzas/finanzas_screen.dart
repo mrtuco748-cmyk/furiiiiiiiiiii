@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -63,9 +63,9 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       backgroundColor: _c,
       title: Icon(existing != null ? Icons.edit : Icons.add, color: const Color(0xFF111111), size: 34),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: titleCtrl, style: GoogleFonts.bangers(color: const Color(0xFF111111), fontSize: 14), decoration: InputDecoration(hintText: 'descripcion', hintStyle: GoogleFonts.bangers(color: const Color(0xFF333333), fontSize: 14), filled: true, fillColor: Colors.white24, enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF111111), width: 2)), focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF111111), width: 3)))),
+        TextField(controller: titleCtrl, style: GoogleFonts.bangers(color: const Color(0xFF111111), fontSize: 14), decoration: InputDecoration(hintText: 'descripcion', hintStyle: GoogleFonts.bangers(color: const Color(0xFF333333), fontSize: 14), filled: true, fillColor: Colors.white24, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
         const SizedBox(height: 12),
-        TextField(controller: amountCtrl, keyboardType: TextInputType.number, style: GoogleFonts.bangers(color: const Color(0xFF111111), fontSize: 14), decoration: InputDecoration(hintText: 'monto', hintStyle: GoogleFonts.bangers(color: const Color(0xFF333333), fontSize: 14), filled: true, fillColor: Colors.white24, enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF111111), width: 2)), focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF111111), width: 3)))),
+        TextField(controller: amountCtrl, keyboardType: TextInputType.number, style: GoogleFonts.bangers(color: const Color(0xFF111111), fontSize: 14), decoration: InputDecoration(hintText: 'monto', hintStyle: GoogleFonts.bangers(color: const Color(0xFF333333), fontSize: 14), filled: true, fillColor: Colors.white24, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
         const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _segBtn('GASTO', type == 'expense', () => setLocal(() => type = 'expense'), _red),
@@ -78,7 +78,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         ]),
       ]),
       actions: [
-        TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF111111), width: 2)), child: const Icon(Icons.close, color: _c, size: 20))),
+        TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.close, color: _c, size: 20))),
         TapTile(onTap: () {
           final amt = double.tryParse(amountCtrl.text);
           if (amt != null && titleCtrl.text.isNotEmpty) {
@@ -91,7 +91,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             AppFeedback.saved(context, 'Transacción guardada');
           }
           Navigator.pop(ctx);
-        }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF111111), width: 2)), child: Icon(existing != null ? Icons.check : Icons.add, color: _c, size: 20))),
+        }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(14)), child: Icon(existing != null ? Icons.check : Icons.add, color: _c, size: 20))),
       ],
     )));
   }
@@ -99,7 +99,6 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   Widget _segBtn(String label, bool active, VoidCallback onTap, Color color) {
     return TapTile(onTap: () { HapticFeedback.heavyImpact(); onTap(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(
       color: active ? color : _bg, 
-      border: Border.all(color: active ? color : color.withValues(alpha: 0.5), width: 2), 
       borderRadius: BorderRadius.circular(14)), child: Text(label, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 12, color: active ? Colors.white : color))));
   }
 
@@ -109,7 +108,6 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: active ? _blue : _bg,
-        border: Border.all(color: _blue, width: 2),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(value, style: GoogleFonts.bangers(fontWeight: FontWeight.bold, fontSize: 11, color: active ? Colors.white : _blue))));
@@ -314,9 +312,9 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(children: [
             const Spacer(),
-            TapTile(onTap: () => _addTransaction(existing: t), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _blue, borderRadius: BorderRadius.circular(12), border: Border.all(color: _blue, width: 2)), child: const Icon(Icons.edit, color: Colors.white, size: 22))),
+            TapTile(onTap: () => _addTransaction(existing: t), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _blue, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.edit, color: Colors.white, size: 22))),
             const SizedBox(width: 8),
-            TapTile(onTap: () { if (t.id != null) _deleteTransaction(t); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _red, borderRadius: BorderRadius.circular(12), border: Border.all(color: _red, width: 2)), child: const Icon(Icons.delete, color: Colors.white, size: 22))),
+            TapTile(onTap: () { if (t.id != null) _deleteTransaction(t); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _red, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.delete, color: Colors.white, size: 22))),
             const SizedBox(width: 8),
           ]),
         ),
@@ -363,9 +361,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: const Color(0xFF1A1A1A),
-          border: Border.all(color: color, width: 3),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
         ),
         child: Row(children: [
           Icon(isIncome ? Icons.arrow_downward : Icons.arrow_upward, color: color, size: 20),

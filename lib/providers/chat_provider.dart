@@ -4,8 +4,10 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app_state.dart';
 import '../models/message.dart';
 import '../services/chat_media_service.dart';
+import '../services/notification_service.dart';
 import '../supabase_config.dart';
 
 enum ChatLoadState { loading, empty, error, data }
@@ -117,6 +119,7 @@ class ChatProvider extends ChangeNotifier {
       _state =
           _messages.isEmpty ? ChatLoadState.empty : ChatLoadState.data;
       notifyListeners();
+      await markIncomingDelivered();
       await markIncomingRead();
     } catch (e) {
       _error = e.toString();
@@ -182,6 +185,7 @@ class ChatProvider extends ChangeNotifier {
             notifyListeners();
             if (msg.toUser == myId) {
               markIncomingDelivered(onlyThese: {msg.id});
+              markIncomingRead();
             }
           },
         )
@@ -309,6 +313,21 @@ class ChatProvider extends ChangeNotifier {
       _replyTo = null;
       _state = ChatLoadState.data;
       notifyListeners();
+
+      // Enviar notificación push de alta prioridad a la pareja (despierta FCM en celular)
+      if (partnerId.isNotEmpty) {
+        final senderName = AppState.myName ?? 'Tu pareja';
+        NotificationService.sendPushToPartner(
+          title: senderName,
+          body: msg.previewText,
+          data: {
+            'type': 'message',
+            'message_id': msg.id.toString(),
+            'from_user': myId,
+          },
+        );
+      }
+
       return msg;
     } catch (e) {
       _error = e.toString();
@@ -354,6 +373,25 @@ class ChatProvider extends ChangeNotifier {
           _messages[li] = _messages[li].copyWith(reactions: authoritative);
           notifyListeners();
         }
+      }
+
+      // Notificar a la pareja si agregamos una reacción a su mensaje (nunca si es mensaje propio)
+      final wasAdded = next.myReactionKey(myId) == key;
+      if (wasAdded && msg.fromUser != myId && partnerId.isNotEmpty) {
+        final preview = msg.previewText.trim();
+        final previewSnippet =
+            preview.length > 35 ? '${preview.substring(0, 35)}...' : preview;
+        final senderName = AppState.myName ?? 'Tu pareja';
+        NotificationService.sendPushToPartner(
+          title: '$senderName reaccionó $key',
+          body: previewSnippet.isNotEmpty
+              ? 'A tu mensaje: "$previewSnippet"'
+              : 'Reaccionó a tu mensaje',
+          data: {
+            'type': 'reaction',
+            'message_id': msg.id.toString(),
+          },
+        );
       }
     } catch (e) {
       if (idx >= 0) {
@@ -419,10 +457,15 @@ class ChatProvider extends ChangeNotifier {
       await SupabaseConfig.client.from('messages').update({
         'read': true,
         'read_at': now,
+        'delivered_at': now,
       }).inFilter('id', unread);
       for (var i = 0; i < _messages.length; i++) {
         if (unread.contains(_messages[i].id)) {
-          _messages[i] = _messages[i].copyWith(read: true, readAt: DateTime.now());
+          _messages[i] = _messages[i].copyWith(
+            read: true,
+            readAt: DateTime.now(),
+            deliveredAt: _messages[i].deliveredAt ?? DateTime.now(),
+          );
         }
       }
       notifyListeners();

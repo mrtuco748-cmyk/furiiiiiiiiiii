@@ -54,7 +54,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: const Color(0xFF9D00FF),
-              border: Border.all(color: const Color(0xFF9D00FF), width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.close, color: Colors.white, size: 20),
@@ -116,7 +115,6 @@ class HistoryItem extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
-        border: Border.all(color: const Color(0xFF333333), width: 2),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -152,7 +150,6 @@ class HistoryItem extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: hit ? const Color(0xFF39FF14) : const Color(0xFFFF0000),
-                border: Border.all(color: hit ? const Color(0xFF39FF14) : const Color(0xFFFF0000), width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(

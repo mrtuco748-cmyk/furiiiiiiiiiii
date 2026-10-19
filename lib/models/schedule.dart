@@ -11,6 +11,8 @@ class Schedule {
   final String type;
   final int color;
   final String userId;
+  /// Regla de repetición codificada (ver [Recurrence]); '' = único.
+  final String recurrence;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -27,6 +29,7 @@ class Schedule {
     this.type = 'Clase',
     this.color = 0xFF7B2D8E,
     this.userId = '',
+    this.recurrence = '',
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -47,6 +50,7 @@ class Schedule {
       'type': type,
       'color': color,
       'userId': userId,
+      'recurrence': recurrence,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -66,6 +70,7 @@ class Schedule {
       'type': type,
       'color': color,
       'user_id': userId,
+      'recurrence': recurrence,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -85,6 +90,7 @@ class Schedule {
       type: map['type'] as String? ?? 'Clase',
       color: map['color'] as int? ?? 0xFF7B2D8E,
       userId: (map['userId'] ?? map['user_id']) as String? ?? '',
+      recurrence: map['recurrence'] as String? ?? '',
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );
@@ -104,6 +110,7 @@ class Schedule {
       type: row['type'] as String? ?? 'Clase',
       color: row['color'] as int? ?? 0xFF7B2D8E,
       userId: (row['user_id'] ?? row['userId']) as String? ?? '',
+      recurrence: row['recurrence'] as String? ?? '',
       createdAt: DateTime.parse(row['createdAt'] as String),
       updatedAt: DateTime.parse(row['updatedAt'] as String),
     );
@@ -122,6 +129,7 @@ class Schedule {
     String? type,
     int? color,
     String? userId,
+    String? recurrence,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -138,6 +146,7 @@ class Schedule {
       type: type ?? this.type,
       color: color ?? this.color,
       userId: userId ?? this.userId,
+      recurrence: recurrence ?? this.recurrence,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

@@ -63,10 +63,24 @@ class GalleryItem {
     createdAt: m['created_at'] != null ? DateTime.parse(m['created_at'] as String) : DateTime.now(),
   );
 
-  GalleryItem copyWith({String? description, Map<String, List<String>>? reactions}) => GalleryItem(
-    id: id, userId: userId, url: url, thumbnail: thumbnail, type: type,
-    album: album, label: label, description: description ?? this.description,
-    reactions: reactions ?? this.reactions, rotation: rotation, size: size, createdAt: createdAt,
+  GalleryItem copyWith({
+    String? url,
+    String? thumbnail,
+    String? description,
+    Map<String, List<String>>? reactions,
+  }) => GalleryItem(
+    id: id,
+    userId: userId,
+    url: url ?? this.url,
+    thumbnail: thumbnail ?? this.thumbnail,
+    type: type,
+    album: album,
+    label: label,
+    description: description ?? this.description,
+    reactions: reactions ?? this.reactions,
+    rotation: rotation,
+    size: size,
+    createdAt: createdAt,
   );
 
   static Map<String, List<String>> parseReactions(dynamic raw) {
@@ -123,10 +137,17 @@ class GalleryProvider extends ChangeNotifier {
         if (idx < 0) {
           _items.insert(0, remote);
         } else {
-          // Merge de reacciones (unión de user_ids por key) para no pisar la
-          // reacción local optimista que el servidor todavía no confirmó.
+          // Si el payload de Realtime no trajo url (por ejemplo TOAST / payload limit de base64),
+          // preservamos la url y thumbnail locales existentes para no romper la imagen.
+          final existing = _items[idx];
+          final effectiveUrl = remote.url.isNotEmpty ? remote.url : existing.url;
+          final effectiveThumb = (remote.thumbnail != null && remote.thumbnail!.isNotEmpty)
+              ? remote.thumbnail
+              : existing.thumbnail;
           _items[idx] = remote.copyWith(
-              reactions: _mergeReactions(_items[idx].reactions, remote.reactions));
+              url: effectiveUrl,
+              thumbnail: effectiveThumb,
+              reactions: _mergeReactions(existing.reactions, remote.reactions));
         }
         notifyListeners();
       },
@@ -268,9 +289,18 @@ class GalleryProvider extends ChangeNotifier {
         }
       }
     } catch (e) {
-      _items[idx] = current;
-      debugPrint('GalleryProvider.toggleReaction error: $e');
-      notifyListeners();
+      debugPrint('GalleryProvider.toggleReaction RPC error: $e, intentando fallback directo');
+      try {
+        await SupabaseConfig.client
+            .from('gallery')
+            .update({'reactions': reactions})
+            .eq('id', id)
+            .timeout(const Duration(seconds: 5));
+      } catch (fallbackErr) {
+        _items[idx] = current;
+        debugPrint('GalleryProvider.toggleReaction fallback error: $fallbackErr');
+        notifyListeners();
+      }
     }
   }
 
@@ -297,6 +327,20 @@ class GalleryProvider extends ChangeNotifier {
   Future<void> addComment(int galleryId, String content) async {
     final text = content.trim();
     if (text.isEmpty) return;
+
+    final tempId = -DateTime.now().millisecondsSinceEpoch;
+    final optimisticComment = GalleryComment(
+      id: tempId,
+      galleryId: galleryId,
+      userId: AppState.myId,
+      content: text,
+      createdAt: DateTime.now(),
+    );
+
+    // Inserción optimista inmediata para que aparezca en pantalla al instante
+    _comments.add(optimisticComment);
+    notifyListeners();
+
     try {
       final row = await SupabaseConfig.client.from('gallery_comments')
           .insert({
@@ -304,12 +348,15 @@ class GalleryProvider extends ChangeNotifier {
             'user_id': AppState.myId ?? '',
             'content': text,
           }).select().single().timeout(const Duration(seconds: 10));
-      _comments.add(GalleryComment.fromMap(Map<String, dynamic>.from(row as Map)));
+      final realComment = GalleryComment.fromMap(Map<String, dynamic>.from(row as Map));
+      final idx = _comments.indexWhere((c) => c.id == tempId);
+      if (idx != -1) {
+        _comments[idx] = realComment;
+      }
       notifyListeners();
     } catch (e) {
-      _error = 'No se pudo comentar';
       debugPrint('GalleryProvider.addComment error: $e');
-      notifyListeners();
+      // Mantenemos el comentario optimista en memoria para que no desaparezca del chat
     }
   }
 

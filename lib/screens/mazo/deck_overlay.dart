@@ -122,8 +122,10 @@ class _DeckOverlayState extends State<DeckOverlay>
               _emptyView(pv)
             else
               _cardsArea(pv, current, pending),
-            if (!_swiping)
-              (current != null ? _historyBtn() : _closeBtn()),
+            if (!_swiping) ...[
+              _closeBtn(),
+              if (current != null) _historyBtn(),
+            ],
           ]);
         },
       ),
@@ -145,7 +147,6 @@ class _DeckOverlayState extends State<DeckOverlay>
           height: 40,
           decoration: BoxDecoration(
             color: const Color(0xFF9D00FF),
-            border: Border.all(color: const Color(0xFF9D00FF), width: 2),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(Icons.history, color: Color(0xFF1A1A1A), size: 20),
@@ -157,19 +158,18 @@ class _DeckOverlayState extends State<DeckOverlay>
   Widget _closeBtn() {
     return Positioned(
       top: 12,
-      right: 12,
+      left: 12,
       child: GestureDetector(
         onTap: widget.onClose,
         child: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: const Color(0xFFFF0000),
-            border: Border.all(color: const Color(0xFFFF0000), width: 2),
+            color: const Color(0xFF222222),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(Icons.close,
-              color: Color(0xFF1A1A1A), size: 20),
+          child: const Icon(Icons.arrow_back_rounded,
+              color: Colors.white, size: 20),
         ),
       ),
     );
@@ -237,7 +237,6 @@ class _DeckOverlayState extends State<DeckOverlay>
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: const Color(0xFF9D00FF),
-            border: Border.all(color: const Color(0xFF9D00FF), width: 2),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -405,7 +404,6 @@ class _DeckOverlayState extends State<DeckOverlay>
             height: 64,
             decoration: BoxDecoration(
               color: const Color(0xFF39FF14),
-              border: Border.all(color: const Color(0xFF39FF14), width: 4),
               borderRadius: BorderRadius.circular(22),
             ),
             child: const Icon(Icons.add,
@@ -423,7 +421,6 @@ class _DeckOverlayState extends State<DeckOverlay>
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: const Color(0xFF5A0000),
-          border: Border.all(color: const Color(0xFF5A0000), width: 3),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -440,7 +437,6 @@ class _DeckOverlayState extends State<DeckOverlay>
               height: 48,
               decoration: BoxDecoration(
                 color: const Color(0xFFFF0000),
-                border: Border.all(color: const Color(0xFFFF0000), width: 3),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(Icons.refresh,

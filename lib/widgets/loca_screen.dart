@@ -95,11 +95,7 @@ class LocaScreen extends StatefulWidget {
       child: Container(
         decoration: BoxDecoration(
           color: color,
-          border: Border.all(color: borderColor, width: bw.toDouble()),
           borderRadius: BorderRadius.circular(28),
-          boxShadow: const [
-            BoxShadow(color: Color(0xFF000000), offset: Offset(8, 8), blurRadius: 0),
-          ],
         ),
         child: child,
       ),
@@ -115,7 +111,6 @@ class LocaScreen extends StatefulWidget {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color, width: 2),
         ),
         child: Icon(icon, color: Colors.white, size: 16),
       ),
@@ -283,11 +278,7 @@ class _LocaScreenState extends State<LocaScreen>
         child: Container(
           decoration: BoxDecoration(
             color: t.d,
-            border: Border.all(color: t.d, width: 4),
             borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0),
-            ],
           ),
           child: Row(children: [
             const Spacer(),

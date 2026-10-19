@@ -21,6 +21,9 @@
 | Fuentes | google_fonts | ^8.2.0 |
 | Almacenamiento local | shared_preferences | ^2.5.0 |
 | Navegación | GoRouter (route table centralizado, `MaterialApp.router`) | ^17.5.0 |
+| Reproducción de audio | audioplayers | ^6.8.1 |
+| Extracción YouTube | youtube_explode_dart | ^3.1.0 |
+| Mapa interactivo | flutter_map + latlong2 | ^8.3.2 / ^0.9.1 |
 
 ## Mapa de Carpetas
 
@@ -37,12 +40,10 @@ lib/
 ├── models/                      # 21 modelos Dart (message, mood, letter, deck_card, workout_log, etc.)
 ├── providers/                   # 20 providers registrados
 ├── screens/                     # 19 pantallas + subcarpetas
-│   ├── calendar/               # Calendario (port Gastronomia-App)
-│   │   ├── calendar_home_screen.dart    # Mes + próximos + botones Clases/Día
-│   │   ├── daily_events_screen.dart     # Eventos del día (navegación por fecha)
-│   │   ├── schedule_form_screen.dart    # Formulario de evento + tipos de evento
-│   │   ├── class_board_screen.dart      # Tablero semanal de clases + tipos de clase
-│   │   └── class_setup_wizard.dart      # Wizard inicial de clases
+│   ├── calendar/               # Calendario unificado estilo Nosotros
+│   │   ├── calendar_screen.dart     # Vista mensual + agenda del día integrado
+│   │   ├── event_sheet.dart         # Modal único (alta/edición con selector de repetición)
+│   │   └── day_agenda.dart          # Lógica pura de mezcla y orden de eventos
 │   ├── mazo/                    # Mazo de tarjetas swipe tipo Tinder
 │   │   ├── deck_overlay.dart           # Overlay encima del Home (swipe 4 direcciones)
 │   │   ├── deck_style.dart             # Estilos por categoria y reaccion
@@ -51,22 +52,13 @@ lib/
 │   │   └── deck_match_overlay.dart     # Pantalla "FURI!!" (match con confetti)
 │   ├── ejercicios/              # Seccion Ejercicios (boton pesa del Home)
 │   │   └── ejercicios_screen.dart      # 4 pestañas: Hoy, Ejercicios, Retos, Stats
-│   └── pizarra_v2/              # Pizarrón rediseñado
-│       ├── pizarra_screen_v2.dart   # Canvas infinito con grid + notas renderizadas
-│       └── note/                    # Sistema de notas completo
-│           ├── note_card_modal.dart         # Modal de creación/edición de nota
-│           ├── note_toolbar.dart            # Toolbar derecha (5 botones)
-│           ├── note_shape_editor.dart       # Editor de forma (6 formas)
-│           ├── note_color_editor.dart       # Editor de color (5 base + custom)
-│           ├── note_background_editor.dart  # Editor de fondo (2 capas: degradado + patrón)
-│           ├── note_font_editor.dart        # Editor de fuente (12 Google Fonts)
-│           ├── note_border_editor.dart      # Editor de borde (6 tipos + espaciado)
-│           ├── note_audio_recorder.dart     # Grabador de audio funcional
-│           ├── note_color_wheel.dart        # Rueda de color (tono + sat/brillo)
-│           ├── note_common_color_wheel.dart # Color wheel compartido
-│           └── note_gradient_color_picker.dart # Picker de color para degradado
-├── services/                    # 7 servicios (notifications, event/class notification, ai, settings, sound)
-└── widgets/                     # 8 widgets compartidos
+│   ├── pizarra/                 # Pizarrón Infinito colaborativo (drag fluido, notas, checklists, dibujos)
+│   │   └── pizarra_screen.dart         # Canvas 2D con Pan/Zoom, grid punteado y sync realtime
+│   └── music/                   # Reproductor de Música compartida
+│       └── music_screen.dart           # Biblioteca compartida, búsqueda YouTube y reproductor
+├── services/                    # 8 servicios (notifications, ai, sound, music_download, etc.)
+└── widgets/                     # Widgets compartidos
+    ├── furi_global_overlay.dart # Overlay global (notificaciones flotantes estilo WhatsApp + mini reproductor música)
     ├── brutal_style.dart        # Estilo Nosotros compartido (bg, block, card, fillIcon, iconAction)
     ├── loca_arranger.dart       # Mosaico "loca" determinístico (dividir lienzo en N bloques)
     ├── loca_screen.dart         # LocaScreen: pantalla icono+swink estilo Nosotros (LocaEntry, panels, swap)
@@ -118,10 +110,11 @@ HomeScreen.initState():
     │     → Cierra wizard → loadSchedules() de ClassScheduleProvider
     └── Con datos → No muestra wizard
 
-CalendarHomeScreen:
-  → Carga `ScheduleProvider` (eventos fechados) + `ClassScheduleProvider` (clases recurrentes)
-  → Por cada día mostrado, genera eventos sintéticos de tipo `Clase` a partir de `class_schedules.dayOfWeek`
-  → Botones "Día" (DailyEventsScreen) y "Clases" (ClassBoardScreen) en la barra de mes
+CalendarScreen:
+  → Carga `ScheduleProvider` (eventos fechados y recurrentes) + `ClassScheduleProvider` (clases)
+  → Vista mes arriba + agenda del día abajo con mezcla de únicos y recurrentes
+  → Formulario único `EventSheet` (único, semanal, cada N días, mensual, anual)
+  → Sin wizard intrusivo al inicio ni mosaico intermedio
 ```
 
 ### Recordatorios programados (eventos y clases)
@@ -146,18 +139,27 @@ ChatScreen abre
   → loadMessages() (Supabase messages, ultimos 100)
   → RealtimeChannel suscribe a messages
   → Nuevo mensaje texto:
-     1. Insert en Supabase messages
-     2. Trigger DB → Edge Function send-push → FCM
-     3. RealtimeChannel recibe cambio → UI actualiza
+     1. Insert en Supabase messages (1 check gris: sent)
+     2. Render 24/7 (bot-furi/server.js) + app despachan push FCM v1 de alta prioridad
+     3. Receptor recibe push (background/foreground) o realtime → markMessageDelivered() → delivered_at = NOW() (2 checks grises: delivered)
+     4. Receptor abre chat o ya está dentro → markIncomingRead() → read = true, read_at = NOW() (2 checks azules: read)
+     5. RealtimeChannel propaga UPDATE → UI actualiza en vivo
   → Nuevo mensaje media:
      1. Copia local + upload bucket chat-media
      2. Insert messages (attachment_url, message_type, ...)
      3. Receptor toca descargar → download a app docs
      4. Guarda path en chat_media_local
      5. Borra objeto Storage + update cloud_deleted/attachment_url null
-  → Reply: swipe horizontal cualquier mensaje
+  → Reply: swipe horizontal cualquier mensaje (dock WhatsApp sobre input bar)
   → Reacciones: long-press → 🥰😘😍 :v xD :0 + custom (max 5 keys)
-  → Ticks de visto: markIncomingRead() → update messages read/delivered_at/read_at → doble tick
+  → Emojis y Stickers (WhatsApp Style):
+     - Botón emoji en barra de entrada → ChatEmojiStickerSheet con 2 tabs: EMOJIS (categorizados) y STICKERS (cuadrícula).
+     - Botón "Exportar desde WhatsApp" → StickerService escanea rutas de WhatsApp en Android (`/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Stickers`) y las copia a `furi_stickers/` local (con fallback a FilePicker).
+     - Al tocar un sticker se envía al chat como `message_type: 'sticker'` con renderizado transparente y microcápsula de hora/vistos.
+  → Ticks de visto:
+     - 1 check gris: enviado a Supabase
+     - 2 checks grises: recibido en el celular (notificación push / realtime)
+     - 2 checks azules: leído en chat abierto
 ```
 
 ### Pizarra v2 (Notas colaborativas)

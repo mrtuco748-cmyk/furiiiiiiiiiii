@@ -149,12 +149,12 @@ BEGIN
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
   EXCEPTION WHEN duplicate_object THEN
-    NULL
+    NULL;
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE chat_typing;
   EXCEPTION WHEN duplicate_object THEN
-    NULL
+    NULL;
   END;
 END $$;
 
@@ -241,6 +241,8 @@ CREATE INDEX IF NOT EXISTS idx_messages_participants ON messages(from_user, to_u
 -- siempre y hacian que el push "no llegara".
 CREATE UNIQUE INDEX IF NOT EXISTS idx_device_tokens_user_token
   ON device_tokens(user_id, token);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_device_tokens_token
+  ON device_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(read) WHERE read = false;
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_letters_recipient ON letters(to_user, is_opened);
@@ -421,6 +423,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   type TEXT DEFAULT 'Clase',
   color BIGINT DEFAULT 4286262670,
   user_id TEXT DEFAULT '',
+  recurrence TEXT DEFAULT '',
   createdAt TIMESTAMPTZ DEFAULT NOW(),
   updatedAt TIMESTAMPTZ DEFAULT NOW()
 );
@@ -890,4 +893,57 @@ BEGIN
       NULL; -- ya estaba publicada
     END;
   END LOOP;
+END $$;
+
+
+-- 25. BOARD_ELEMENTS (Pizarrón Infinito colaborativo)
+CREATE TABLE IF NOT EXISTS board_elements (
+  id BIGSERIAL PRIMARY KEY,
+  board_id BIGINT NOT NULL DEFAULT 1,
+  user_id TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT 'note',
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT DEFAULT '',
+  color TEXT NOT NULL DEFAULT '#9D00FF',
+  x DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+  y DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+  width DOUBLE PRECISION NOT NULL DEFAULT 200.0,
+  height DOUBLE PRECISION NOT NULL DEFAULT 160.0,
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE board_elements;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;
+
+
+-- 26. MUSIC_TRACKS (Biblioteca de música compartida de Facu y Rocío)
+CREATE TABLE IF NOT EXISTS music_tracks (
+  id BIGSERIAL PRIMARY KEY,
+  youtube_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  artist TEXT DEFAULT '',
+  duration_seconds INT DEFAULT 0,
+  thumbnail_url TEXT DEFAULT '',
+  audio_url TEXT DEFAULT '',
+  added_by TEXT DEFAULT '',
+  size_bytes BIGINT DEFAULT 0,
+  is_favorite BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE music_tracks;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
 END $$;

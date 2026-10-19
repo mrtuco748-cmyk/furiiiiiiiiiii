@@ -25,11 +25,10 @@ class BrutalStyle {
     );
   }
 
-  // Decoración base de un bloque/card brutalista.
-  static BoxDecoration decoration(Color color, {int bw = 3, BorderRadius? radius, Offset shadow = const Offset(5, 5)}) {
+  // Decoración base de un bloque/card brutalista (un solo color y tono, sin bordes).
+  static BoxDecoration decoration(Color color, {int bw = 0, BorderRadius? radius, Offset shadow = const Offset(5, 5)}) {
     return BoxDecoration(
       color: color,
-      border: Border.all(color: color, width: bw.toDouble()),
       borderRadius: radius ?? BorderRadius.circular(18),
       boxShadow: [BoxShadow(color: const Color(0xFF000000), offset: shadow, blurRadius: 0)],
     );
@@ -102,7 +101,6 @@ class BrutalStyle {
         decoration: BoxDecoration(
           color: color,
           borderRadius: radius ?? BorderRadius.circular(10),
-          border: Border.all(color: color, width: 2),
         ),
         child: Icon(icon, color: iconColor ?? Colors.white, size: size),
       ),

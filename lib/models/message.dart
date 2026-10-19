@@ -17,6 +17,7 @@ class Message {
     'voice',
     'gif',
     'document',
+    'sticker',
   };
 
   final int id;
@@ -66,9 +67,11 @@ class Message {
   bool get isMedia => mediaTypes.contains(messageType);
 
   /// Palomita del mensaje: enviado / entregado / leido.
-  /// Se prioriza leido (readAt) sobre entregado (deliveredAt) sobre enviado.
+  /// Un check: enviado a Supabase.
+  /// Dos checks grises: entregado al dispositivo receptor.
+  /// Dos checks azules: leído / abierto en el chat.
   MessageTick get tickState {
-    if (readAt != null) return MessageTick.read;
+    if (read || readAt != null) return MessageTick.read;
     if (deliveredAt != null) return MessageTick.delivered;
     return MessageTick.sent;
   }
@@ -104,6 +107,8 @@ class Message {
         return content.trim().isEmpty ? 'Audio' : content;
       case 'gif':
         return content.trim().isEmpty ? 'GIF' : content;
+      case 'sticker':
+        return 'Sticker';
       case 'document':
         if (attachmentName != null && attachmentName!.isNotEmpty) {
           return attachmentName!;

@@ -30,7 +30,6 @@ class ChatReactChip extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: bg,
-            border: Border.all(color: bg, width: 2),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(

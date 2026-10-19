@@ -1170,21 +1170,24 @@ async function verificarYNotificar(sock) {
   const numerosConMensajes = Object.keys(mensajesPorNum).filter(n => mensajesPorNum[n].length > 0);
   if (numerosConMensajes.length === 0) {
     console.log('Sin novedades para notificar.');
-    return;
+    return { count: 0, sent: 0 };
   }
 
   const header = `*F.U.R.I. - Novedades*\n${fechaLocal()} ${new Intl.DateTimeFormat('en-US', { timeZone: APP_TZ, hour12: false, hour: '2-digit', minute: '2-digit' }).format(ahora)}\n━━━━━━━━━━━━━━━\n`;
 
+  let sentCount = 0;
   for (const num of numerosConMensajes) {
     const texto = header + mensajesPorNum[num].join('\n\n');
     const ok = await enviarMensaje(sock, num, texto);
     if (ok) {
+      sentCount++;
       // Solo marcamos como notificados los pendientes de este numero cuando el
       // mensaje se confirmo. Si fallo, quedan sin marcar y se reintentaran.
       await flushMarksPendientes(num);
     }
   }
   console.log(`Se enviaron notificaciones a ${numerosConMensajes.length} destinatarios.`);
+  return { count: numerosConMensajes.length, sent: sentCount };
 }
 
 // ─── MAIN ──────────────────────────────────────────────────────
@@ -1206,13 +1209,35 @@ async function main() {
   process.exit(0);
 }
 
-// timeout global duro: fuerza la salida aunque algo cuelgue (CI nunca colgado)
-setTimeout(() => {
-  console.error(`Falla: el bot superó el timeout global de ${TIMEOUT_GLOBAL_MS / 1000}s. Abortando.`);
-  try { process.exit(1); } catch (e) { /* noop */ }
-}, TIMEOUT_GLOBAL_MS).unref();
+const isDirectRun = process.argv[1] && (
+  process.argv[1] === fileURLToPath(import.meta.url) ||
+  process.argv[1].endsWith('bot.js')
+);
 
-main().catch(err => {
-  console.error('Error fatal:', err);
-  process.exit(1);
-});
+if (isDirectRun) {
+  // timeout global duro: fuerza la salida aunque algo cuelgue (CI nunca colgado)
+  setTimeout(() => {
+    console.error(`Falla: el bot superó el timeout global de ${TIMEOUT_GLOBAL_MS / 1000}s. Abortando.`);
+    try { process.exit(1); } catch (e) { /* noop */ }
+  }, TIMEOUT_GLOBAL_MS).unref();
+
+  main().catch(err => {
+    console.error('Error fatal:', err);
+    process.exit(1);
+  });
+}
+
+export {
+  supabase,
+  loadSessionFromSupabase,
+  saveSessionToSupabase,
+  verificarYNotificar,
+  enviarMensaje,
+  lidCache,
+  cargarLidsCache,
+  resolverLidsSolo,
+  AUTH_DIR,
+  MI_NUMERO,
+  FACU_NUMERO,
+  ROCIO_NUMERO
+};

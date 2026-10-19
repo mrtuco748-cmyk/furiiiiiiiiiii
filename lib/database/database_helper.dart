@@ -15,7 +15,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'furi_calendar.db');
-    return openDatabase(path, version: 12, onCreate: _createTables, onUpgrade: _onUpgrade);
+    return openDatabase(path, version: 16, onCreate: _createTables, onUpgrade: _onUpgrade);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -84,6 +84,78 @@ class DatabaseHelper {
       // schedules): evita que una edición offline pierda contra la cloud vieja.
       await db.execute("ALTER TABLE class_schedules ADD COLUMN updatedAt TEXT DEFAULT ''");
     }
+    if (oldVersion < 13) {
+      // Regla de repetición del calendario unificado ('' = evento único).
+      await db.execute("ALTER TABLE schedules ADD COLUMN recurrence TEXT DEFAULT ''");
+    }
+    if (oldVersion < 14) {
+      // Pizarrón infinito: elementos colaborativos (notas, checklists, dibujos).
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS board_elements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cloud_id INTEGER,
+          board_id INTEGER NOT NULL DEFAULT 1,
+          user_id TEXT NOT NULL DEFAULT '',
+          type TEXT NOT NULL DEFAULT 'note',
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT DEFAULT '',
+          color TEXT NOT NULL DEFAULT '#9D00FF',
+          x REAL NOT NULL DEFAULT 0.0,
+          y REAL NOT NULL DEFAULT 0.0,
+          width REAL NOT NULL DEFAULT 200.0,
+          height REAL NOT NULL DEFAULT 160.0,
+          data TEXT DEFAULT '{}',
+          synced INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 15) {
+      // Reproductor de música compartida de Facu y Rocío
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS music_tracks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cloud_id INTEGER,
+          youtube_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          artist TEXT DEFAULT '',
+          duration_seconds INTEGER DEFAULT 0,
+          thumbnail_url TEXT DEFAULT '',
+          audio_url TEXT DEFAULT '',
+          local_path TEXT DEFAULT '',
+          added_by TEXT DEFAULT '',
+          size_bytes INTEGER DEFAULT 0,
+          is_favorite INTEGER DEFAULT 0,
+          synced INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 16) {
+      // Playlists y comentarios colaborativos de música
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS music_comments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cloud_id INTEGER,
+          track_id INTEGER NOT NULL,
+          user_id TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS music_playlists (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cloud_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          created_by TEXT NOT NULL DEFAULT '',
+          track_ids TEXT DEFAULT '[]',
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
   }
 
   Future<void> _createTables(Database db, int version) async {
@@ -100,6 +172,7 @@ class DatabaseHelper {
         type TEXT DEFAULT 'Clase',
         color INTEGER DEFAULT 0xFF7B2D8E,
         userId TEXT DEFAULT '',
+        recurrence TEXT DEFAULT '',
         cloudId INTEGER,
         synced INTEGER NOT NULL DEFAULT 1,
         createdAt TEXT NOT NULL,
@@ -169,6 +242,65 @@ class DatabaseHelper {
         color TEXT NOT NULL DEFAULT '#FFF9C4',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS board_elements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id INTEGER,
+        board_id INTEGER NOT NULL DEFAULT 1,
+        user_id TEXT NOT NULL DEFAULT '',
+        type TEXT NOT NULL DEFAULT 'note',
+        title TEXT NOT NULL DEFAULT '',
+        content TEXT DEFAULT '',
+        color TEXT NOT NULL DEFAULT '#9D00FF',
+        x REAL NOT NULL DEFAULT 0.0,
+        y REAL NOT NULL DEFAULT 0.0,
+        width REAL NOT NULL DEFAULT 200.0,
+        height REAL NOT NULL DEFAULT 160.0,
+        data TEXT DEFAULT '{}',
+        synced INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS music_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id INTEGER,
+        youtube_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        artist TEXT DEFAULT '',
+        duration_seconds INTEGER DEFAULT 0,
+        thumbnail_url TEXT DEFAULT '',
+        audio_url TEXT DEFAULT '',
+        local_path TEXT DEFAULT '',
+        added_by TEXT DEFAULT '',
+        size_bytes INTEGER DEFAULT 0,
+        is_favorite INTEGER DEFAULT 0,
+        synced INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS music_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id INTEGER,
+        track_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '',
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS music_playlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        created_by TEXT NOT NULL DEFAULT '',
+        track_ids TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL
       )
     ''');
   }

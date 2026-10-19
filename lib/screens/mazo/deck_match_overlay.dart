@@ -68,7 +68,6 @@ class _DeckMatchOverlayState extends State<DeckMatchOverlay> {
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     color: cat.color,
-                    border: Border.all(color: cat.color, width: 4),
                     borderRadius: BorderRadius.circular(26),
                   ),
                   child: Text(
@@ -90,8 +89,6 @@ class _DeckMatchOverlayState extends State<DeckMatchOverlay> {
                     height: 64,
                     decoration: BoxDecoration(
                       color: const Color(0xFF39FF14),
-                      border: Border.all(color: const Color(0xFF39FF14),
-                          width: 4),
                       borderRadius: BorderRadius.circular(22),
                     ),
                     child: const Icon(Icons.arrow_forward,

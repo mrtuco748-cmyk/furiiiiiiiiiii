@@ -205,11 +205,7 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
       child: Container(
         decoration: BoxDecoration(
           color: _light,
-          border: Border.all(color: _light, width: 3),
           borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0),
-          ],
         ),
         padding: const EdgeInsets.all(10),
         child: Row(children: [
@@ -307,7 +303,6 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
             decoration: BoxDecoration(
               color: selected ? _vc : _bg,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: selected ? _vc : _panel, width: 2),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Text(e.value, style: GoogleFonts.bangers(
@@ -387,8 +382,11 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
   InputDecoration _fieldDecoration(String hint) => InputDecoration(
         hintText: hint,
         hintStyle: GoogleFonts.bangers(color: _light.withValues(alpha: 0.4), fontSize: 14),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _panel, width: 2)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _vc, width: 2)),
+        filled: true,
+        fillColor: _bg,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
       );
 
   Widget _ratingEditor(String label, double rating, Color color, ValueChanged<double> onTap) {
@@ -402,20 +400,20 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
         ),
         const SizedBox(width: 8),
         ...List.generate(5, (i) => GestureDetector(
-              onTap: () => onTap((i + 1).toDouble()),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Icon(rating >= i + 1 ? Icons.star : (rating >= i + 0.5 ? Icons.star_half : Icons.star_border), color: color, size: 28),
-              ),
-            )),
+            onTap: () => onTap((i + 1).toDouble()),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Icon(rating >= i + 1 ? Icons.star : (rating >= i + 0.5 ? Icons.star_half : Icons.star_border), color: color, size: 28),
+            ),
+          )),
         const SizedBox(width: 8),
         ...List.generate(5, (i) => GestureDetector(
-              onTap: () => onTap(i + 0.5),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Container(width: 10, height: 16, decoration: BoxDecoration(color: (i + 0.5) <= rating ? color : Colors.transparent, borderRadius: BorderRadius.circular(3))),
-              ),
-            )),
+            onTap: () => onTap(i + 0.5),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Container(width: 10, height: 16, decoration: BoxDecoration(color: (i + 0.5) <= rating ? color : Colors.transparent, borderRadius: BorderRadius.circular(3))),
+            ),
+          )),
       ]),
     );
   }
@@ -425,7 +423,7 @@ class _FavoritosScreenState extends State<FavoritosScreen> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(color: bg, border: Border.all(color: bg, width: 2), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
         child: Icon(icon, color: fg, size: 20),
       ),
     );

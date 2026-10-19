@@ -17,10 +17,12 @@ class LoadingScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(color: Color(0xFF9D00FF), strokeWidth: 3),
+            CircularProgressIndicator(color: theme.a, strokeWidth: 3),
             const SizedBox(height: 16),
-            Text('Cargando trivia...',
-                style: GoogleFonts.bangers(color: Colors.white54, fontSize: 16)),
+            Text(
+              'Cargando trivia...',
+              style: GoogleFonts.bangers(color: Colors.white54, fontSize: 16),
+            ),
           ],
         ),
       ),
@@ -49,23 +51,26 @@ class ErrorScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off, color: Colors.red, size: 48),
+              const Icon(Icons.cloud_off, color: Colors.red, size: 48),
               const SizedBox(height: 16),
-              Text(message,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.bangers(color: Colors.white, fontSize: 16),
+              ),
               const SizedBox(height: 16),
               TapTile(
                 onTap: onRetry,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF9D00FF),
-                    border: Border.all(color: const Color(0xFF9D00FF), width: 2),
+                    color: theme.a,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text('Reintentar',
-                      style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
+                  child: Text(
+                    'Reintentar',
+                    style: GoogleFonts.bangers(color: Colors.white, fontSize: 16),
+                  ),
                 ),
               ),
             ],
@@ -79,50 +84,88 @@ class ErrorScreen extends StatelessWidget {
 class EmptyScreen extends StatelessWidget {
   final ThemeSet theme;
   final VoidCallback onAdd;
-  const EmptyScreen({super.key, required this.theme, required this.onAdd});
+  final VoidCallback? onHistory;
+
+  const EmptyScreen({
+    super.key,
+    required this.theme,
+    required this.onAdd,
+    this.onHistory,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF0A0A0A),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.quiz, color: const Color(0xFF9D00FF), size: 64),
-              const SizedBox(height: 16),
-              Text('¡No hay preguntas!',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.bangers(color: Colors.white, fontSize: 20)),
-              const SizedBox(height: 8),
-              Text('Agregá la primera para empezar a jugar',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.bangers(color: Colors.white54, fontSize: 14)),
-              const SizedBox(height: 24),
-              TapTile(
-                onTap: onAdd,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF9D00FF),
-                    border: Border.all(color: const Color(0xFF9D00FF), width: 2),
-                    borderRadius: BorderRadius.circular(14),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.quiz_rounded, color: theme.a, size: 60),
+            const SizedBox(height: 16),
+            Text(
+              '¡Están al día con la trivia!',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.bangers(color: Colors.white, fontSize: 22),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No quedan preguntas pendientes por responder.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.bangers(color: Colors.white54, fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                if (onHistory != null)
+                  TapTile(
+                    onTap: onHistory!,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF222222),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.history, color: Colors.white, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Ver historial',
+                            style: GoogleFonts.bangers(color: Colors.white, fontSize: 15),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.add, color: Colors.white, size: 20),
-                      const SizedBox(width: 8),
-                      Text('Agregar pregunta',
-                          style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
-                    ],
+                TapTile(
+                  onTap: onAdd,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: theme.a,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.add, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Nueva pregunta',
+                          style: GoogleFonts.bangers(color: Colors.white, fontSize: 15),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -141,33 +184,35 @@ class Scoreboard extends StatelessWidget {
     final iWin = myScore >= partnerScore;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        border: Border.all(color: const Color(0xFF9D00FF), width: 2),
+        color: const Color(0xFF181818),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Column(
-            children: [
-              Text('VOS', style: GoogleFonts.bangers(color: Colors.white54, fontSize: 11)),
-              Text('$myScore',
-                  style: GoogleFonts.bangers(
-                      color: iWin ? const Color(0xFF39FF14) : Colors.white, fontSize: 24)),
-            ],
+          Text(
+            'VOS $myScore',
+            style: GoogleFonts.bangers(
+              color: iWin ? const Color(0xFF39FF14) : Colors.white,
+              fontSize: 16,
+            ),
           ),
-          const SizedBox(width: 20),
-          const Text('🏆', style: TextStyle(fontSize: 24)),
-          const SizedBox(width: 20),
-          Column(
-            children: [
-              Text('PAREJA', style: GoogleFonts.bangers(color: Colors.white54, fontSize: 11)),
-              Text('$partnerScore',
-                  style: GoogleFonts.bangers(
-                      color: !iWin ? const Color(0xFF39FF14) : Colors.white, fontSize: 24)),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              '·',
+              style: GoogleFonts.bangers(color: Colors.white38, fontSize: 16),
+            ),
+          ),
+          Text(
+            'PAREJA $partnerScore',
+            style: GoogleFonts.bangers(
+              color: !iWin ? const Color(0xFF39FF14) : Colors.white,
+              fontSize: 16,
+            ),
           ),
         ],
       ),
@@ -198,8 +243,7 @@ class ActionButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: enabled ? color : const Color(0xFF333333),
-            border: Border.all(color: enabled ? color : const Color(0xFF333333), width: 2),
+            color: enabled ? color : const Color(0xFF222222),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
@@ -207,9 +251,13 @@ class ActionButton extends StatelessWidget {
             children: [
               Icon(icon, color: enabled ? Colors.white : Colors.white54, size: 20),
               const SizedBox(width: 8),
-              Text(label,
-                  style: GoogleFonts.bangers(
-                      color: enabled ? Colors.white : Colors.white54, fontSize: 14)),
+              Text(
+                label,
+                style: GoogleFonts.bangers(
+                  color: enabled ? Colors.white : Colors.white54,
+                  fontSize: 14,
+                ),
+              ),
             ],
           ),
         ),

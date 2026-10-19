@@ -136,7 +136,6 @@ class _CommentsBlockState extends State<CommentsBlock> {
                 height: 36,
                 decoration: BoxDecoration(
                   color: EjerciciosStyle.cyan,
-                  border: Border.all(color: EjerciciosStyle.cyan, width: 2),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.send, color: EjerciciosStyle.darkText, size: 18),

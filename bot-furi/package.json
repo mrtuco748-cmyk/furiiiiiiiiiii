@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "description": "Bot de WhatsApp para notificaciones de F.U.R.I.",
   "type": "module",
-  "main": "bot.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node bot.js",
+    "start": "node server.js",
+    "bot": "node bot.js",
     "setup": "node bot.js --setup"
   },
   "dependencies": {

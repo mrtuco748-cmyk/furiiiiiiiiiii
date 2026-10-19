@@ -112,11 +112,11 @@ Future<void> _loadRetos() async {
       final t = getTheme(widget.mode);
       return AlertDialog(
         backgroundColor: t.mid,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: t.d, width: 4)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Icon(existing != null ? Icons.edit : Icons.flag, color: t.light, size: 34),
-        content: TextField(controller: ctrl, autofocus: true, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Nombre...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.a.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.a, width: 2)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.a, width: 2)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.d, width: 3)))),
+        content: TextField(controller: ctrl, autofocus: true, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Nombre...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.a.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
         actions: [
-          TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.mid, width: 2)), child: Icon(Icons.close, color: t.light, size: 20))),
+          TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.close, color: t.light, size: 20))),
           TapTile(onTap: () async {
             Navigator.pop(ctx);
             final text = ctrl.text.trim();
@@ -132,7 +132,7 @@ Future<void> _loadRetos() async {
               if (mounted) _showError('No se pudo guardar el reto');
             }
             _loadRetos();
-          }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.a, width: 2)), child: Icon(Icons.check, color: t.dark, size: 20))),
+          }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.check, color: t.dark, size: 20))),
         ],
       );
     });
@@ -232,9 +232,7 @@ Future<void> _loadRetos() async {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: t.mid,
-            border: Border.all(color: done ? t.c : t.e, width: 3),
             borderRadius: BorderRadius.circular(18),
-            boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
           ),
           child: Row(children: [
             Icon(done ? Icons.check_circle : Icons.radio_button_unchecked, color: done ? t.c : t.e, size: 22),
@@ -287,11 +285,11 @@ Future<void> _loadRetos() async {
           Container(width: 20, height: 20, alignment: Alignment.center, decoration: BoxDecoration(color: isMine ? const Color(0xFF00F0FF) : const Color(0xFFFF66C4), borderRadius: BorderRadius.circular(6)),
             child: Text(initial, style: GoogleFonts.bangers(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900))),
           const Spacer(),
-          TapTile(onTap: () => _toggleChallenge(reto), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: done ? t.e : t.c, borderRadius: BorderRadius.circular(12), border: Border.all(color: done ? t.e : t.c, width: 2)), child: Icon(done ? Icons.undo : Icons.check, color: t.light, size: 22))),
+          TapTile(onTap: () => _toggleChallenge(reto), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: done ? t.e : t.c, borderRadius: BorderRadius.circular(12)), child: Icon(done ? Icons.undo : Icons.check, color: t.light, size: 22))),
           const SizedBox(width: 8),
-          TapTile(onTap: () => _addOrEdit(existing: reto), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(12), border: Border.all(color: t.a, width: 2)), child: Icon(Icons.edit, color: t.dark, size: 22))),
+          TapTile(onTap: () => _addOrEdit(existing: reto), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.edit, color: t.dark, size: 22))),
           const SizedBox(width: 8),
-          TapTile(onTap: () { HapticFeedback.heavyImpact(); _delete(reto); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFCC0000), width: 2)), child: Icon(Icons.delete, color: t.light, size: 22))),
+          TapTile(onTap: () { HapticFeedback.heavyImpact(); _delete(reto); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.delete, color: t.light, size: 22))),
           const SizedBox(width: 8),
         ]),
       ),

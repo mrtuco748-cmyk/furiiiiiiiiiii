@@ -433,9 +433,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       child: Container(
         decoration: BoxDecoration(
           color: bgColor,
-          border: Border.all(color: bgColor, width: bw.toDouble()),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
         ),
         child: child,
       ),
@@ -619,9 +617,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       child: Container(
         decoration: BoxDecoration(
           color: t.d,
-          border: Border.all(color: t.d, width: 4),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
           ...List.generate(3, (_) => Padding(
@@ -717,9 +713,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                 child: Container(
                   decoration: BoxDecoration(
                     color: _purple,
-                    border: Border.all(color: _purple, width: 4),
                     borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(10, 10), blurRadius: 0)],
                   ),
                   child: Row(children: [
                     SizedBox(
@@ -732,8 +726,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                           onTap: _closeSwink,
                           child: Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: _black, width: 3)),
+                            decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(12)),
                             child: Icon(Icons.close, color: t.light, size: 20),
                           ),
                         ),
@@ -753,9 +746,9 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                                 hintText: '😊',
                                 hintStyle: TextStyle(color: t.light.withValues(alpha: 0.3), fontSize: 22),
                                 filled: true, fillColor: t.dark.withValues(alpha: 0.3),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple, width: 2)),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple, width: 2)),
-                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.d, width: 3)),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                               ),
                               onSubmitted: (v) { _addMood(v); _emojiCtrl.clear(); },
@@ -765,8 +758,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                               onTap: () { _addMood(_emojiCtrl.text); _emojiCtrl.clear(); },
                               child: Container(
                                 padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(color: t.c, borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: t.c, width: 2)),
+                                decoration: BoxDecoration(color: t.c, borderRadius: BorderRadius.circular(10)),
                                 child: Icon(Icons.send, color: t.light, size: 20),
                               ),
                             ),
@@ -779,8 +771,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                             onTap: () { _addMood(e); _emojiCtrl.clear(); },
                             child: Container(
                               padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: _purple, width: 2)),
+                              decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8)),
                               child: Text(e, style: const TextStyle(fontSize: 20)),
                             ),
                           )).toList(),
@@ -870,9 +861,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       child: Container(
         decoration: BoxDecoration(
           color: _purple,
-          border: Border.all(color: t.c, width: 4),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(10, 10), blurRadius: 0)],
         ),
         child: Column(children: [
           Container(
@@ -885,8 +874,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
                   onTap: _closeSwink,
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _black, width: 2)),
+                    decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10)),
                     child: Icon(Icons.close, color: t.light, size: 16),
                   ),
                 ),
@@ -914,8 +902,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
               },
               child: Container(
                 width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(color: t.d, borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: t.d, width: 3)),
+                decoration: BoxDecoration(color: t.d, borderRadius: BorderRadius.circular(12)),
                 child: Center(child: Icon(Icons.add, color: t.dark, size: 28)),
               ),
             ),
@@ -933,9 +920,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
       child: Container(
         decoration: BoxDecoration(
           color: _purple,
-          border: Border.all(color: _purple, width: 4),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(8, 8), blurRadius: 0)],
         ),
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -949,8 +934,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
               }),
               child: Container(
                 padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: t.e, width: 2)),
+                decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10)),
                 child: Icon(Icons.close, color: t.light, size: 16),
               ),
             ),
@@ -959,8 +943,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
           if (!isNewQuestion)
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: t.dark.withValues(alpha: 0.3), width: 2)),
+              decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(10)),
               child: Text(question, style: GoogleFonts.bangers(color: t.light, fontSize: 14)),
             ),
           if (!isNewQuestion) const SizedBox(height: 8),
@@ -972,9 +955,9 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
               hintText: isNewQuestion ? 'Escribe tu pregunta...' : 'Escribe tu respuesta...',
               hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4), fontSize: 14),
               filled: true, fillColor: t.dark.withValues(alpha: 0.3),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.dark.withValues(alpha: 0.3), width: 2)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.dark.withValues(alpha: 0.3), width: 2)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.d, width: 3)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.all(10),
             ),
           ),
@@ -983,8 +966,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
             onTap: () => isNewQuestion ? _sendNewQuestion(_answerController.text) : _answerQuestion(_answerController.text),
             child: Container(
               width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(color: t.d, borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: t.d, width: 3)),
+              decoration: BoxDecoration(color: t.d, borderRadius: BorderRadius.circular(12)),
               child: Center(child: Text(isNewQuestion ? 'Enviar pregunta' : 'Enviar respuesta', style: GoogleFonts.bangers(color: t.dark, fontSize: 14, fontWeight: FontWeight.bold))),
             ),
           ),
@@ -1015,8 +997,7 @@ class _NosotrosScreenState extends State<NosotrosScreen> with TickerProviderStat
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Container(
           padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _black, width: 2)),
+          decoration: BoxDecoration(color: t.dark.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Container(width: 18, height: 18, alignment: Alignment.center, decoration: BoxDecoration(color: fromMe ? const Color(0xFF00F0FF) : const Color(0xFFFF66C4), borderRadius: BorderRadius.circular(6)), child: Text(askerInitial, style: GoogleFonts.bangers(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900))),

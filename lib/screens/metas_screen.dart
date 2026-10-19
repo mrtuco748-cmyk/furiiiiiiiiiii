@@ -143,15 +143,15 @@ class _MetasScreenState extends State<MetasScreen> {
     final descCtrl = TextEditingController(text: existing?['description'] ?? '');
     await showDialog(context: context, builder: (ctx) {
       final t = getTheme(widget.mode);
-      return AlertDialog(backgroundColor: t.mid, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: t.d, width: 4)),
+      return AlertDialog(backgroundColor: t.mid, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Icon(existing != null ? Icons.edit : Icons.emoji_events, color: t.light, size: 34),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: titleCtrl, autofocus: true, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Titulo...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.e.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.e, width: 2)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.e, width: 2)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.d, width: 3)))),
+          TextField(controller: titleCtrl, autofocus: true, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Titulo...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.e.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
           const SizedBox(height: 10),
-          TextField(controller: descCtrl, maxLines: 2, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Descripcion...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.e.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.e, width: 2)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.e, width: 2)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.d, width: 3)))),
+          TextField(controller: descCtrl, maxLines: 2, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Descripcion...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.e.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
         ]),
         actions: [
-          TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.mid, width: 2)), child: Icon(Icons.close, color: t.light, size: 20))),
+          TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.close, color: t.light, size: 20))),
           TapTile(onTap: () async {
             Navigator.pop(ctx);
             final title = titleCtrl.text.trim();
@@ -168,7 +168,7 @@ class _MetasScreenState extends State<MetasScreen> {
               if (mounted) _showError('No se pudo guardar la meta');
             }
             _loadMetas();
-          }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.e, width: 2)), child: Icon(Icons.check, color: t.light, size: 20))),
+          }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.check, color: t.light, size: 20))),
         ],
       );
     });
@@ -241,7 +241,7 @@ void _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
     final description = meta['description'] as String? ?? '';
     showDialog(context: context, builder: (ctx) => AlertDialog(
       backgroundColor: t.mid,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: t.d, width: 4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       title: Icon(Icons.flag, color: t.light, size: 34),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -277,7 +277,6 @@ void _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
             decoration: BoxDecoration(
               color: t.mid,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: t.mid, width: 2),
             ),
             child: Icon(Icons.close, color: t.light, size: 20),
           ),
@@ -338,7 +337,6 @@ Widget _historyMetaCard(ThemeSet t, Map<String, dynamic> meta) {
           padding: const EdgeInsets.all(14),
 decoration: BoxDecoration(
               color: t.mid,
-              border: Border.all(color: done ? t.d : t.e, width: 3),
               borderRadius: BorderRadius.circular(18),
             ),
           child: Row(children: [
@@ -406,11 +404,11 @@ decoration: BoxDecoration(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(children: [
           const Spacer(),
-          TapTile(onTap: () => _toggle(meta), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: done ? t.e : t.d, borderRadius: BorderRadius.circular(12), border: Border.all(color: done ? t.e : t.d, width: 2)), child: Icon(done ? Icons.undo : Icons.check, color: t.light, size: 22))),
+          TapTile(onTap: () => _toggle(meta), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: done ? t.e : t.d, borderRadius: BorderRadius.circular(12)), child: Icon(done ? Icons.undo : Icons.check, color: t.light, size: 22))),
           const SizedBox(width: 8),
-          TapTile(onTap: () => _addOrEdit(existing: meta), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(12), border: Border.all(color: t.a, width: 2)), child: Icon(Icons.edit, color: t.dark, size: 22))),
+          TapTile(onTap: () => _addOrEdit(existing: meta), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.edit, color: t.dark, size: 22))),
           const SizedBox(width: 8),
-          TapTile(onTap: () { HapticFeedback.heavyImpact(); _delete(meta); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFCC0000), width: 2)), child: Icon(Icons.delete, color: t.light, size: 22))),
+          TapTile(onTap: () { HapticFeedback.heavyImpact(); _delete(meta); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.delete, color: t.light, size: 22))),
           const SizedBox(width: 8),
         ]),
       ),

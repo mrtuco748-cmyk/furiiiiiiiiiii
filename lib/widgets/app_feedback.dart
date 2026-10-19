@@ -20,7 +20,6 @@ class AppFeedback {
         backgroundColor: color,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: color, width: 2),
         ),
         duration: onUndo != null
             ? const Duration(seconds: 4)

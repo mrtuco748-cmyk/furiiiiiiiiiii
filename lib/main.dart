@@ -20,7 +20,6 @@ import 'providers/class_type_provider.dart';
 import 'providers/finances_provider.dart';
 import 'providers/gallery_provider.dart';
 import 'providers/favorites_provider.dart';
-import 'providers/notes_provider.dart';
 import 'providers/workout_provider.dart';
 import 'providers/couple_provider.dart';
 import 'providers/couple_achievements_provider.dart';
@@ -28,8 +27,11 @@ import 'providers/trivia_provider.dart';
 import 'providers/rewards_provider.dart';
 import 'providers/deck_provider.dart';
 import 'providers/location_provider.dart';
+import 'providers/board_data_provider.dart';
+import 'providers/music_player_provider.dart';
 import 'database/database_helper.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'widgets/furi_global_overlay.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -139,6 +141,12 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance?.addObserver(this);
+    // Navegación instantánea al tocar notificaciones
+    NotificationService.onNotificationTap = (data) {
+      final type = (data['type'] as String?) ?? '';
+      final route = routeForNotificationType(type) ?? RouterRoutes.notifications;
+      appRouter.push(route);
+    };
     // Ensure background music starts if settings enabled
     SoundService().startBackgroundMusic();
   }
@@ -185,7 +193,6 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
             ChangeNotifierProvider(create: (_) => FinancesProvider()),
             ChangeNotifierProvider(create: (_) => GalleryProvider()),
             ChangeNotifierProvider(create: (_) => FavoritesProvider()),
-            ChangeNotifierProvider(create: (_) => NotesProvider()),
              ChangeNotifierProvider(create: (_) => WorkoutProvider()),
             ChangeNotifierProvider(create: (_) => CoupleProvider()),
             ChangeNotifierProvider(create: (_) => CoupleAchievementsProvider()),
@@ -193,12 +200,15 @@ class _FuriAppState extends State<FuriApp> with WidgetsBindingObserver {
             ChangeNotifierProvider(create: (_) => RewardsProvider()),
             ChangeNotifierProvider(create: (_) => DeckProvider()),
             ChangeNotifierProvider(create: (_) => LocationProvider()),
+            ChangeNotifierProvider(create: (_) => BoardDataProvider()),
+            ChangeNotifierProvider(create: (_) => MusicPlayerProvider()),
           ],
           child: MaterialApp.router(
             routerConfig: appRouter,
             debugShowCheckedModeBanner: false,
             title: 'F.U.R.I',
             theme: ThemeData(useMaterial3: true),
+            builder: (context, child) => FuriGlobalOverlay(child: child ?? const SizedBox()),
           ),
         ),
       ),

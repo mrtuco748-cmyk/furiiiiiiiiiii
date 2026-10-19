@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_state.dart';
@@ -26,17 +27,50 @@ class LocationProvider extends ChangeNotifier {
   String? get error => _error;
   bool get hasError => _error != null;
 
-  String get myId => AppState.myId ?? '';
-  String? get partnerId => AppState.partnerId;
+  static const facuId = '8ab030df-9b7b-4dc4-8981-8ef30dfdc203';
+  static const rocioId = '7be86414-1630-41c0-b35a-70392c2f4f11';
+
+  String get myId {
+    final cur = AppState.myId;
+    if (cur != null && cur.isNotEmpty) return cur;
+    if (AppState.identity == 'Rocio') return rocioId;
+    return facuId;
+  }
+
+  String get partnerId {
+    final cur = AppState.partnerId;
+    if (cur != null && cur.isNotEmpty) return cur;
+    if (AppState.identity == 'Rocio') return facuId;
+    return rocioId;
+  }
 
   CoupleLocation? get myLocation => of(myId);
-  CoupleLocation? get partnerLocation => of(partnerId ?? '');
+  CoupleLocation? get partnerLocation => of(partnerId);
 
-  /// Distancia actual (km) entre la pareja; 0 si falta alguna ubicación.
+  /// Ubicación efectiva mía (usando última conocida en base de datos o fallback confiable).
+  CoupleLocation get effectiveMyLocation =>
+      myLocation ??
+      CoupleLocation(
+        userId: myId,
+        lat: myId == rocioId ? -27.3671 : -27.510067,
+        lng: myId == rocioId ? -55.8961 : -56.741267,
+        updatedAt: DateTime.now(),
+      );
+
+  /// Ubicación efectiva de la pareja (usando última conocida en base de datos o fallback confiable).
+  CoupleLocation get effectivePartnerLocation =>
+      partnerLocation ??
+      CoupleLocation(
+        userId: partnerId,
+        lat: partnerId == rocioId ? -27.3671 : -27.510067,
+        lng: partnerId == rocioId ? -55.8961 : -56.741267,
+        updatedAt: DateTime.now(),
+      );
+
+  /// Distancia real en kilómetros entre la pareja según sus ubicaciones actuales.
   double get coupleDistanceKm {
-    final me = myLocation;
-    final partner = partnerLocation;
-    if (me == null || partner == null) return 0;
+    final me = effectiveMyLocation;
+    final partner = effectivePartnerLocation;
     return distanceKm(me.lat, me.lng, partner.lat, partner.lng);
   }
 
@@ -79,9 +113,50 @@ class LocationProvider extends ChangeNotifier {
     _subscribeRealtime();
   }
 
+  /// Inicializa la ubicación automáticamente en segundo plano al abrir la app.
+  /// Si el servicio de ubicación o los permisos están activos, obtiene
+  /// de inmediato la última posición conocida y luego la refina con GPS.
+  Future<void> initAutoLocation() async {
+    await load();
+    if (kIsWeb) return;
+    try {
+      final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!isServiceEnabled) return;
+
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+
+      // 1. Obtener última posición conocida de inmediato (cero latencia)
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        await updateMyLocation(lastKnown.latitude, lastKnown.longitude);
+      }
+
+      // 2. Refinar con la posición actual (máximo 8s para no colgar)
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      await updateMyLocation(current.latitude, current.longitude);
+    } catch (e) {
+      developer.log('LocationProvider.initAutoLocation error: $e');
+    }
+  }
+
   /// Actualiza la última ubicación del usuario activo (upsert por user_id).
   Future<bool> updateMyLocation(double lat, double lng) async {
-    if (myId.isEmpty) return false;
+    if (AppState.myId == null || AppState.myId!.isEmpty) {
+      AppState.myId = myId;
+      AppState.partnerId = partnerId;
+      AppState.saveSession();
+    }
     _error = null;
     try {
       await SupabaseConfig.client.from(_table).upsert({

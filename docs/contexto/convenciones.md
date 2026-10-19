@@ -26,20 +26,22 @@
 - Separar grupos con línea en blanco
 - Usar imports relativos (`../providers/`) o package (`package:furi_app/...`) — inconsistente actualmente, preferir package
 
-## Estilo Visual (BRUTALISTA — NO NEGOCIABLE)
+## Estilo Visual (BRUTALISTA MODIFICADO — NO NEGOCIABLE)
+
+> **REGLA FUNDAMENTAL**:
+> **NO QUIERO BORDES EN NINGÚN LADO. CADA COSA DEBE TENER UN SOLO COLOR Y TONO. NADA DE RELLENOS Y BORDES DE DISTINTO COLOR. UN SOLO COLOR Y SIN BORDES: BLOQUES DE LITERALMENTE UN SOLO COLOR Y TONALIDAD CADA UNO, EXACTAMENTE COMO SE VE EN EL INICIO.**
 
 ```dart
-// Referencia: FURI_GUIA_ESTILO_BRUTALISTA.txt
-
+// Referencia: skill_visual .md
 // Colores base
-Color fondoBase = const Color(0xFF0A0A0A);
+Color fondoBase = const Color(0xFF141414);
 Color textoPrincipal = const Color(0xFFFFFFFF);
 Color textoSecundario = const Color(0xFFE0E0E0);
 
-// Bordes: 2-3px sólidos, ÁNGULOS RECTOS (sin border-radius)
-// Animaciones: <150ms, linear o ease-in-out rápido
-// Sin sombras ni gradientes suaves
-// Sin fade-in/fade-out
+// Bordes: NINGUNO (border: null o sin borde). Cero líneas perimetrales de distinto tono.
+// Relleno: Un solo color y tono sólido por botón, card o bloque (como en el inicio).
+// Esquinas: Redondeadas (BorderRadius.circular(10) a (18)).
+// Sin sombras difusas ni gradientes.
 ```
 
 ### Colores por Sección

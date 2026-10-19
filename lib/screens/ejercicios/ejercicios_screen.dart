@@ -22,11 +22,19 @@ import 'widgets/retos_tab.dart';
 import 'widgets/stats_tab.dart';
 import 'widgets/improvement_block.dart';
 import 'widgets/comments_block.dart';
+import 'widgets/exercise_sheet.dart';
+import '../../models/exercise_catalog.dart';
 
 class EjerciciosScreen extends StatefulWidget {
   final AppMode mode;
   final int initialTab;
-  const EjerciciosScreen({super.key, required this.mode, this.initialTab = 0});
+  final bool isPopup;
+  const EjerciciosScreen({
+    super.key,
+    required this.mode,
+    this.initialTab = 0,
+    this.isPopup = false,
+  });
 
   @override
   State<EjerciciosScreen> createState() => _EjerciciosScreenState();
@@ -59,8 +67,18 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 Positioned.fill(
                   child: Column(
                     children: [
+                      if (widget.isPopup)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8, bottom: 4),
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
                       _header(w, h),
-                      _tabs(w, h),
+                      if (!widget.isPopup) _tabs(w, h),
                       Expanded(child: _body(w, h)),
                     ],
                   ),
@@ -77,30 +95,72 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
   // ─── HEADER Y TABS ───────────────────────────────────────────
 
   Widget _header(double w, double h) {
+    final Color headerColor;
+    final IconData headerIcon;
+    final String headerTitle;
+    if (widget.isPopup) {
+      switch (_tab) {
+        case 0:
+          headerColor = EjerciciosStyle.lime;
+          headerIcon = Icons.today;
+          headerTitle = 'HOY';
+          break;
+        case 1:
+          headerColor = EjerciciosStyle.cyan;
+          headerIcon = Icons.fitness_center;
+          headerTitle = 'EJERCICIOS';
+          break;
+        case 2:
+          headerColor = EjerciciosStyle.yellow;
+          headerIcon = Icons.emoji_events;
+          headerTitle = 'RETOS';
+          break;
+        default:
+          headerColor = EjerciciosStyle.pink;
+          headerIcon = Icons.bar_chart;
+          headerTitle = 'ESTADÍSTICAS';
+          break;
+      }
+    } else {
+      headerColor = EjerciciosStyle.lime;
+      headerIcon = Icons.fitness_center;
+      headerTitle = 'EJERCICIOS';
+    }
+
     return Container(
-      height: h * 0.07,
+      height: h * 0.075,
       margin: EdgeInsets.all(w * 0.02),
-      decoration: BoxDecoration(
-        color: EjerciciosStyle.cyan,
-        border: Border.all(color: EjerciciosStyle.cyan, width: 4),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0),
-        ],
+      decoration: EjerciciosStyle.panelDeco(
+        color: headerColor,
+        radius: 18,
+        bw: 3,
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.fitness_center, color: EjerciciosStyle.darkText, size: 26),
-          const SizedBox(width: 10),
-          Text(
-            'EJERCICIOS',
-            style: GoogleFonts.bangers(
-              color: EjerciciosStyle.darkText,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+          TapTile(
+            onTap: () => Navigator.of(context).maybePop(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Icon(
+                widget.isPopup ? Icons.close : Icons.arrow_back,
+                color: EjerciciosStyle.darkText,
+                size: 26,
+              ),
             ),
           ),
+          Icon(headerIcon, color: EjerciciosStyle.darkText, size: 24),
+          const SizedBox(width: 8),
+          Text(
+            headerTitle,
+            style: GoogleFonts.bangers(
+              color: EjerciciosStyle.darkText,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const Spacer(),
+          const SizedBox(width: 10),
         ],
       ),
     );
@@ -135,12 +195,10 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         setState(() => _tab = index);
       },
       child: Container(
-        decoration: BoxDecoration(
-          color: selected ? EjerciciosStyle.cyan : EjerciciosStyle.panel,
-          border: Border.all(
-              color: selected ? EjerciciosStyle.cyan : EjerciciosStyle.panel,
-              width: 3),
-          borderRadius: BorderRadius.circular(12),
+        decoration: EjerciciosStyle.panelDeco(
+          color: selected ? EjerciciosStyle.lime : EjerciciosStyle.panel,
+          radius: 12,
+          bw: 2,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -155,7 +213,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.bangers(
                   color: selected ? EjerciciosStyle.darkText : EjerciciosStyle.white,
-                  fontSize: 11,
+                  fontSize: 12,
                 ),
               ),
             ),
@@ -194,7 +252,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: EjerciciosStyle.panel,
-          border: Border.all(color: EjerciciosStyle.red, width: 3),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
@@ -214,7 +271,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: EjerciciosStyle.red,
-                  border: Border.all(color: EjerciciosStyle.red, width: 2),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.refresh, color: EjerciciosStyle.white, size: 20),
@@ -302,10 +358,10 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         child: Container(
           width: w * 0.13,
           height: w * 0.13,
-          decoration: BoxDecoration(
-            color: EjerciciosStyle.cyan,
-            border: Border.all(color: EjerciciosStyle.cyan, width: 3),
-            borderRadius: BorderRadius.circular(16),
+          decoration: EjerciciosStyle.panelDeco(
+            color: EjerciciosStyle.lime,
+            radius: 16,
+            bw: 3,
           ),
           child: const Icon(Icons.add, color: EjerciciosStyle.darkText, size: 30),
         ),
@@ -317,92 +373,56 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
 
   Future<void> _dialogNewLog({RoutineItem? prefill, WorkoutLog? existing, DateTime? day}) async {
     final pv = context.read<WorkoutProvider>();
-    final nameCtrl = TextEditingController(
-        text: existing?.exerciseName ?? prefill?.exerciseName ?? '');
-    final groupCtrl = TextEditingController(
-        text: existing?.muscleGroup ?? '');
-    final seriesCtrl = TextEditingController(
-        text: (existing?.series ?? prefill?.series)?.toString() ?? '');
-    final repsCtrl = TextEditingController(
-        text: (existing?.reps ?? prefill?.reps)?.toString() ?? '');
-    final baseW = existing?.weight ?? prefill?.weight;
-    final weightCtrl = TextEditingController(
-      text: baseW == null
-          ? ''
-          : (baseW == baseW.roundToDouble()
-              ? baseW.round().toString()
-              : '$baseW'),
+    await ExerciseSheet.show(
+      context,
+      existing: existing,
+      prefillName: prefill?.exerciseName,
+      prefillSeries: prefill?.series,
+      prefillReps: prefill?.reps,
+      prefillWeight: prefill?.weight,
+      prefillRest: prefill?.restSeconds,
+      day: day,
+      onSave: (log) async {
+        if (existing != null && existing.id != null) {
+          await pv.updateLog(log);
+        } else {
+          await pv.addLog(log);
+        }
+      },
+      onDelete: (existing != null && existing.id != null)
+          ? () => pv.deleteLog(existing.id!)
+          : null,
     );
-    final restCtrl = TextEditingController(
-        text: (existing?.restSeconds ?? prefill?.restSeconds)?.toString() ?? '');
-    final notesCtrl =
-        TextEditingController(text: existing?.notes ?? prefill?.notes ?? '');
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => _formDialog(
-        title: existing != null ? 'Editar ejercicio' : 'Nuevo ejercicio',
-        fields: [
-          _libraryChips(pv, nameCtrl),
-          const SizedBox(height: 6),
-          _field(nameCtrl, 'Nombre *', autofocus: true),
-          _field(groupCtrl, 'Grupo muscular'),
-          _numField(seriesCtrl, 'Series'),
-          _numField(repsCtrl, 'Reps'),
-          _decimalField(weightCtrl, 'Peso (kg)'),
-          _numField(restCtrl, 'Descanso (seg)'),
-          _field(notesCtrl, 'Notas'),
-        ],
-        onOk: () => nameCtrl.text.trim().isNotEmpty,
-      ),
-    );
-    if (saved != true) return;
-    if (!mounted) return;
-    if (existing != null && existing.id != null) {
-      await pv.updateLog(existing.copyWith(
-        exerciseName: nameCtrl.text.trim(),
-        muscleGroup: _orNull(groupCtrl.text.trim()),
-        series: _parseInt(seriesCtrl.text),
-        reps: _parseInt(repsCtrl.text),
-        weight: _parseDouble(weightCtrl.text),
-        restSeconds: _parseInt(restCtrl.text),
-        notes: _orNull(notesCtrl.text.trim()),
-      ));
-      return;
-    }
-    await pv.addLog(WorkoutLog(
-      exerciseName: nameCtrl.text.trim(),
-      muscleGroup: _orNull(groupCtrl.text.trim()),
-      series: _parseInt(seriesCtrl.text),
-      reps: _parseInt(repsCtrl.text),
-      weight: _parseDouble(weightCtrl.text),
-      restSeconds: _parseInt(restCtrl.text),
-      notes: _orNull(notesCtrl.text.trim()),
-      routineId: null,
-      loggedOn: day ?? DateTime.now(),
-    ));
   }
 
-  /// Chips de la biblioteca de ejercicios (nombres ya registrados): un toque
-  /// completa el campo de nombre.
+  /// Chips de la biblioteca de ejercicios (catalogados + registrados).
   Widget _libraryChips(WorkoutProvider pv, TextEditingController ctrl) {
-    final names = WorkoutStats.distinctExerciseNames(pv.logs);
+    final names = {
+      ...WorkoutStats.distinctExerciseNames(pv.logs),
+      for (final g in ExerciseCatalog.groups) ...ExerciseCatalog.exercisesFor(g),
+    }.toList();
     if (names.isEmpty) return const SizedBox.shrink();
     return Wrap(
       spacing: 6,
       runSpacing: 6,
-      children: names.take(12).map((n) {
+      children: names.take(18).map((n) {
         final active = ctrl.text.trim() == n;
         return TapTile(
           onTap: () { HapticFeedback.selectionClick(); ctrl.text = n; },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: active ? EjerciciosStyle.cyan : EjerciciosStyle.panelLight,
-              border: Border.all(color: EjerciciosStyle.cyan, width: 1.5),
-              borderRadius: BorderRadius.circular(10),
+            decoration: EjerciciosStyle.panelDeco(
+              color: active ? EjerciciosStyle.lime : EjerciciosStyle.field,
+              radius: 10,
+              bw: 1.5,
             ),
-            child: Text(n, style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 11)),
+            child: Text(
+              n,
+              style: GoogleFonts.bangers(
+                color: active ? EjerciciosStyle.darkText : EjerciciosStyle.white,
+                fontSize: 12,
+              ),
+            ),
           ),
         );
       }).toList(),
@@ -437,7 +457,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             backgroundColor: EjerciciosStyle.panel,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
-              side: const BorderSide(color: EjerciciosStyle.cyan, width: 4),
             ),
             title: const Icon(Icons.fitness_center, color: EjerciciosStyle.cyan, size: 30),
             content: SingleChildScrollView(
@@ -466,7 +485,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                                   const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: EjerciciosStyle.panelLight,
-                                border: Border.all(color: EjerciciosStyle.cyan, width: 1.5),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(n,
@@ -521,7 +539,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                       decoration: BoxDecoration(
                         color: EjerciciosStyle.panelLight,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: EjerciciosStyle.cyan, width: 1.5),
                       ),
                       child: const Center(
                           child: Icon(Icons.add, color: EjerciciosStyle.cyan, size: 20)),
@@ -537,7 +554,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: EjerciciosStyle.panelLight,
-                    border: Border.all(color: EjerciciosStyle.panelLight, width: 2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
@@ -555,7 +571,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: EjerciciosStyle.cyan,
-                    border: Border.all(color: EjerciciosStyle.cyan, width: 2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.check, color: EjerciciosStyle.darkText, size: 20),
@@ -617,7 +632,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       backgroundColor: EjerciciosStyle.panel,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: EjerciciosStyle.panel, width: 4),
       ),
       title: Row(
         children: [
@@ -645,7 +659,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: EjerciciosStyle.panelLight,
-              border: Border.all(color: EjerciciosStyle.panelLight, width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
@@ -663,7 +676,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: EjerciciosStyle.cyan,
-              border: Border.all(color: EjerciciosStyle.cyan, width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.check, color: EjerciciosStyle.darkText, size: 20),
@@ -792,7 +804,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: EjerciciosStyle.cyan,
-                        border: Border.all(color: EjerciciosStyle.cyan, width: 2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.add, color: EjerciciosStyle.darkText, size: 22),
@@ -808,7 +819,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: EjerciciosStyle.red,
-                        border: Border.all(color: EjerciciosStyle.red, width: 2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.delete_outline,
@@ -881,7 +891,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         backgroundColor: EjerciciosStyle.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: EjerciciosStyle.panel, width: 4),
         ),
         title: const Icon(Icons.delete_forever, color: EjerciciosStyle.red, size: 36),
         content: Text(
@@ -895,7 +904,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: EjerciciosStyle.panelLight,
-                border: Border.all(color: EjerciciosStyle.panelLight, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
@@ -907,7 +915,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: EjerciciosStyle.red,
-                border: Border.all(color: EjerciciosStyle.red, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.check, color: EjerciciosStyle.white, size: 20),
@@ -1066,7 +1073,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         backgroundColor: EjerciciosStyle.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: EjerciciosStyle.panel, width: 4),
         ),
         title: const Icon(Icons.delete_forever, color: EjerciciosStyle.red, size: 36),
         content: Text(
@@ -1080,7 +1086,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: EjerciciosStyle.panelLight,
-                border: Border.all(color: EjerciciosStyle.panelLight, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
@@ -1092,7 +1097,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: EjerciciosStyle.red,
-                border: Border.all(color: EjerciciosStyle.red, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.check, color: EjerciciosStyle.white, size: 20),
@@ -1166,7 +1170,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         backgroundColor: EjerciciosStyle.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: EjerciciosStyle.panel, width: 4),
         ),
         content: TextField(
           controller: ctrl,
@@ -1339,7 +1342,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         backgroundColor: EjerciciosStyle.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: EjerciciosStyle.panel, width: 4),
         ),
         title: const Icon(Icons.delete_forever, color: EjerciciosStyle.red, size: 36),
         content: Text(
@@ -1353,7 +1355,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: EjerciciosStyle.panelLight,
-                border: Border.all(color: EjerciciosStyle.panelLight, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
@@ -1365,7 +1366,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: EjerciciosStyle.red,
-                border: Border.all(color: EjerciciosStyle.red, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.check, color: EjerciciosStyle.white, size: 20),

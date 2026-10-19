@@ -7,7 +7,9 @@ import '../chat_style.dart';
 import 'chat_media_body.dart';
 import 'chat_reactions_row.dart';
 
-/// Burbuja de mensaje: texto/media, reply, ticks y reacciones.
+/// Burbuja de mensaje estilo WhatsApp con bloques sólidos temáticos F.U.R.I.
+/// Cero bordes contrastantes, esquinas redondeadas con cola WhatsApp,
+/// metadata de hora y palomitas en la esquina inferior derecha.
 class ChatMessageTile extends StatelessWidget {
   final Message message;
   final bool isMine;
@@ -30,20 +32,38 @@ class ChatMessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final panel = ChatStyle.panel;
-    final blockColor = isMine ? theme.a : theme.e;
-    final textColor = isMine ? theme.dark : theme.light;
-    final subColor = isMine ? theme.dark.withValues(alpha: 0.6) : Colors.white38;
+    final isSticker = message.messageType == 'sticker';
+    final blockColor = isSticker
+        ? Colors.transparent
+        : (isMine ? theme.a : ChatStyle.partnerBubble);
+    final textColor = isMine ? theme.dark : ChatStyle.lightText;
+    final subColor = isSticker
+        ? Colors.white70
+        : (isMine ? theme.dark.withValues(alpha: 0.65) : ChatStyle.subText);
     final raw = message.createdAt;
     final timeStr = raw != null
         ? '${raw.hour.toString().padLeft(2, '0')}:${raw.minute.toString().padLeft(2, '0')}'
         : '';
 
+    final bubbleRadius = isMine
+        ? const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(4),
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(16),
+          )
+        : const BorderRadius.only(
+            topLeft: Radius.circular(4),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(16),
+          );
+
     return Padding(
       padding: EdgeInsets.only(
-        bottom: message.reactions.isEmpty ? 8 : 14,
-        left: isMine ? 48 : 4,
-        right: isMine ? 4 : 48,
+        bottom: message.reactions.isEmpty ? 6 : 14,
+        left: isMine ? 48 : 6,
+        right: isMine ? 6 : 48,
       ),
       child: Align(
         alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
@@ -54,18 +74,21 @@ class ChatMessageTile extends StatelessWidget {
             children: [
               Container(
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.72,
+                  maxWidth: MediaQuery.of(context).size.width * 0.76,
                 ),
-                padding: const EdgeInsets.all(10),
+                padding: isSticker
+                    ? const EdgeInsets.all(2)
+                    : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: blockColor,
-                  border: Border.all(color: blockColor, width: 3),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: isSticker ? BorderRadius.zero : bubbleRadius,
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Banner de respuesta citada (reply)
                     if (message.replyContent != null &&
                         message.replyContent!.isNotEmpty)
                       Container(
@@ -73,61 +96,133 @@ class ChatMessageTile extends StatelessWidget {
                         margin: const EdgeInsets.only(bottom: 6),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
-                          vertical: 4,
+                          vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: panel,
-                          border: Border.all(color: panel, width: 2),
+                          color: isMine
+                              ? Colors.black.withValues(alpha: 0.12)
+                              : const Color(0xFF1B2228),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          message.replyContent!,
-                          style: GoogleFonts.bangers(
-                            fontSize: 11,
-                            color: ChatStyle.primary,
+                        child: IntrinsicHeight(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 3,
+                                decoration: BoxDecoration(
+                                  color: isMine ? theme.dark : ChatStyle.primary,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  message.replyContent!,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: isMine
+                                        ? theme.dark.withValues(alpha: 0.85)
+                                        : Colors.white70,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ChatMediaBody(
-                      message: message,
-                      textColor: textColor,
-                      downloading: downloading,
-                      onDownload: onDownload,
+
+                    // Cuerpo del mensaje (texto o multimedia)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ChatMediaBody(
+                        message: message,
+                        textColor: textColor,
+                        downloading: downloading,
+                        onDownload: onDownload,
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          timeStr,
-                          style: GoogleFonts.bangers(fontSize: 10, color: subColor),
+
+                    const SizedBox(height: 3),
+
+                    // Fila de hora y palomitas de entrega/lectura (vistos)
+                    if (isSticker)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0x99141414),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        if (isMine) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            switch (message.tickState) {
-                              MessageTick.read => Icons.done_all,
-                              MessageTick.delivered => Icons.done_all,
-                              MessageTick.sent => Icons.done,
-                            },
-                            size: 14,
-                            color: message.tickState == MessageTick.read
-                                ? const Color(0xFF4FC3FF)
-                                : subColor,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              timeStr,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                            if (isMine) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                switch (message.tickState) {
+                                  MessageTick.read => Icons.done_all,
+                                  MessageTick.delivered => Icons.done_all,
+                                  MessageTick.sent => Icons.done,
+                                },
+                                size: 14,
+                                color: message.tickState == MessageTick.read
+                                    ? ChatStyle.checkBlue
+                                    : Colors.white70,
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            timeStr,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: subColor,
+                            ),
                           ),
+                          if (isMine) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              switch (message.tickState) {
+                                MessageTick.read => Icons.done_all,
+                                MessageTick.delivered => Icons.done_all,
+                                MessageTick.sent => Icons.done,
+                              },
+                              size: 15,
+                              color: message.tickState == MessageTick.read
+                                  ? ChatStyle.checkBlue
+                                  : subColor,
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
+                      ),
                   ],
                 ),
               ),
+
+              // Reacciones flotantes en la base de la burbuja
               if (message.reactions.isNotEmpty)
                 Positioned(
-                  bottom: -12,
-                  right: isMine ? 8 : null,
-                  left: isMine ? null : 8,
+                  bottom: -11,
+                  right: isMine ? 6 : null,
+                  left: isMine ? null : 6,
                   child: ChatReactionsRow(
                     reactions: message.reactions,
                     onTap: onReactionTap,

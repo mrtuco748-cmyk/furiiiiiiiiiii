@@ -11,25 +11,18 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
+import '../app_state.dart';
 import '../models/message.dart';
 import '../providers/chat_provider.dart';
 import '../services/chat_media_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/concrete_painter.dart';
-import '../widgets/responsive_wrapper.dart';
 import '../widgets/tap_tile.dart';
 import 'chat/chat_style.dart';
+import 'chat/widgets/chat_message_tile.dart';
 import 'chat/widgets/chat_react_chip.dart';
 import 'chat/widgets/chat_swipe_to_reply.dart';
-import 'chat/widgets/chat_message_tile.dart';
-
-/// Aliases de la paleta compartida del chat (ChatStyle).
-const _c = ChatStyle.primary;
-const _bg = ChatStyle.bg;
-const _panel = ChatStyle.panel;
-const _inputBg = ChatStyle.inputBg;
-const _darkText = ChatStyle.darkText;
-const _errorBg = ChatStyle.errorBg;
+import 'chat/widgets/chat_emoji_sticker_sheet.dart';
 
 class ChatScreen extends StatelessWidget {
   final String myId;
@@ -69,6 +62,7 @@ class _ChatViewState extends State<_ChatView> {
   final _recorder = AudioRecorder();
   final _picker = ImagePicker();
   bool _recording = false;
+  bool _hasText = false;
   DateTime? _recordStarted;
   Timer? _recordTicker;
   int _lastMsgCount = 0;
@@ -76,10 +70,15 @@ class _ChatViewState extends State<_ChatView> {
   @override
   void initState() {
     super.initState();
-    // Scroll infinito hacia arriba: al llegar al tope (mensajes más viejos),
-    // cargamos una página anterior. La lista es reverse:true (nuevo abajo),
-    // así el paginado ancla la vista sin saltar.
     _scrollCtrl.addListener(_onScroll);
+    _msgCtrl.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final has = _msgCtrl.text.trim().isNotEmpty;
+    if (has != _hasText) {
+      setState(() => _hasText = has);
+    }
   }
 
   void _onScroll() {
@@ -116,14 +115,13 @@ class _ChatViewState extends State<_ChatView> {
   Future<void> _sendText() async {
     final text = _msgCtrl.text;
     if (text.trim().isEmpty) return;
-    HapticFeedback.heavyImpact();
+    HapticFeedback.lightImpact();
     final chat = context.read<ChatProvider>();
     _msgCtrl.clear();
     chat.notifyTyping(false);
     try {
       await chat.sendText(text);
       _scrollToBottom();
-      _focusNode.unfocus();
     } catch (e) {
       developer.log('sendText fallo: $e');
     }
@@ -267,36 +265,35 @@ class _ChatViewState extends State<_ChatView> {
     HapticFeedback.selectionClick();
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: _panel,
+      backgroundColor: ChatStyle.panel,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        Widget item(IconData icon, String label, VoidCallback onTap) {
+        Widget item(IconData icon, String label, Color color, VoidCallback onTap) {
           return TapTile(
             onTap: () {
               Navigator.pop(ctx);
               onTap();
             },
             child: Container(
-              width: 72,
+              width: 76,
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: _c,
-                border: Border.all(color: _c, width: 2),
-                borderRadius: BorderRadius.circular(12),
+                color: color,
+                borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, color: _darkText, size: 26),
-                  const SizedBox(height: 4),
+                  Icon(icon, color: Colors.white, size: 26),
+                  const SizedBox(height: 6),
                   Text(
                     label,
-                    style: GoogleFonts.bangers(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
-                      color: _darkText,
-                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -307,17 +304,17 @@ class _ChatViewState extends State<_ChatView> {
 
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
             child: Wrap(
               spacing: 12,
               runSpacing: 12,
               alignment: WrapAlignment.center,
               children: [
-                item(Icons.photo_library, 'Galeria', () => _pickImage(fromCamera: false)),
-                item(Icons.camera_alt, 'Camara', () => _pickImage(fromCamera: true)),
-                item(Icons.videocam, 'Video', _pickVideo),
-                item(Icons.attach_file, 'Archivo', _pickFile),
-                item(Icons.gif_box, 'GIF', () async {
+                item(Icons.photo_library, 'Galería', const Color(0xFF9C27B0), () => _pickImage(fromCamera: false)),
+                item(Icons.camera_alt, 'Cámara', const Color(0xFFE91E63), () => _pickImage(fromCamera: true)),
+                item(Icons.videocam, 'Video', const Color(0xFF00B0FF), _pickVideo),
+                item(Icons.attach_file, 'Archivo', const Color(0xFFFF9800), _pickFile),
+                item(Icons.gif_box, 'GIF', const Color(0xFF4CAF50), () async {
                   final result = await FilePicker.platform.pickFiles(
                     type: FileType.custom,
                     allowedExtensions: const ['gif'],
@@ -340,6 +337,42 @@ class _ChatViewState extends State<_ChatView> {
     );
   }
 
+  void _showEmojiAndStickersSheet(ThemeSet t) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return ChatEmojiStickerSheet(
+          textController: _msgCtrl,
+          theme: t,
+          onStickerSelected: (File stickerFile) async {
+            await _sendSticker(stickerFile);
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _sendSticker(File stickerFile) async {
+    HapticFeedback.mediumImpact();
+    final chat = context.read<ChatProvider>();
+    final name = 'sticker_${DateTime.now().millisecondsSinceEpoch}.webp';
+    try {
+      await chat.sendMedia(
+        localPath: stickerFile.path,
+        messageType: 'sticker',
+        fileName: name,
+        mimeType: 'image/webp',
+        caption: 'Sticker',
+      );
+      _scrollToBottom();
+    } catch (e) {
+      developer.log('sendSticker fallo: $e');
+    }
+  }
+
   void _showReactionBar(Message msg) {
     HapticFeedback.mediumImpact();
     final chat = context.read<ChatProvider>();
@@ -354,31 +387,41 @@ class _ChatViewState extends State<_ChatView> {
               margin: const EdgeInsets.symmetric(horizontal: 20),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               decoration: BoxDecoration(
-                color: _panel,
-                border: Border.all(color: _panel, width: 2),
-                borderRadius: BorderRadius.circular(16),
+                color: ChatStyle.panel,
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final e in Message.defaultReactionEmojis)
-                    ChatReactChip(
+                  ...Message.defaultReactionEmojis.map((e) {
+                    final selected = msg.myReactionKey(chat.myId) == e;
+                    return ChatReactChip(
                       label: e,
-                      selected: msg.myReactionKey(chat.myId) == e,
-                      onTap: () async {
+                      selected: selected,
+                      onTap: () {
                         Navigator.pop(ctx);
-                        await chat.toggleReaction(msg, e);
+                        chat.toggleReaction(msg, e);
                       },
-                    ),
-                  ChatReactChip(
-                    label: '+',
-                    selected: false,
+                    );
+                  }),
+                  TapTile(
                     onTap: () async {
                       Navigator.pop(ctx);
-                      final custom = await _askCustomReaction();
-                      if (custom == null || custom.isEmpty) return;
-                      await chat.toggleReaction(msg, custom);
+                      final custom = await _promptCustomEmoji();
+                      if (custom != null && custom.isNotEmpty) {
+                        chat.toggleReaction(msg, custom);
+                      }
                     },
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: ChatStyle.inputBg,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.add, color: Colors.white, size: 20),
+                    ),
                   ),
                 ],
               ),
@@ -389,64 +432,45 @@ class _ChatViewState extends State<_ChatView> {
     );
   }
 
-  Future<String?> _askCustomReaction() async {
+  Future<String?> _promptCustomEmoji() async {
     final ctrl = TextEditingController();
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: _panel,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: _panel, width: 2),
+          backgroundColor: ChatStyle.panel,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Reacción personalizada',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            maxLength: 12,
-            style: GoogleFonts.bangers(color: Colors.white, fontSize: 18),
-            decoration: InputDecoration(
-              counterStyle: GoogleFonts.bangers(color: Colors.white38),
-              filled: true,
-              fillColor: _bg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _bg, width: 2),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _bg, width: 2),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _c, width: 2),
-              ),
+            maxLength: 8,
+            style: const TextStyle(color: Colors.white, fontSize: 20),
+            decoration: const InputDecoration(
+              hintText: 'Emoji o texto corto...',
+              hintStyle: TextStyle(color: Colors.white38),
+              border: InputBorder.none,
             ),
           ),
           actions: [
-            TapTile(
-              onTap: () => Navigator.pop(ctx),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _bg,
-                  border: Border.all(color: _bg, width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.close, color: Colors.white70, size: 22),
-              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.white60)),
             ),
-            TapTile(
-              onTap: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _c,
-                  border: Border.all(color: _c, width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.check, color: _darkText, size: 22),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ChatStyle.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
+              child: const Text('Guardar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -454,6 +478,57 @@ class _ChatViewState extends State<_ChatView> {
     );
     ctrl.dispose();
     return result;
+  }
+
+  bool _isSameDay(DateTime? a, DateTime? b) {
+    if (a == null || b == null) return false;
+    final localA = a.toLocal();
+    final localB = b.toLocal();
+    return localA.year == localB.year &&
+        localA.month == localB.month &&
+        localA.day == localB.day;
+  }
+
+  String _formatDateHeader(DateTime dt) {
+    final now = DateTime.now();
+    final local = dt.toLocal();
+    final today = DateTime(now.year, now.month, now.day);
+    final msgDate = DateTime(local.year, local.month, local.day);
+    final diff = today.difference(msgDate).inDays;
+    if (diff == 0) return 'HOY';
+    if (diff == 1) return 'AYER';
+    const months = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+    ];
+    final mName = months[(local.month - 1).clamp(0, 11)];
+    if (local.year == now.year) {
+      return '${local.day} de $mName';
+    }
+    return '${local.day} de $mName de ${local.year}';
+  }
+
+  Widget _dateChip(DateTime dt) {
+    final text = _formatDateHeader(dt);
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        decoration: BoxDecoration(
+          color: ChatStyle.panel,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          text,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: ChatStyle.subText,
+            letterSpacing: 0.3,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -467,155 +542,234 @@ class _ChatViewState extends State<_ChatView> {
     }
 
     return Scaffold(
-      backgroundColor: _bg,
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
-        child: ResponsiveWrapper(
-          builder: (context, w, h) {
-            return SizedBox(
-              width: w,
-              height: h,
-              child: Stack(
-                children: [
-                  Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
-                  _header(w, h, chat),
-                  _msgArea(w, h, chat, t),
-                  if (chat.error != null) _errorBanner(w, h, chat),
-                  if (chat.replyTo != null) _replyBanner(w, h, chat),
-                  _inputArea(w, h, chat),
-                  if (chat.partnerTyping) _typingBanner(w, h),
-                ],
+      backgroundColor: ChatStyle.bg,
+      appBar: _buildAppBar(context, chat, t),
+      body: Stack(
+        children: [
+          Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
+          Column(
+            children: [
+              if (chat.error != null) _errorBanner(chat),
+              Expanded(
+                child: switch (chat.state) {
+                  ChatLoadState.loading => const Center(
+                      child: CircularProgressIndicator(color: ChatStyle.primary, strokeWidth: 3),
+                    ),
+                  ChatLoadState.error => _buildErrorState(chat, t),
+                  ChatLoadState.empty => _buildEmptyState(),
+                  ChatLoadState.data => _buildChatList(chat, t),
+                },
               ),
-            );
+              if (chat.replyTo != null) _replyBanner(chat, t),
+              _buildInputBar(chat, t),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context, ChatProvider chat, ThemeSet t) {
+    final partnerName = chat.partnerName.isNotEmpty
+        ? chat.partnerName
+        : (AppState.partnerName.isNotEmpty ? AppState.partnerName : 'Pareja');
+    final initial = partnerName.isNotEmpty ? partnerName[0].toUpperCase() : 'P';
+
+    return AppBar(
+      backgroundColor: ChatStyle.appbarBg,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      leadingWidth: 78,
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+            onPressed: () => Navigator.of(context).maybePop(),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+          const SizedBox(width: 4),
+          CircleAvatar(
+            radius: 19,
+            backgroundColor: t.a,
+            child: Text(
+              initial,
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: t.dark,
+              ),
+            ),
+          ),
+        ],
+      ),
+      titleSpacing: 4,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            partnerName,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 1),
+          if (chat.partnerTyping)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 8,
+                  height: 8,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: Color(0xFF25D366),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'escribiendo...',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF25D366),
+                  ),
+                ),
+              ],
+            )
+          else
+            Text(
+              'en línea',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: ChatStyle.subText,
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh, color: Colors.white70, size: 22),
+          tooltip: 'Recargar mensajes',
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            chat.loadMessages();
           },
         ),
-      ),
+        const SizedBox(width: 4),
+      ],
     );
   }
 
-  Widget _header(double w, double h, ChatProvider chat) {
-    final barH = h * 0.07;
-    return Positioned(
-      left: 0,
-      top: 0,
-      width: w,
-      height: barH,
-      child: Container(
-        decoration: BoxDecoration(
-          color: _c,
-          border: Border.all(color: _c, width: 3),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 4),
-            Expanded(
-              child: Center(
-                child: Text(
-                  chat.partnerName.isNotEmpty ? chat.partnerName : 'CHAT',
-                  style: GoogleFonts.bangers(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                    color: _darkText,
-                  ),
-                ),
+  Widget _errorBanner(ChatProvider chat) {
+    return Container(
+      width: double.infinity,
+      color: ChatStyle.errorBg,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              chat.error ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 46),
-          ],
-        ),
+          ),
+          TapTile(
+            onTap: chat.clearError,
+            child: const Icon(Icons.close, color: Colors.white, size: 18),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _errorBanner(double w, double h, ChatProvider chat) {
-    return Positioned(
-      left: w * 0.05,
-      top: h * 0.075,
-      width: w * 0.9,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: _errorBg,
-          border: Border.all(color: _errorBg, width: 2),
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
-        ),
-        child: Row(
-          children: [
-            Expanded(
+  Widget _buildErrorState(ChatProvider chat, ThemeSet t) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: ChatStyle.errorBg, size: 48),
+          const SizedBox(height: 12),
+          Text(
+            'Error al cargar mensajes',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TapTile(
+            onTap: () {
+              HapticFeedback.heavyImpact();
+              chat.loadMessages();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: t.a,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Text(
-                chat.error ?? '',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.bangers(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                'Reintentar',
+                style: GoogleFonts.plusJakartaSans(
+                  color: t.dark,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
                 ),
               ),
             ),
-            TapTile(
-              onTap: chat.clearError,
-              child: const Icon(Icons.close, color: Colors.white70, size: 18),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _msgArea(double w, double h, ChatProvider chat, ThemeSet t) {
-    final keyboard = MediaQuery.of(context).viewInsets.bottom;
-    final top = h * 0.08;
-    return Positioned(
-      left: w * 0.025,
-      top: top,
-      width: w * 0.95,
-      bottom: keyboard + 8 + h * 0.09 + 4,
-      child: Container(
-        decoration: BoxDecoration(
-          color: _panel,
-          border: Border.all(color: _panel, width: 3),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-        ),
-        child: switch (chat.state) {
-          ChatLoadState.loading => const Center(
-              child: CircularProgressIndicator(color: _c, strokeWidth: 3),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline,
+            color: Colors.white.withValues(alpha: 0.3),
+            size: 64,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Sin mensajes aún',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white70,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
             ),
-          ChatLoadState.error => Center(
-              child: TapTile(
-                onTap: () {
-                  HapticFeedback.heavyImpact();
-                  chat.loadMessages();
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _c,
-                    border: Border.all(color: _c, width: 2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.refresh, color: _darkText, size: 28),
-                ),
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '¡Envía el primer mensaje a tu pareja!',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white38,
+              fontSize: 13,
             ),
-          ChatLoadState.empty => Center(
-              child: Icon(
-                Icons.chat_bubble_outline,
-                color: _c.withValues(alpha: 0.5),
-                size: 60,
-              ),
-            ),
-          ChatLoadState.data => _chatList(chat, t),
-        },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _chatList(ChatProvider chat, ThemeSet t) {
+  Widget _buildChatList(ChatProvider chat, ThemeSet t) {
     final items = chat.messages.reversed.toList();
     return ListView.builder(
       controller: _scrollCtrl,
@@ -624,8 +778,12 @@ class _ChatViewState extends State<_ChatView> {
       itemCount: items.length,
       itemBuilder: (ctx, i) {
         final m = items[i];
+        final next = i + 1 < items.length ? items[i + 1] : null;
+        final bool showDateHeader =
+            next == null || !_isSameDay(m.createdAt, next.createdAt);
         final isMine = m.fromUser == chat.myId;
-        return ChatSwipeToReply(
+
+        final tile = ChatSwipeToReply(
           onReply: () {
             HapticFeedback.mediumImpact();
             chat.setReplyTo(m);
@@ -641,190 +799,198 @@ class _ChatViewState extends State<_ChatView> {
             onDownload: () => chat.downloadMedia(m),
           ),
         );
+
+        if (showDateHeader && m.createdAt != null) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _dateChip(m.createdAt!),
+              tile,
+            ],
+          );
+        }
+
+        return tile;
       },
     );
   }
 
-  Widget _inputArea(double w, double h, ChatProvider chat) {
-    final keyboard = MediaQuery.of(context).viewInsets.bottom;
+  Widget _replyBanner(ChatProvider chat, ThemeSet t) {
+    final preview = chat.replyTo?.previewText ?? '';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: ChatStyle.inputBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 32,
+            decoration: BoxDecoration(
+              color: t.a,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.reply, color: Colors.white70, size: 18),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Respondiendo a mensaje',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: t.a,
+                  ),
+                ),
+                Text(
+                  preview,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: Colors.white70,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+            onPressed: chat.clearReply,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputBar(ChatProvider chat, ThemeSet t) {
     final recLabel = _recording && _recordStarted != null
         ? '${DateTime.now().difference(_recordStarted!).inSeconds}s'
         : '';
 
-    return Positioned(
-      left: w * 0.04,
-      bottom: keyboard + 8,
-      width: w * 0.92,
-      height: h * 0.09,
-      child: Container(
-        decoration: BoxDecoration(
-          color: _inputBg,
-          border: Border.all(color: _inputBg, width: 3),
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
-        ),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            const SizedBox(width: 6),
-            TapTile(
-              onTap: () {
-                if (!chat.sending) _showAttachSheet();
-              },
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: _darkText,
-                  border: Border.all(color: _darkText, width: 2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.add, color: _c, size: 20),
-              ),
-            ),
-            const SizedBox(width: 6),
             Expanded(
-              child: _recording
-                  ? Text(
-                      'Grabando $recLabel',
-                      style: GoogleFonts.bangers(
-                        color: _darkText,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    )
-                  : TextField(
-                      controller: _msgCtrl,
-                      focusNode: _focusNode,
-                      style: GoogleFonts.bangers(
-                        color: _darkText,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'Mensaje...',
-                        hintStyle: TextStyle(color: Color(0xFF5A2200)),
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                      onSubmitted: (_) => _sendText(),
-                      onChanged: (v) => chat.notifyTyping(v.trim().isNotEmpty),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: ChatStyle.inputBg,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.white70, size: 24),
+                      onPressed: () => _showEmojiAndStickersSheet(t),
                     ),
-            ),
-            TapTile(
-              onTap: () {
-                if (!chat.sending) _toggleRecord();
-              },
-              child: Container(
-                width: 36,
-                height: 36,
-                margin: const EdgeInsets.only(right: 4),
-                decoration: BoxDecoration(
-                  color: _recording ? const Color(0xFFFF1744) : _darkText,
-                  border: Border.all(
-                    color: _recording ? const Color(0xFFFF1744) : _darkText,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  _recording ? Icons.stop : Icons.mic,
-                  color: _recording ? Colors.white : _c,
-                  size: 18,
+                    Expanded(
+                      child: _recording
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.fiber_manual_record, color: Color(0xFFFF1744), size: 14),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Grabando $recLabel...',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : TextField(
+                              controller: _msgCtrl,
+                              focusNode: _focusNode,
+                              minLines: 1,
+                              maxLines: 5,
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w400,
+                              ),
+                              decoration: const InputDecoration(
+                                hintText: 'Mensaje...',
+                                hintStyle: TextStyle(color: Colors.white38, fontSize: 15),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(vertical: 11, horizontal: 6),
+                              ),
+                              onSubmitted: (_) => _sendText(),
+                              onChanged: (v) => chat.notifyTyping(v.trim().isNotEmpty),
+                            ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.attach_file, color: Colors.white70, size: 22),
+                      onPressed: () {
+                        if (!chat.sending) _showAttachSheet();
+                      },
+                    ),
+                    if (!_hasText && !_recording)
+                      IconButton(
+                        icon: const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 22),
+                        onPressed: () => _pickImage(fromCamera: true),
+                      ),
+                  ],
                 ),
               ),
             ),
-            TapTile(
+            const SizedBox(width: 6),
+            GestureDetector(
               onTap: () {
-                if (!chat.sending) _sendText();
+                if (_recording) {
+                  _toggleRecord();
+                } else if (_hasText) {
+                  _sendText();
+                } else {
+                  _toggleRecord();
+                }
               },
               child: Container(
-                width: 40,
-                height: 40,
-                margin: const EdgeInsets.all(4),
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: _darkText,
-                  border: Border.all(color: _darkText, width: 2),
-                  borderRadius: BorderRadius.circular(12),
+                  color: _recording ? const Color(0xFFFF1744) : t.a,
+                  shape: BoxShape.circle,
                 ),
-                child: chat.sending
-                    ? const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: _c,
+                child: Center(
+                  child: chat.sending
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: t.dark,
+                          ),
+                        )
+                      : Icon(
+                          _recording
+                              ? Icons.stop
+                              : (_hasText ? Icons.send : Icons.mic),
+                          color: _recording ? Colors.white : t.dark,
+                          size: 22,
                         ),
-                      )
-                    : const Icon(Icons.send, color: _c, size: 18),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _typingBanner(double w, double h) {
-    final keyboard = MediaQuery.of(context).viewInsets.bottom;
-    return Positioned(
-      right: w * 0.04,
-      bottom: keyboard + 8 + h * 0.09 + 6,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: _c,
-          border: Border.all(color: _c, width: 2),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
-            BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0),
-          ],
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(
-            width: 10,
-            height: 10,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-          ),
-          const SizedBox(width: 8),
-          Text('escribiendo…',
-              style: GoogleFonts.bangers(color: Colors.white, fontSize: 13)),
-        ]),
-      ),
-    );
-  }
-
-  Widget _replyBanner(double w, double h, ChatProvider chat) {
-    final keyboard = MediaQuery.of(context).viewInsets.bottom;
-    return Positioned(
-      left: w * 0.04,
-      bottom: keyboard + 8 + h * 0.09 + 4,
-      width: w * 0.92,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: _c,
-          border: Border.all(color: _c, width: 2),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.reply, color: _darkText, size: 16),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                chat.replyTo!.previewText,
-                style: GoogleFonts.bangers(
-                  color: _darkText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            TapTile(
-              onTap: chat.clearReply,
-              child: const Icon(Icons.close, color: _darkText, size: 18),
             ),
           ],
         ),

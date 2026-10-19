@@ -16,7 +16,6 @@ class ChatReactionsRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: ChatStyle.panel,
-        border: Border.all(color: ChatStyle.panel, width: 2),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(

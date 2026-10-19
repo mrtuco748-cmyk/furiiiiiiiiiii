@@ -45,11 +45,11 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
         filled: true,
         fillColor: const Color(0xFF111111),
         border: OutlineInputBorder(
-            borderSide: const BorderSide(color: Color(0xFF333333), width: 2), borderRadius: BorderRadius.circular(10)),
+            borderSide: BorderSide.none, borderRadius: BorderRadius.circular(10)),
         enabledBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: Color(0xFF333333), width: 2), borderRadius: BorderRadius.circular(10)),
+            borderSide: BorderSide.none, borderRadius: BorderRadius.circular(10)),
         focusedBorder: OutlineInputBorder(
-            borderSide: BorderSide(color: t.c, width: 2), borderRadius: BorderRadius.circular(10)),
+            borderSide: BorderSide.none, borderRadius: BorderRadius.circular(10)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       );
 
@@ -81,7 +81,6 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: const Color(0xFF9D00FF),
-              border: Border.all(color: const Color(0xFF9D00FF), width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.close, color: Colors.white, size: 20),
@@ -123,7 +122,6 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: _canSave ? t.c : const Color(0xFF111111),
-                border: Border.all(color: _canSave ? t.c : const Color(0xFF111111), width: 3),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Center(

@@ -1,3 +1,4 @@
+import '../models/recurrence.dart';
 import '../models/schedule.dart';
 import 'notification_service.dart';
 
@@ -40,7 +41,19 @@ class EventNotificationService {
     final minute = int.tryParse(parts[1]);
     if (hour == null || minute == null) return const [];
 
-    final eventDate = DateTime(s.date.year, s.date.month, s.date.day);
+    // Repetidos: la próxima ocurrencia cuya hora todavía no pasó (hoy o
+    // después). Solo se programa UNA; se reprograma en cada load/realtime.
+    final rule = Recurrence.parse(s.recurrence);
+    DateTime? eventDate = DateTime(s.date.year, s.date.month, s.date.day);
+    if (rule.isRecurring) {
+      eventDate = rule.nextOnOrAfter(s.date, now);
+      if (eventDate != null &&
+          !eventDate.add(Duration(hours: hour, minutes: minute)).isAfter(now)) {
+        eventDate = rule.nextOnOrAfter(
+            s.date, DateTime(eventDate.year, eventDate.month, eventDate.day + 1));
+      }
+      if (eventDate == null) return const [];
+    }
     final eventTime = eventDate.add(Duration(hours: hour, minutes: minute));
     final oneHourBefore = eventTime.subtract(const Duration(hours: 1));
 

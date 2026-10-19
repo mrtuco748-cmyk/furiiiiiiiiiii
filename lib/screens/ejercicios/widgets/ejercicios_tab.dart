@@ -110,7 +110,6 @@ class LogCard extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: userColor,
-                    border: Border.all(color: userColor, width: 2),
                     borderRadius: BorderRadius.circular(7),
                   ),
                   child: Text(

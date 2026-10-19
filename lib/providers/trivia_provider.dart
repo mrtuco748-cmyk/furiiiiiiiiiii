@@ -5,20 +5,52 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_state.dart';
 import '../models/trivia.dart';
+import '../services/local_cache.dart';
 import '../supabase_config.dart';
 
 /// Trivia de pareja (pregunta del día): siembra el banco de preguntas, expone
 /// la pregunta de hoy, guarda respuestas+predictions y calcula el marcador
-/// "quién conoce más a quién". Sin cache local (como finanzas/workouts).
+/// "quién conoce más a quién". Con cache local offline-first para entrada instantánea.
 class TriviaProvider extends ChangeNotifier {
   static const _qTable = 'daily_questions';
   static const _aTable = 'question_answers';
 
-  List<TriviaQuestion> _questions = [];
+  static List<TriviaQuestion> get _bankWithIds => [
+    for (int i = 0; i < TriviaQuestionBank.all.length; i++)
+      TriviaQuestion(
+        id: i + 1,
+        question: TriviaQuestionBank.all[i].question,
+        options: TriviaQuestionBank.all[i].options,
+      ),
+  ];
+
+  List<TriviaQuestion> _questions = _bankWithIds;
   List<TriviaAnswer> _answers = [];
   bool _loading = false;
   String? _error;
   RealtimeChannel? _channel;
+
+  TriviaProvider() {
+    _initFromCache();
+  }
+
+  Future<void> _initFromCache() async {
+    try {
+      final cachedQ = await LocalCache.getList('cache_trivia_questions');
+      if (cachedQ.isNotEmpty) {
+        _questions = cachedQ
+            .map((m) => TriviaQuestion.fromMap(m))
+            .toList();
+      }
+      final cachedA = await LocalCache.getList('cache_trivia_answers');
+      if (cachedA.isNotEmpty) {
+        _answers = cachedA
+            .map((m) => TriviaAnswer.fromMap(m))
+            .toList();
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
 
   List<TriviaAnswer> get answers => List.unmodifiable(_answers);
   bool get loading => _loading;
@@ -90,19 +122,28 @@ class TriviaProvider extends ChangeNotifier {
 
   // ─── CARGA ────────────────────────────────────────────────────
 
-  Future<void> load() async {
-    _loading = true;
+  Future<void> load({bool force = false}) async {
+    // Si ya tenemos preguntas disponibles en memoria/cache, no bloqueamos la UI con _loading = true.
+    // Solo se activa _loading si la lista está completamente vacía.
+    if (_questions.isEmpty) {
+      _loading = true;
+      notifyListeners();
+    }
     _error = null;
-    notifyListeners();
     try {
-      await _seedIfEmpty();
       await Future.wait([_loadQuestions(), _loadAnswers()]);
+      if (_questions.isEmpty) {
+        await _seedIfEmpty();
+        await _loadQuestions();
+      }
       _loading = false;
       notifyListeners();
       _subscribeRealtime();
     } catch (e) {
       _loading = false;
-      _error = 'No se pudo cargar la trivia';
+      if (_questions.isEmpty) {
+        _error = 'No se pudo cargar la trivia';
+      }
       developer.log('TriviaProvider.load error: $e');
       notifyListeners();
     }
@@ -205,10 +246,14 @@ class TriviaProvider extends ChangeNotifier {
         .from(_qTable)
         .select()
         .order('id', ascending: true)
-        .timeout(const Duration(seconds: 10));
-    _questions = (data as List)
+        .timeout(const Duration(seconds: 8));
+    final list = (data as List)
         .map((r) => TriviaQuestion.fromMap(Map<String, dynamic>.from(r as Map)))
         .toList();
+    if (list.isNotEmpty) {
+      _questions = list;
+      await LocalCache.setList('cache_trivia_questions', _questions.map((q) => q.toMap()).toList());
+    }
   }
 
   Future<void> _loadAnswers() async {
@@ -216,10 +261,11 @@ class TriviaProvider extends ChangeNotifier {
         .from(_aTable)
         .select()
         .order('created_at', ascending: true)
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 8));
     _answers = (data as List)
         .map((r) => TriviaAnswer.fromMap(Map<String, dynamic>.from(r as Map)))
         .toList();
+    await LocalCache.setList('cache_trivia_answers', _answers.map((a) => a.toMap()).toList());
   }
 
   // ─── ENVÍO ────────────────────────────────────────────────────
@@ -227,20 +273,26 @@ class TriviaProvider extends ChangeNotifier {
   /// Guarda (o reemplaza) mi respuesta y predicción de hoy.
   Future<bool> submit({required int questionId, required String answer, required String guess}) async {
     _error = null;
+    final optimisticAnswer = TriviaAnswer(
+      questionId: questionId,
+      userId: myId,
+      answer: answer,
+      guess: guess,
+      date: _today(),
+    );
+    // Optimistic update: respuesta instantánea sin esperar a la red
+    _answers.removeWhere((a) => a.userId == myId && a.date == _today());
+    _answers.add(optimisticAnswer);
+    notifyListeners();
+    await LocalCache.setList('cache_trivia_answers', _answers.map((a) => a.toMap()).toList());
+
     try {
       // Upsert atómico sobre (user_id, date): idempotente, re-responder el día
-      // reemplaza la anterior en un solo paso. Evita el delete-then-insert del
-      // enfoque viejo, que podía perder la respuesta si el insert fallaba tras el delete.
+      // reemplaza la anterior en un solo paso.
       await SupabaseConfig.client
           .from(_aTable)
           .upsert(
-            TriviaAnswer(
-              questionId: questionId,
-              userId: myId,
-              answer: answer,
-              guess: guess,
-              date: _today(),
-            ).toMap(),
+            optimisticAnswer.toMap(),
             onConflict: 'user_id,date',
           )
           .timeout(const Duration(seconds: 10));

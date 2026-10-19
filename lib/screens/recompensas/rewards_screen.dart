@@ -140,12 +140,12 @@ class _RewardsScreenState extends State<RewardsScreen> {
             const Spacer(),
             TapTile(
               onTap: () { HapticFeedback.heavyImpact(); pv.toggleFulfilled(r.id!); if (mounted) AppFeedback.success(context, '¡Deseo cumplido!', celebration: true); },
-              child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: ful ? const Color(0xFF39FF14) : const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(12), border: Border.all(color: ful ? const Color(0xFF39FF14) : const Color(0xFF1A1A1A), width: 2)), child: Icon(ful ? Icons.undo : Icons.check, color: ful ? const Color(0xFF1A1A1A) : const Color(0xFF39FF14), size: 24)),
+              child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: ful ? const Color(0xFF39FF14) : const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(12)), child: Icon(ful ? Icons.undo : Icons.check, color: ful ? const Color(0xFF1A1A1A) : const Color(0xFF39FF14), size: 24)),
             ),
             const SizedBox(width: 8),
             TapTile(
               onTap: () { HapticFeedback.heavyImpact(); pv.deleteReward(r.id!); },
-              child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFCC0000), width: 2)), child: const Icon(Icons.delete, color: Colors.white, size: 24)),
+              child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.delete, color: Colors.white, size: 24)),
             ),
             const SizedBox(width: 8),
           ]),
@@ -164,18 +164,19 @@ class _RewardsScreenState extends State<RewardsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: Color(0xFFFFD700), width: 4)),
+          borderRadius: BorderRadius.circular(18)),
         title: const Icon(Icons.card_giftcard, color: Colors.white, size: 34),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: _titleCtrl,
             autofocus: true,
             style: GoogleFonts.bangers(color: Colors.white),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: '¿Qué se ganan?',
-              labelStyle: TextStyle(color: Colors.white54),
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFFFD700))),
+              labelStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: const Color(0xFF2A2A2A),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
             ),
           ),
           const SizedBox(height: 12),
@@ -183,10 +184,12 @@ class _RewardsScreenState extends State<RewardsScreen> {
             controller: _costCtrl,
             keyboardType: TextInputType.number,
             style: GoogleFonts.bangers(color: Colors.white),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Costo en puntos',
-              labelStyle: TextStyle(color: Colors.white54),
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFFFD700))),
+              labelStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: const Color(0xFF2A2A2A),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
             ),
           ),
         ]),

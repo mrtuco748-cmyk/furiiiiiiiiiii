@@ -58,7 +58,6 @@ class _CreateDeckCardModalState extends State<CreateDeckCardModal> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: const Color(0xFF1A1A1A),
-          border: Border.all(color: const Color(0xFF1A1A1A), width: 3),
           borderRadius: BorderRadius.circular(24),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -76,7 +75,6 @@ class _CreateDeckCardModalState extends State<CreateDeckCardModal> {
                 height: 34,
                 decoration: BoxDecoration(
                   color: const Color(0xFFFF0000),
-                  border: Border.all(color: const Color(0xFFFF0000), width: 2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.close,
@@ -98,7 +96,6 @@ class _CreateDeckCardModalState extends State<CreateDeckCardModal> {
                       horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: style.color,
-                    border: Border.all(color: style.color, width: 2),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -125,7 +122,6 @@ class _CreateDeckCardModalState extends State<CreateDeckCardModal> {
           Container(
             decoration: BoxDecoration(
               color: const Color(0xFF2D2D2D),
-              border: Border.all(color: const Color(0xFF2D2D2D), width: 2),
               borderRadius: BorderRadius.circular(16),
             ),
             child: TextField(
@@ -157,11 +153,6 @@ class _CreateDeckCardModalState extends State<CreateDeckCardModal> {
                   color: _ctrl.text.trim().isEmpty || _saving
                       ? const Color(0xFF3A3A3A)
                       : const Color(0xFF39FF14),
-                  border: Border.all(
-                      color: _ctrl.text.trim().isEmpty || _saving
-                          ? const Color(0xFF3A3A3A)
-                          : const Color(0xFF39FF14),
-                      width: 3),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: _saving

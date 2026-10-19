@@ -137,7 +137,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           if (route == null) return const SizedBox.shrink();
           return TapTile(onTap: () { close(); panelContext.push(route); }, child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(10), border: Border.all(color: _c, width: 2)),
+            decoration: BoxDecoration(color: _c, borderRadius: BorderRadius.circular(10)),
             child: const Icon(Icons.open_in_new, color: _dark, size: 20),
           ));
         }),

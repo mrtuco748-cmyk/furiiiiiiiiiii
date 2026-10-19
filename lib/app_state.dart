@@ -6,6 +6,8 @@ class AppState {
   static String? myName;
   static String? identity; // 'Rocio' or 'Facu'
 
+  static String get partnerName => identity == 'Facu' ? 'Rocío' : 'Facu';
+
   static Future<void> saveSession() async {
     final prefs = await SharedPreferences.getInstance();
     if (identity != null) prefs.setString('identity', identity!);

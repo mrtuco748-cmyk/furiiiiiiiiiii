@@ -7,12 +7,13 @@ import '../../../providers/trivia_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/tap_tile.dart';
 
-/// Mazo de preguntas tipo Tinder: cards apiladas, swipe para navegar
+/// Vista de mazo de trivia: limpia, moderna, sin bordes ni degradados toscos.
 class TriviaDeck extends StatefulWidget {
   final List<TriviaQuestion> questions;
   final TriviaProvider provider;
   final ThemeSet theme;
   final VoidCallback onQuestionAnswered;
+
   const TriviaDeck({
     super.key,
     required this.questions,
@@ -25,385 +26,352 @@ class TriviaDeck extends StatefulWidget {
   State<TriviaDeck> createState() => _TriviaDeckState();
 }
 
-class _TriviaDeckState extends State<TriviaDeck> with SingleTickerProviderStateMixin {
+class _TriviaDeckState extends State<TriviaDeck> {
   int _index = 0;
+  int _activeTab = 0; // 0 = Mi respuesta, 1 = Mi predicción
   String? _answer;
   String? _guess;
   bool _saving = false;
-  late AnimationController _animController;
-  late Animation<double> _slideAnimation;
-  double _dragOffset = 0;
-  bool _isDragging = false;
-
-  static const double _cardW = 320;
-  static const double _cardH = 480;
-  static const double _swipeThreshold = 100.0;
 
   @override
   void initState() {
     super.initState();
-    _animController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _slideAnimation = Tween<double>(begin: 0, end: 0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
-    );
+    _initQuestionState();
   }
 
   @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
+  void didUpdateWidget(covariant TriviaDeck oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_index >= widget.questions.length) {
+      _index = (widget.questions.length - 1).clamp(0, 99999);
+      _initQuestionState();
+    }
   }
 
-  TriviaQuestion get _currentQuestion => widget.questions[_index];
+  void _initQuestionState() {
+    if (widget.questions.isEmpty) return;
+    final q = widget.questions[_index];
+    final my = widget.provider.myAnswerToday;
+    if (my != null && my.questionId == q.id) {
+      _answer = my.answer;
+      _guess = my.guess;
+    } else {
+      _answer = null;
+      _guess = null;
+      _activeTab = 0;
+    }
+  }
+
+  void _changeQuestion(int newIndex) {
+    if (newIndex < 0 || newIndex >= widget.questions.length) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _index = newIndex;
+      _initQuestionState();
+    });
+  }
 
   void _submit() {
-    final q = _currentQuestion;
+    if (widget.questions.isEmpty) return;
+    final q = widget.questions[_index];
     final ans = _answer;
     final gss = _guess;
     if (ans == null || gss == null || _saving) return;
+
     setState(() => _saving = true);
+    HapticFeedback.mediumImpact();
     widget.provider
         .submit(questionId: q.id!, answer: ans, guess: gss)
-        .whenComplete(() {
+        .then((ok) {
       if (mounted) {
         setState(() {
           _saving = false;
           _answer = null;
           _guess = null;
+          _activeTab = 0;
         });
         widget.onQuestionAnswered();
       }
     });
   }
 
-  void _onDragStart(DragStartDetails details) {
-    setState(() => _isDragging = true);
-  }
-
-  void _onDragUpdate(DragUpdateDetails details) {
-    setState(() {
-      _dragOffset += details.primaryDelta ?? 0;
-      // Limitar el arrastre a un rango razonable
-      _dragOffset = _dragOffset.clamp(-_cardW * 0.8, _cardW * 0.8);
-    });
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final shouldSwipeNext = _dragOffset < -_swipeThreshold || velocity < -500;
-    final shouldSwipePrev = _dragOffset > _swipeThreshold || velocity > 500;
-
-    if (shouldSwipeNext && _index < widget.questions.length - 1) {
-      _animateSwipe(direction: 1); // siguiente (izquierda)
-    } else if (shouldSwipePrev && _index > 0) {
-      _animateSwipe(direction: -1); // anterior (derecha)
-    } else {
-      // Volver a posición original
-      _animateReturn();
-    }
-  }
-
-  void _animateSwipe({required int direction}) {
-    // direction: 1 = siguiente (sale a la izquierda), -1 = anterior (sale a la derecha)
-    final exitOffset = direction == 1 ? -_cardW * 1.2 : _cardW * 1.2;
-    final enterOffset = direction == 1 ? _cardW * 1.2 : -_cardW * 1.2;
-
-    _animController.reset();
-    _slideAnimation = Tween<double>(begin: _dragOffset, end: exitOffset).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
-    );
-
-    _animController.forward().then((_) {
-      if (mounted) {
-        setState(() {
-          _index += direction;
-          _answer = null;
-          _guess = null;
-          _dragOffset = enterOffset;
-        });
-        // Animar entrada de la nueva carta
-        _slideAnimation = Tween<double>(begin: enterOffset, end: 0).animate(
-          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
-        );
-        _animController.forward(from: 0).then((_) {
-          if (mounted) {
-            setState(() {
-              _dragOffset = 0;
-              _isDragging = false;
-            });
-          }
-        });
-      }
-    });
-  }
-
-  void _animateReturn() {
-    _animController.reset();
-    _slideAnimation = Tween<double>(begin: _dragOffset, end: 0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.elasticOut),
-    );
-    _animController.forward().then((_) {
-      if (mounted) {
-        setState(() {
-          _dragOffset = 0;
-          _isDragging = false;
-        });
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final total = widget.questions.length;
-    return Center(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: _onDragStart,
-        onHorizontalDragUpdate: _onDragUpdate,
-        onHorizontalDragEnd: _onDragEnd,
-        onHorizontalDragCancel: _animateReturn,
-        child: AnimatedBuilder(
-          animation: _animController,
-          builder: (context, _) {
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                // Card siguiente (entrando/saliendo)
-                if (_index + 1 < total && (_isDragging || _animController.isAnimating))
-                  _cardShell(
-                    1,
-                    offsetX: _cardW + _dragOffset * 0.3,
-                    offsetY: -8.0,
-                    scale: 0.96,
-                    opacity: 0.6,
-                    child: _frontCard(widget.questions[_index + 1]),
-                  ),
-                // Card anterior (entrando/saliendo)
-                if (_index > 0 && (_isDragging || _animController.isAnimating))
-                  _cardShell(
-                    -1,
-                    offsetX: -_cardW + _dragOffset * 0.3,
-                    offsetY: -8.0,
-                    scale: 0.96,
-                    opacity: 0.6,
-                    child: _frontCard(widget.questions[_index - 1]),
-                  ),
-                // Cards de atrás (efecto mazo estático)
-                for (var d = 2; d >= 1; d--)
-                  if (_index + d < total && !_isDragging && !_animController.isAnimating)
-                    _cardShell(d, offsetY: -8.0 * d, scale: 1.0 - 0.04 * d),
-                // Card frontal (la que se arrastra)
-                if (_index < total)
-                  Transform.translate(
-                    offset: Offset(_slideAnimation.value + (_isDragging ? _dragOffset : 0), 0),
-                    child: _cardShell(0, child: _frontCard(_currentQuestion)),
-                  ),
-                // Indicador de posición
-                if (total > 1)
-                  Positioned(
-                    bottom: -60,
-                    child: Text('${_index + 1} / $total  ·  deslizá',
-                        style: GoogleFonts.bangers(fontSize: 13, color: Colors.white38)),
-                  ),
-                // Hint visual durante el drag
-                if (_isDragging && _dragOffset.abs() > 20)
-                  _SwipeHint(offset: _dragOffset, threshold: _swipeThreshold, cardWidth: _cardW),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
+    if (widget.questions.isEmpty) return const SizedBox.shrink();
+    final q = widget.questions[_index.clamp(0, widget.questions.length - 1)];
+    final t = widget.theme;
+    final canSubmit = _answer != null && _guess != null;
 
-  Widget _cardShell(
-    int depth, {
-    double? offsetX,
-    double? offsetY,
-    double? scale,
-    double? opacity,
-    Widget? child,
-  }) {
-    return Transform.translate(
-      offset: Offset(offsetX ?? 0, offsetY ?? 0),
-      child: Transform.scale(
-        scale: scale ?? 1,
-        child: Opacity(
-          opacity: opacity ?? (depth == 0 ? 1 : 0.6 - depth.abs() * 0.08),
-          child: Container(
-            width: _cardW,
-            height: _cardH,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF9D00FF), Color(0xFF7000FF), Color(0xFFB23BFF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF9D00FF).withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Navegación entre preguntas
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TapTile(
+                  onTap: _index > 0 ? () => _changeQuestion(_index - 1) : () {},
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _index > 0 ? const Color(0xFF222222) : const Color(0xFF141414),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.chevron_left,
+                      color: _index > 0 ? Colors.white : Colors.white24,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF181818),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_index + 1} de ${widget.questions.length}',
+                    style: GoogleFonts.bangers(
+                      fontSize: 14,
+                      color: Colors.white70,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                TapTile(
+                  onTap: _index < widget.questions.length - 1 ? () => _changeQuestion(_index + 1) : () {},
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _index < widget.questions.length - 1
+                          ? const Color(0xFF222222)
+                          : const Color(0xFF141414),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right,
+                      color: _index < widget.questions.length - 1 ? Colors.white : Colors.white24,
+                      size: 24,
+                    ),
+                  ),
                 ),
               ],
             ),
-            child: child,
           ),
-        ),
-      ),
-    );
-  }
 
-  Widget _frontCard(TriviaQuestion q) {
-    final my = widget.provider.myAnswerToday;
-    final myAnswerForThis = (my != null && my.questionId == q.id) ? my : null;
-    final shownAnswer = _answer ?? myAnswerForThis?.answer;
-    final shownGuess = _guess ?? myAnswerForThis?.guess;
-    final canSave = shownAnswer != null && shownGuess != null;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('¿Cuánto conocés a tu pareja?',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.bangers(color: Colors.white54, fontSize: 13)),
-        const SizedBox(height: 16),
-        Expanded(
-          child: SingleChildScrollView(
-            child: Text(q.question,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.bangers(color: Colors.white, fontSize: 20, height: 1.4, fontWeight: FontWeight.bold)),
-          ),
-        ),
-        const SizedBox(height: 20),
-        // Tu respuesta
-        Text('Tu respuesta', style: GoogleFonts.bangers(color: widget.theme.c, fontSize: 13)),
-        const SizedBox(height: 8),
-        _OptionChips(options: q.options, selected: shownAnswer, onTap: (o) => setState(() => _answer = o)),
-        const SizedBox(height: 16),
-        // Predicción
-        Text('Predicción: ¿qué responderá tu pareja?', style: GoogleFonts.bangers(color: widget.theme.c, fontSize: 13)),
-        const SizedBox(height: 8),
-        _OptionChips(options: q.options, selected: shownGuess, onTap: (o) => setState(() => _guess = o)),
-        const SizedBox(height: 20),
-        // Botón confirmar
-        TapTile(
-          onTap: canSave && !_saving ? _submit : () {},
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: canSave && !_saving ? const Color(0xFF39FF14) : const Color(0xFF2A2A2A),
-              border: Border.all(
-                  color: canSave && !_saving ? const Color(0xFF39FF14) : const Color(0xFF2A2A2A), width: 3),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Center(
-              child: Text(_saving ? 'Guardando...' : (myAnswerForThis != null ? 'Actualizar' : 'Confirmar'),
-                  style: GoogleFonts.bangers(
-                      color: canSave && !_saving ? const Color(0xFF0A0A0A) : Colors.white54, fontSize: 16)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Hint visual durante el swipe
-class _SwipeHint extends StatelessWidget {
-  final double offset;
-  final double threshold;
-  final double cardWidth;
-  const _SwipeHint({
-    required this.offset,
-    required this.threshold,
-    required this.cardWidth,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isLeft = offset < 0;
-    final progress = (offset.abs() / threshold).clamp(0.0, 1.0);
-    final color = isLeft ? const Color(0xFF39FF14) : const Color(0xFF00D4FF);
-    final icon = isLeft ? Icons.arrow_forward_ios : Icons.arrow_back_ios;
-    final label = isLeft ? 'Siguiente' : 'Anterior';
-
-    return Positioned(
-      top: cardWidth * 0.3,
-      left: isLeft ? null : 20,
-      right: isLeft ? 20 : null,
-      child: AnimatedOpacity(
-        opacity: progress,
-        duration: const Duration(milliseconds: 100),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.9),
-            border: Border.all(color: color, width: 2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: const Color(0xFF0A0A0A), size: 16),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: GoogleFonts.bangers(
-                      color: const Color(0xFF0A0A0A), fontSize: 12)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _OptionChips extends StatelessWidget {
-  final List<String> options;
-  final String? selected;
-  final ValueChanged<String> onTap;
-  const _OptionChips({
-    required this.options,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      alignment: WrapAlignment.center,
-      children: [
-        for (final o in options)
-          TapTile(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              onTap(o);
+          // Tarjeta principal interactiva
+          GestureDetector(
+            onHorizontalDragEnd: (details) {
+              final v = details.primaryVelocity ?? 0;
+              if (v < -250 && _index < widget.questions.length - 1) {
+                _changeQuestion(_index + 1);
+              } else if (v > 250 && _index > 0) {
+                _changeQuestion(_index - 1);
+              }
             },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              curve: Curves.easeOut,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Container(
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: selected == o ? const Color(0xFF9D00FF) : const Color(0xFF1A1A1A),
-                border: Border.all(
-                    color: selected == o ? const Color(0xFF9D00FF) : const Color(0xFF333333), width: 2),
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF161616),
+                borderRadius: BorderRadius.circular(22),
               ),
-              child: Text(o,
-                  style: GoogleFonts.bangers(
-                      color: selected == o ? Colors.white : Colors.white70,
-                      fontSize: 13,
-                      fontWeight: selected == o ? FontWeight.bold : FontWeight.normal)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Pregunta
+                  Text(
+                    q.question,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.bangers(
+                      fontSize: 22,
+                      color: Colors.white,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Selector de pasos / pestañas (Mi respuesta vs Mi predicción)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TapTile(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _activeTab = 0);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: _activeTab == 0 ? t.a : const Color(0xFF222222),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _answer != null ? Icons.check_circle_rounded : Icons.person_rounded,
+                                  size: 16,
+                                  color: _activeTab == 0 ? Colors.white : Colors.white54,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Tu respuesta',
+                                  style: GoogleFonts.bangers(
+                                    fontSize: 13,
+                                    color: _activeTab == 0 ? Colors.white : Colors.white60,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TapTile(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _activeTab = 1);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: _activeTab == 1 ? const Color(0xFF00D4FF) : const Color(0xFF222222),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _guess != null ? Icons.check_circle_rounded : Icons.favorite_rounded,
+                                  size: 16,
+                                  color: _activeTab == 1 ? const Color(0xFF0A0A0A) : Colors.white54,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Predicción',
+                                  style: GoogleFonts.bangers(
+                                    fontSize: 13,
+                                    color: _activeTab == 1 ? const Color(0xFF0A0A0A) : Colors.white60,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Lista de opciones para la pestaña activa
+                  for (final option in q.options) ...[
+                    _buildOptionTile(
+                      option: option,
+                      isSelected: _activeTab == 0 ? _answer == option : _guess == option,
+                      selectedColor: _activeTab == 0 ? t.a : const Color(0xFF00D4FF),
+                      textColor: _activeTab == 0 ? Colors.white : const Color(0xFF0A0A0A),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        if (_activeTab == 0) {
+                          setState(() => _answer = option);
+                          if (_guess == null) {
+                            Future.delayed(const Duration(milliseconds: 220), () {
+                              if (mounted && _guess == null) {
+                                setState(() => _activeTab = 1);
+                              }
+                            });
+                          }
+                        } else {
+                          setState(() => _guess = option);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  // Botón confirmar
+                  TapTile(
+                    onTap: canSubmit && !_saving ? _submit : () {},
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: canSubmit && !_saving ? const Color(0xFF39FF14) : const Color(0xFF222222),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: Text(
+                          _saving
+                              ? 'GUARDANDO...'
+                              : (canSubmit
+                                  ? 'CONFIRMAR RESPUESTA'
+                                  : (_answer == null ? 'Elegí tu respuesta' : 'Elegí tu predicción')),
+                          style: GoogleFonts.bangers(
+                            fontSize: 16,
+                            color: canSubmit && !_saving ? const Color(0xFF0A0A0A) : Colors.white38,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionTile({
+    required String option,
+    required bool isSelected,
+    required Color selectedColor,
+    required Color textColor,
+    required VoidCallback onTap,
+  }) {
+    return TapTile(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected ? selectedColor : const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                option,
+                style: GoogleFonts.bangers(
+                  fontSize: 15,
+                  color: isSelected ? textColor : Colors.white,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            if (isSelected)
+              Icon(
+                Icons.check_rounded,
+                color: textColor,
+                size: 20,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

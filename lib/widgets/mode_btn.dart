@@ -22,7 +22,6 @@ class ModeBtn extends StatelessWidget {
         width: 32, height: 32,
         decoration: BoxDecoration(
           color: active ? t.light : t.a,
-          border: Border.all(color: t.dark, width: active ? 4 : 2),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, size: active ? 20 : 14, color: iconColor ?? t.dark),

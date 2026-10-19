@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -5,12 +6,14 @@ import 'package:go_router/go_router.dart';
 import '../router.dart';
 import '../theme/app_theme.dart';
 import '../widgets/loca_screen.dart';
+import 'ejercicios/ejercicios_screen.dart';
 
-/// Args para abrir EjerciciosScreen en una pestaña concreta desde el mosaico.
+/// Args para abrir EjerciciosScreen en una pestaña concreta desde el mosaico o pop-up.
 class EjerciciosArgs {
   final AppMode mode;
   final int tab;
-  const EjerciciosArgs(this.mode, this.tab);
+  final bool isPopup;
+  const EjerciciosArgs(this.mode, this.tab, {this.isPopup = false});
 }
 
 const _calendarTheme = ThemeSet(
@@ -60,7 +63,7 @@ class CalendarMosaicoScreen extends StatelessWidget {
   }
 }
 
-/// Notas estilo "Nosotros": un bloque gigante que abre la sección de notas.
+/// Pizarrón estilo "Nosotros": un bloque gigante que abre el pizarrón colaborativo.
 class NotesMosaicoScreen extends StatelessWidget {
   const NotesMosaicoScreen({super.key});
 
@@ -71,10 +74,10 @@ class NotesMosaicoScreen extends StatelessWidget {
       theme: _canvasTheme,
       entries: [
         LocaEntry(
-          icon: Icons.note_add,
-          color: const Color(0xFF9D00FF),
-          label: 'Notas',
-          onTap: () { HapticFeedback.heavyImpact(); context.push(RouterRoutes.notes); },
+          icon: Icons.space_dashboard_rounded,
+          color: const Color(0xFF00E5FF),
+          label: 'Pizarrón',
+          onTap: () { HapticFeedback.heavyImpact(); context.push(RouterRoutes.pizarra); },
         ),
       ],
     );
@@ -122,6 +125,50 @@ class EjerciciosMosaicoScreen extends StatelessWidget {
 
   void _open(BuildContext context, int tab) {
     HapticFeedback.heavyImpact();
-    context.push(RouterRoutes.ejercicios, extra: EjerciciosArgs(mode, tab));
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    if (isDesktop) {
+      showDialog(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.7),
+        builder: (ctx) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520, maxHeight: 780),
+                child: EjerciciosScreen(
+                  mode: mode,
+                  initialTab: tab,
+                  isPopup: true,
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.65),
+        builder: (ctx) {
+          return ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: FractionallySizedBox(
+              heightFactor: 0.94,
+              child: EjerciciosScreen(
+                mode: mode,
+                initialTab: tab,
+                isPopup: true,
+              ),
+            ),
+          );
+        },
+      );
+    }
   }
 }

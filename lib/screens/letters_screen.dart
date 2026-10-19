@@ -236,8 +236,7 @@ void _showLetter(String title, String body, String date, Color color) {
       builder: (ctx) => AlertDialog(
         backgroundColor: _dark,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: color, width: 4)),
+          borderRadius: BorderRadius.circular(18)),
         title: Text(title, style: GoogleFonts.bangers(fontWeight: FontWeight.w900, color: color, fontSize: 18)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(body, style: GoogleFonts.bangers(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w400)),
@@ -251,7 +250,6 @@ void _showLetter(String title, String body, String date, Color color) {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: _dark,
-                border: Border.all(color: _dark, width: 2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(Icons.close, color: color, size: 28),
@@ -287,8 +285,7 @@ void _showLetter(String title, String body, String date, Color color) {
     return AlertDialog(
       backgroundColor: _dark,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: _cSent, width: 4)),
+        borderRadius: BorderRadius.circular(18)),
       title: Text('Editar carta', style: GoogleFonts.bangers(color: _cSent, fontSize: 18)),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         TextField(
@@ -329,7 +326,6 @@ void _showLetter(String title, String body, String date, Color color) {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: _cSent,
-              border: Border.all(color: _cSent, width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text('Guardar', style: GoogleFonts.bangers(color: Colors.white, fontSize: 16)),
@@ -341,7 +337,6 @@ void _showLetter(String title, String body, String date, Color color) {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: _dark,
-              border: Border.all(color: _dark, width: 2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(Icons.close, color: _cSent, size: 28),
@@ -529,7 +524,7 @@ void _showLetter(String title, String body, String date, Color color) {
         const SizedBox(height: 12),
         TapTile(
           onTap: () { HapticFeedback.heavyImpact(); _loadLetters(); },
-          child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _cSent, borderRadius: BorderRadius.circular(10), border: Border.all(color: _cSent, width: 2)), child: const Icon(Icons.refresh, color: Colors.white, size: 24)),
+          child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _cSent, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.refresh, color: Colors.white, size: 24)),
         ),
       ]));
     }
@@ -589,9 +584,7 @@ void _showLetter(String title, String body, String date, Color color) {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: _dark,
-            border: Border.all(color: color, width: 3),
             borderRadius: BorderRadius.circular(18),
-            boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)],
           ),
           child: Row(children: [
             Icon(incoming ? (sealed ? Icons.mail_lock : (read ? Icons.mark_email_read : Icons.markunread)) : Icons.mail, color: color, size: 24),
@@ -627,9 +620,7 @@ void _showLetter(String title, String body, String date, Color color) {
             child: Container(
               decoration: BoxDecoration(
                 color: color,
-                border: Border.all(color: color, width: 4),
                 borderRadius: BorderRadius.circular(18),
-                boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
               ),
               child: Row(children: [
                 TapTile(
@@ -693,9 +684,7 @@ void _showLetter(String title, String body, String date, Color color) {
       child: Container(
         decoration: BoxDecoration(
           color: _mid,
-          border: Border.all(color: color, width: 4),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: const [BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)],
         ),
         child: child,
       ),

@@ -33,8 +33,6 @@ class DeckHistorySheet extends StatelessWidget {
           ),
           decoration: const BoxDecoration(
             color: Color(0xFF1A1A1A),
-            border: Border(
-                top: BorderSide(color: Color(0xFF1A1A1A), width: 3)),
             borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
           child: Column(children: [
@@ -54,8 +52,6 @@ class DeckHistorySheet extends StatelessWidget {
                     height: 32,
                     decoration: BoxDecoration(
                       color: const Color(0xFF9D00FF),
-                      border:
-                          Border.all(color: const Color(0xFF9D00FF), width: 2),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.close,
@@ -104,7 +100,6 @@ class DeckHistorySheet extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: cat.color,
-        border: Border.all(color: cat.color, width: 3),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -159,7 +154,6 @@ class DeckHistorySheet extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: cat.color,
-        border: Border.all(color: cat.color, width: 3),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -214,7 +208,6 @@ class DeckHistorySheet extends StatelessWidget {
               height: 38,
               decoration: BoxDecoration(
                 color: const Color(0xFF9D00FF),
-                border: Border.all(color: const Color(0xFF9D00FF), width: 2),
                 borderRadius: BorderRadius.circular(13),
               ),
               child: const Icon(Icons.swap_horiz,

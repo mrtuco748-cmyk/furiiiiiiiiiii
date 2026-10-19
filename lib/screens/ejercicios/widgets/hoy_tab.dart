@@ -114,9 +114,6 @@ class DayCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: isToday ? EjerciciosStyle.cyan : EjerciciosStyle.panel,
-                  border: Border.all(
-                      color: isToday ? EjerciciosStyle.cyan : EjerciciosStyle.panel,
-                      width: 2),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -216,8 +213,6 @@ class MarkButton extends StatelessWidget {
         height: 30,
         decoration: BoxDecoration(
           color: done ? EjerciciosStyle.cyan : EjerciciosStyle.panel,
-          border: Border.all(
-              color: done ? EjerciciosStyle.cyan : EjerciciosStyle.panel, width: 2),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(Icons.check,

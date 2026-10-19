@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -18,7 +19,31 @@ import 'local_cache.dart';
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
+  final data = message.data;
+  final msgId = data['message_id'];
+  if (msgId != null) {
+    final id = int.tryParse(msgId.toString());
+    if (id != null) {
+      await NotificationService.markMessageDelivered(id);
+    }
+  }
   NotificationService._handleMessage(message);
+}
+
+class InAppNotificationItem {
+  final String title;
+  final String body;
+  final Map<String, dynamic> data;
+  final String? fromUser;
+  final DateTime timestamp;
+
+  InAppNotificationItem({
+    required this.title,
+    required this.body,
+    this.data = const {},
+    this.fromUser,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
 }
 
 class NotificationService {
@@ -29,6 +54,22 @@ class NotificationService {
   static bool _initialized = false;
   static bool _firebaseAvailable = false;
   static StreamSubscription<String>? _tokenRefreshSub;
+
+  /// Stream para notificaciones in-app personalizadas estilo WhatsApp
+  static final StreamController<InAppNotificationItem> _inAppNotificationStream =
+      StreamController<InAppNotificationItem>.broadcast();
+  static Stream<InAppNotificationItem> get inAppNotificationStream =>
+      _inAppNotificationStream.stream;
+
+  static void showInAppNotification(InAppNotificationItem item) {
+    if (!_inAppNotificationStream.isClosed) {
+      _inAppNotificationStream.add(item);
+    }
+  }
+
+  /// Callback para acciones de la botonera musical desde la ventana flotante del celular
+  static void Function(String actionId)? onMusicAction;
+  static const int musicNotificationId = 99999;
 
   /// Firebase Messaging solo tiene plugin nativo en Android/iOS.
   /// En desktop (Windows, macOS) el MethodChannel no existe y lanza
@@ -76,7 +117,9 @@ class NotificationService {
     await _localNotifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (response) {
-        if (response.payload != null) {
+        if (response.actionId != null && response.actionId!.isNotEmpty) {
+          onMusicAction?.call(response.actionId!);
+        } else if (response.payload != null) {
           final data = jsonDecode(response.payload!) as Map<String, dynamic>;
           onNotificationTap?.call(data);
         }
@@ -89,6 +132,8 @@ class NotificationService {
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     }
   }
+
+  static Future<void> registerToken() async => registerTokenAfterLogin();
 
   static Future<void> registerTokenAfterLogin() async {
     if (!_firebaseAvailable || _fcm == null || !_supportsMessaging) return;
@@ -117,6 +162,14 @@ class NotificationService {
   static Future<void> _storeToken(String token) async {
     if (AppState.myId == null) return;
     try {
+      final nowUtc = DateTime.now().toUtc().toIso8601String();
+      // Eliminar este token si estaba registrado para otro usuario (evita que el dispositivo reciba notificaciones cruzadas)
+      await SupabaseConfig.client
+          .from('device_tokens')
+          .delete()
+          .eq('token', token)
+          .neq('user_id', AppState.myId!);
+
       final existing = await SupabaseConfig.client
           .from('device_tokens')
           .select('id')
@@ -128,24 +181,54 @@ class NotificationService {
           'user_id': AppState.myId!,
           'token': token,
           'platform': Platform.isAndroid ? 'android' : 'ios',
+          'created_at': nowUtc,
         });
+      } else {
+        await SupabaseConfig.client.from('device_tokens').update({
+          'created_at': nowUtc,
+        }).eq('id', existing['id']);
       }
     } catch (e) {
       debugPrint('NotificationService._storeToken error: $e');
     }
   }
 
+  /// Marca un mensaje entrante como entregado (2 checks grises en el remitente)
+  /// al recibir la notificación o el evento en tiempo real en el dispositivo.
+  static Future<void> markMessageDelivered(int messageId) async {
+    try {
+      final nowUtc = DateTime.now().toUtc().toIso8601String();
+      await SupabaseConfig.client
+          .from('messages')
+          .update({'delivered_at': nowUtc})
+          .eq('id', messageId)
+          .filter('delivered_at', 'is', 'null');
+    } catch (e) {
+      debugPrint('NotificationService.markMessageDelivered error: $e');
+    }
+  }
+
   static void _listenFCMForeground() {
     if (_fcm == null) return;
     FirebaseMessaging.onMessage.listen((message) {
-      if (message.data.containsKey('type') && message.data['type'] == 'message') {
-        return;
-      }
-      final title = message.notification?.title ?? '';
-      final body = message.notification?.body ?? '';
       final data = message.data;
-      _showLocalNotification(title, body, data);
+      final msgId = data['message_id'];
+      if (msgId != null) {
+        final id = int.tryParse(msgId.toString());
+        if (id != null) {
+          unawaited(markMessageDelivered(id));
+        }
+      }
+
+      final title = message.notification?.title ?? (data['title'] as String?) ?? '';
+      final body = message.notification?.body ?? (data['body'] as String?) ?? '';
       if (title.isNotEmpty || body.isNotEmpty) {
+        // En primer plano mostramos la notificación in-app personalizada estilo WhatsApp
+        showInAppNotification(InAppNotificationItem(
+          title: title.isNotEmpty ? title : 'F.U.R.I',
+          body: body,
+          data: data,
+        ));
         _storePushNotification(data, title, body);
       }
     });
@@ -229,7 +312,104 @@ class NotificationService {
     required String body,
     Map<String, dynamic> data = const {},
   }) async {
-    await _showLocalNotification(title, body, data);
+    showInAppNotification(InAppNotificationItem(
+      title: title,
+      body: body,
+      data: data,
+    ));
+  }
+
+  /// Muestra o actualiza la botonera de música en la ventana flotante / panel de notificaciones del celular
+  /// al estilo de YouTube Music o Spotify con controles interactivos (Anterior, Play/Pausa, Siguiente).
+  static Future<void> updateMusicNotification({
+    required String title,
+    required String artist,
+    required bool isPlaying,
+  }) async {
+    if (!_initialized || !_supportsMessaging) return;
+    try {
+      final actions = <AndroidNotificationAction>[
+        const AndroidNotificationAction(
+          'music_prev',
+          '⏮️',
+          showsUserInterface: true,
+          cancelNotification: false,
+        ),
+        AndroidNotificationAction(
+          'music_play_pause',
+          isPlaying ? '⏸️' : '▶️',
+          showsUserInterface: true,
+          cancelNotification: false,
+        ),
+        const AndroidNotificationAction(
+          'music_next',
+          '⏭️',
+          showsUserInterface: true,
+          cancelNotification: false,
+        ),
+      ];
+
+      final androidDetails = AndroidNotificationDetails(
+        'furi_music_channel',
+        'F.U.R.I Música',
+        channelDescription: 'Controles multimedia de música de F.U.R.I',
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: isPlaying,
+        autoCancel: false,
+        onlyAlertOnce: true,
+        showWhen: false,
+        actions: actions,
+        category: AndroidNotificationCategory.transport,
+        color: const Color(0xFF00F0FF),
+        playSound: false,
+        enableVibration: false,
+      );
+
+      await _localNotifications.show(
+        musicNotificationId,
+        title,
+        artist.isNotEmpty ? artist : 'F.U.R.I Música',
+        NotificationDetails(android: androidDetails),
+        payload: jsonEncode({'type': 'music'}),
+      );
+    } catch (e) {
+      debugPrint('NotificationService.updateMusicNotification error: $e');
+    }
+  }
+
+  /// Cancela la notificación de música cuando se detiene el reproductor
+  static Future<void> cancelMusicNotification() async {
+    if (!_initialized || !_supportsMessaging) return;
+    try {
+      await _localNotifications.cancel(musicNotificationId);
+    } catch (e) {
+      debugPrint('NotificationService.cancelMusicNotification error: $e');
+    }
+  }
+
+  /// Envía una notificación push FCM v1 directamente al celular de la pareja
+  /// (nunca al usuario actual). Funciona aunque la pareja tenga la app cerrada.
+  static Future<void> sendPushToPartner({
+    required String title,
+    required String body,
+    Map<String, dynamic> data = const {},
+  }) async {
+    final partnerId = AppState.partnerId;
+    if (partnerId == null || partnerId.isEmpty) return;
+    try {
+      await SupabaseConfig.client.functions.invoke(
+        'send-push',
+        body: {
+          'user_id': partnerId,
+          'title': title,
+          'body': body,
+          'data': data,
+        },
+      );
+    } catch (e) {
+      debugPrint('NotificationService.sendPushToPartner error: $e');
+    }
   }
 
   static bool _tzReady = false;
@@ -385,9 +565,18 @@ class NotificationService {
         table: 'messages',
         filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'to_user', value: AppState.myId!),
         callback: (payload) {
+          final rawId = payload.newRecord['id'];
+          final msgId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+          if (msgId != null) {
+            unawaited(markMessageDelivered(msgId));
+          }
           final content = payload.newRecord['content'] as String? ?? '';
           if (content.isEmpty) return;
-          _showLocalNotification('Nuevo mensaje', content, {'type': 'message'});
+          showInAppNotification(InAppNotificationItem(
+            title: AppState.partnerName.isNotEmpty ? AppState.partnerName : 'Nuevo mensaje',
+            body: content,
+            data: {'type': 'message', if (msgId != null) 'message_id': msgId.toString()},
+          ));
           onNewMessage?.call();
         },
       )
@@ -397,33 +586,11 @@ class NotificationService {
         table: 'messages',
         filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'from_user', value: AppState.myId!),
         callback: (payload) {},
-      )
-      .onPostgresChanges(
-        event: PostgresChangeEvent.update,
-        schema: 'public',
-        table: 'messages',
-        callback: (payload) {
-          final updated = payload.newRecord;
-    final reactions = updated['reactions'] as Map<String, dynamic>?;
-    if (reactions != null && reactions.isNotEmpty) {
-      final myId = AppState.myId;
-      final partnerId = AppState.partnerId;
-      bool myReacted = false;
-      bool partnerReacted = false;
-      reactions.forEach((key, value) {
-        final List<dynamic> users = (value as List?) ?? [];
-        if (myId != null && users.contains(myId)) myReacted = true;
-        if (partnerId != null && users.contains(partnerId)) partnerReacted = true;
-      });
-      if (!myReacted && partnerReacted) {
-        _showLocalNotification('Reacción', 'Alguien reaccionó a tu mensaje', {'type': 'reaction'});
-      }
-    }
-        },
       );
 
     _globalChannel!.subscribe();
 
+    registerToken();
     startListeningNotifications();
   }
 
@@ -443,6 +610,19 @@ class NotificationService {
         filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: AppState.myId!),
         callback: (payload) {
           developer.log('NotificationService: nueva notificación via realtime');
+          // En desktop (donde FCM no corre nativo), mostramos notificación local.
+          // En móvil, FCM foreground listener ya la muestra evitando avisos duplicados.
+          final record = payload.newRecord;
+          final title = record['title'] as String? ?? 'F.U.R.I';
+          final body = record['body'] as String? ?? '';
+          final data = (record['data'] as Map<String, dynamic>?) ?? {};
+          if (title.isNotEmpty || body.isNotEmpty) {
+            showInAppNotification(InAppNotificationItem(
+              title: title,
+              body: body,
+              data: data,
+            ));
+          }
           onNewNotification?.call();
         },
       )

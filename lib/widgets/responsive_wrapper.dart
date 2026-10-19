@@ -25,12 +25,6 @@ class ResponsiveWrapper extends StatelessWidget {
                 child: Container(
                   width: maxContentWidth,
                   height: h,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(color: const Color(0xFF7000FF).withValues(alpha: 0.3), width: 2),
-                      right: BorderSide(color: const Color(0xFF7000FF).withValues(alpha: 0.3), width: 2),
-                    ),
-                  ),
                   child: builder(context, maxContentWidth, h),
                 ),
               ),

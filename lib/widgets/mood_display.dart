@@ -52,8 +52,6 @@ class _MoodDisplayState extends State<MoodDisplay> with SingleTickerProviderStat
                   decoration: BoxDecoration(
                     color: widget.color,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black, width: 3),
-                    boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(3, 3), blurRadius: 0)],
                   ),
                 ),
                 Transform.translate(

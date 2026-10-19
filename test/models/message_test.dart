@@ -40,6 +40,13 @@ void main() {
     );
   });
 
+  test('tickState es read cuando read es true aunque readAt sea nulo', () {
+    expect(
+      base(deliveredAt: DateTime.now(), read: true).tickState,
+      MessageTick.read,
+    );
+  });
+
   test('fromMap parsea reply_to_id int y reactions JSONB', () {
     final msg = Message.fromMap({
       'id': 42,
@@ -190,6 +197,7 @@ test('defaultReactionEmojis son los 6 pedidos', () {
     expect(base(messageType: 'voice').isMedia, true);
     expect(base(messageType: 'gif').isMedia, true);
     expect(base(messageType: 'document').isMedia, true);
+    expect(base(messageType: 'sticker').isMedia, true);
   });
 
   test('needsCloudDownload cuando hay url y no cloud_deleted', () {
@@ -223,6 +231,7 @@ test('defaultReactionEmojis son los 6 pedidos', () {
       'Video',
     );
     expect(base(messageType: 'gif').copyWith(content: '').previewText, 'GIF');
+    expect(base(messageType: 'sticker').copyWith(content: '').previewText, 'Sticker');
     expect(
       base(messageType: 'document')
           .copyWith(attachmentName: 'cv.pdf', content: '')

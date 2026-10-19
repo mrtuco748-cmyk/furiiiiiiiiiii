@@ -30,9 +30,10 @@ class ChatMediaBody extends StatelessWidget {
     if (!message.isMedia) {
       return Text(
         message.content,
-        style: GoogleFonts.bangers(
-          fontWeight: FontWeight.bold,
+        style: GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w500,
           fontSize: 15,
+          height: 1.35,
           color: textColor,
         ),
       );
@@ -49,7 +50,6 @@ class ChatMediaBody extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: ChatStyle.mediaBg,
-            border: Border.all(color: ChatStyle.mediaBg, width: 2),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -70,7 +70,11 @@ class ChatMediaBody extends StatelessWidget {
                   downloading
                       ? 'Descargando...'
                       : (message.attachmentName ?? message.previewText),
-                  style: GoogleFonts.bangers(fontSize: 13, color: textColor),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -93,7 +97,11 @@ class ChatMediaBody extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           message.attachmentName ?? message.previewText,
-          style: GoogleFonts.bangers(fontSize: 13, color: textColor),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: textColor,
+          ),
         ),
       ],
     );
@@ -103,6 +111,7 @@ class ChatMediaBody extends StatelessWidget {
     switch (type) {
       case 'image':
       case 'gif':
+      case 'sticker':
         return Icons.image;
       case 'video':
         return Icons.videocam;
@@ -123,6 +132,18 @@ class _ChatLocalMediaView extends StatelessWidget {
   Widget build(BuildContext context) {
     final path = message.localPath!;
     switch (message.messageType) {
+      case 'sticker':
+        return Image.file(
+          File(path),
+          width: 140,
+          height: 140,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => Icon(
+            Icons.broken_image,
+            color: textColor,
+            size: 40,
+          ),
+        );
       case 'image':
       case 'gif':
         return Column(
@@ -146,7 +167,11 @@ class _ChatLocalMediaView extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 message.content,
-                style: GoogleFonts.bangers(fontSize: 14, color: textColor),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: textColor,
+                ),
               ),
             ],
           ],
@@ -166,7 +191,11 @@ class _ChatLocalMediaView extends StatelessWidget {
               Flexible(
                 child: Text(
                   message.attachmentName ?? message.content,
-                  style: GoogleFonts.bangers(fontSize: 13, color: textColor),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -243,7 +272,6 @@ class _ChatVideoThumbState extends State<_ChatVideoThumb> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: ChatStyle.bg,
-                      border: Border.all(color: ChatStyle.bg, width: 2),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Icon(Icons.play_arrow,
