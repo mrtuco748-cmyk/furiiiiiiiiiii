@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 /// Pantalla integrada de Pinterest sin barras de navegador
 /// para que se sienta 100% nativa dentro de F.U.R.I.
@@ -34,6 +36,12 @@ class _PinterestScreenState extends State<PinterestScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _controller = null;
+    super.dispose();
+  }
+
   void _initWebView() {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -53,31 +61,47 @@ class _PinterestScreenState extends State<PinterestScreen> {
           },
           onPageFinished: (String url) {
             if (mounted) setState(() => _loading = false);
-            // Ocultar banners molestos de la web de Pinterest
+            // Inyectar limpieza y optimización continua de scroll
             _injectCleanerCss();
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('Pinterest WebView Error: ${error.description}');
           },
           onNavigationRequest: (NavigationRequest request) {
-            final url = request.url.toLowerCase();
-            // Evitar que Pinterest redirija a esquemas nativos o a la tienda que rompan el webview
-            if (url.startsWith('intent://') ||
-                url.startsWith('pinterest://') ||
-                url.startsWith('market://') ||
-                url.startsWith('android-app://')) {
-              debugPrint('Pinterest external redirect prevented: ${request.url}');
+            final uri = Uri.tryParse(request.url);
+            if (uri == null) return NavigationDecision.prevent;
+
+            final scheme = uri.scheme.toLowerCase();
+            // Bloquear cualquier esquema que no sea web (intent://, pinterest://, market://, etc.)
+            if (scheme != 'http' && scheme != 'https') {
+              debugPrint('Pinterest external scheme prevented: ${request.url}');
               return NavigationDecision.prevent;
             }
+
+            final host = uri.host.toLowerCase();
+            // Evitar redirecciones automáticas a tiendas de aplicaciones
+            if (host.contains('play.google.com') ||
+                host.contains('apps.apple.com')) {
+              debugPrint('Pinterest app store redirect prevented: ${request.url}');
+              return NavigationDecision.prevent;
+            }
+
             return NavigationDecision.navigate;
           },
         ),
       )
       ..setUserAgent(
         'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
-      )
-      ..loadRequest(Uri.parse('https://www.pinterest.com/'));
+      );
 
+    // Optimizaciones nativas en Android:
+    if (controller.platform is AndroidWebViewController) {
+      final androidController = controller.platform as AndroidWebViewController;
+      // Requerir gesto de usuario para reproducir videos (evita agotar MediaCodec/GPU decoders al scrollear feeds)
+      androidController.setMediaPlaybackRequiresUserGesture(true);
+    }
+
+    controller.loadRequest(Uri.parse('https://www.pinterest.com/'));
     _controller = controller;
   }
 
@@ -86,23 +110,84 @@ class _PinterestScreenState extends State<PinterestScreen> {
     try {
       await _controller!.runJavaScript('''
         (() => {
-          const style = document.createElement('style');
-          style.innerHTML = `
-            div[data-test-id="app-upsell-banner"],
-            div[data-test-id="full-page-signup-barrier"],
-            .appUpsell,
-            .AppUpsellBanner,
-            div[aria-label="banner"],
-            div[aria-label="Smart App Banner"] {
-              display: none !important;
-            }
-          `;
-          document.head.appendChild(style);
+          const styleId = 'furi-pinterest-cleaner';
+          if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+              div[data-test-id="app-upsell-banner"],
+              div[data-test-id="full-page-signup-barrier"],
+              div[data-test-id="smart-banner"],
+              div[data-test-id="mobile-bottom-nav"],
+              .appUpsell,
+              .AppUpsellBanner,
+              div[aria-label="banner"],
+              div[aria-label="Smart App Banner"],
+              iframe[src*="smartbanner"],
+              div[data-test-id="toast"] {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+              }
+              html, body {
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                overscroll-behavior-y: contain !important;
+              }
+            `;
+            document.head.appendChild(style);
+          }
+
+          // Observador continuo para suprimir banners y trampas modales creadas dinámicamente al scrollear
+          if (!window._furiObserverAttached) {
+            window._furiObserverAttached = true;
+            const observer = new MutationObserver(() => {
+              const elements = document.querySelectorAll(
+                'div[data-test-id="app-upsell-banner"], div[data-test-id="full-page-signup-barrier"], .appUpsell, .AppUpsellBanner, div[aria-label="Smart App Banner"]'
+              );
+              for (let i = 0; i < elements.length; i++) {
+                elements[i].remove();
+              }
+              if (document.body && document.body.style.overflow === 'hidden') {
+                document.body.style.overflow = 'auto';
+              }
+              if (document.documentElement && document.documentElement.style.overflow === 'hidden') {
+                document.documentElement.style.overflow = 'auto';
+              }
+            });
+            observer.observe(document.body || document.documentElement, {
+              childList: true,
+              subtree: true,
+            });
+          }
         })();
       ''');
     } catch (e) {
       debugPrint('Error al inyectar CSS en Pinterest: $e');
     }
+  }
+
+  Widget _buildWebViewWidget() {
+    PlatformWebViewWidgetCreationParams params =
+        PlatformWebViewWidgetCreationParams(
+      controller: _controller!.platform,
+      layoutDirection: TextDirection.ltr,
+      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
+        Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+      },
+    );
+
+    // En Android se utiliza Hybrid Composition para evitar cuellos de botella
+    // y bloqueos en SurfaceTexture al scrollear listas infinitas con muchas imágenes.
+    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
+      params = AndroidWebViewWidgetCreationParams
+          .fromPlatformWebViewWidgetCreationParams(
+        params,
+        displayWithHybridComposition: true,
+      );
+    }
+
+    return WebViewWidget.fromPlatformCreationParams(params: params);
   }
 
   Future<bool> _handleBack() async {
@@ -152,10 +237,10 @@ class _PinterestScreenState extends State<PinterestScreen> {
                   minHeight: 2.5,
                 ),
 
-              // Contenido webview nativo (móvil) o lanzador (desktop)
+              // Contenido webview nativo (móvil) con Hybrid Composition o lanzador (desktop)
               Expanded(
                 child: _isMobile && _controller != null
-                    ? WebViewWidget(controller: _controller!)
+                    ? _buildWebViewWidget()
                     : _buildDesktopFallback(),
               ),
             ],

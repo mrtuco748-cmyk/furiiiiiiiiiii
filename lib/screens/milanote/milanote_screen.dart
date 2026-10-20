@@ -1,557 +1,1130 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/board_element.dart';
 import '../../providers/board_data_provider.dart';
-import '../../theme/app_theme.dart';
-import 'milanote_colors.dart';
-import 'painters/connector_line_painter.dart';
-import 'painters/milanote_grid_painter.dart';
-import 'widgets/milanote_dock.dart';
-import 'widgets/milanote_element_card.dart';
+import 'models/note_style_config.dart';
+import 'painters/board_chalk_painter.dart';
+import 'painters/note_shape_utils.dart';
+import 'widgets/pizarron_note_widget.dart';
+import 'widgets/pizarron_sidebar_overlay.dart';
 
-/// Pantalla principal del Tablero Milanote
+/// Pizarrón Infinito de F.U.R.I. reconstruido desde cero:
+/// - Coordenadas infinitas reales y carga dinámica en chunks (2x el tamaño de pantalla).
+/// - Un único botón verde opaco vibrante (`#2EE50F`) abajo a la derecha (cero barras extras).
+/// - Al desplegar el `+` aparecen 3 opciones solo con iconos: Nota, Lista de tareas y Tuerca (ajustes de fondo y tiza).
+/// - Dibujo con textura de tiza directamente en la capa de fondo del pizarrón (debajo de las notas).
+/// - Desambiguación multitáctil profesional:
+///   * 1 dedo en pizarrón vacío -> desplaza el pizarrón (o dibuja con tiza si está activo).
+///   * 1 dedo arrastrando nota -> mueve la nota con fluidez 1:1 sin importar el nivel de zoom.
+///   * 1 toque en nota -> hace zoom suave hacia la nota y abre el sidebar derecho de edición.
+///   * 2 dedos sobre una misma nota -> agranda/achica la nota incrementalmente desde todos sus lados.
+///   * 2 dedos en el pizarrón (incluso tocando accidentalmente una nota con un dedo) -> hace zoom del pizarrón.
 class MilanoteScreen extends StatefulWidget {
-  final AppMode mode;
-  final int initialBoardId;
+  final Object? mode;
 
   const MilanoteScreen({
     super.key,
-    this.mode = AppMode.dark,
-    this.initialBoardId = 1,
+    this.mode,
   });
 
   @override
   State<MilanoteScreen> createState() => _MilanoteScreenState();
 }
 
-class _MilanoteScreenState extends State<MilanoteScreen> {
-  final TransformationController _transformController = TransformationController();
-  final double _boardWidth = 2400.0;
-  final double _boardHeight = 1600.0;
-  final double _gridSpacing = 28.0;
+class _MilanoteScreenState extends State<MilanoteScreen>
+    with SingleTickerProviderStateMixin {
+  static const int _boardId = 1;
+  static const double _minCameraScale = 0.18;
+  static const double _maxCameraScale = 4.0;
+  static const Color _vibrantGreen = Color(0xFF2EE50F);
 
-  int _currentBoardId = 1;
-  final List<Map<String, dynamic>> _boardStack = [
-    {'id': 1, 'title': 'Pizarrón'}
-  ];
+  // Estado de cámara del mundo infinito: screenPt = worldPt * _cameraScale + _cameraPan
+  Offset _cameraPan = const Offset(60.0, 80.0);
+  double _cameraScale = 1.0;
 
-  int? _selectedElementId;
-  BoardElement? _connectingSource;
-  bool _snapToGrid = true;
-  bool _isDraggingElement = false;
-  final ValueNotifier<BoardElement?> _activeDragNotifier = ValueNotifier<BoardElement?>(null);
+  late AnimationController _cameraAnimController;
+  Offset _animStartPan = Offset.zero;
+  Offset _animTargetPan = Offset.zero;
+  double _animStartScale = 1.0;
+  double _animTargetScale = 1.0;
+
+  // Estado de edición de nota
+  int? _editingElementId;
+  ActiveTextTarget _activeTextTarget = const ActiveTextTarget.title();
+
+  // Estado del botón '+' y panel de tuerca (fondo + tiza)
+  bool _plusMenuOpen = false;
+  bool _settingsOpen = false;
+  bool _chalkMode = false;
+  String _chalkColorHex = '#FFFFFF';
+  double _chalkStrokeWidth = 7.0;
+  final List<Offset> _liveChalkPoints = [];
+
+  // Seguimiento multitáctil para desambiguar pan, zoom, drag de nota y pinch-scale de nota
+  final Map<int, Offset> _activePointers = {};
+  int? _singlePointerId;
+  Offset? _pointerDownScreenPos;
+  bool _hasExceededTapSlop = false;
+
+  // Si el gesto de 1 dedo inició sobre una nota
+  int? _touchedNoteId;
+  Offset? _noteStartWorldPos;
+  bool _isDraggingNote = false;
+  bool _isResizingCorner = false;
+
+  // Estado para gesto de 2 dedos (zoom de pizarrón vs agrandar nota de todos sus lados)
+  bool _isTwoFingerGesture = false;
+  int? _pinchingNoteId;
+  double _initialPinchDistance = 1.0;
+  Offset _initialPinchMidScreen = Offset.zero;
+  Offset _initialCameraPanOnPinch = Offset.zero;
+  double _initialCameraScaleOnPinch = 1.0;
+  Rect? _initialNoteRectOnPinch;
+
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    _currentBoardId = widget.initialBoardId;
+    _cameraAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 340),
+    )..addListener(() {
+        final t = Curves.easeOutCubic.transform(_cameraAnimController.value);
+        setState(() {
+          _cameraPan = Offset.lerp(_animStartPan, _animTargetPan, t)!;
+          _cameraScale =
+              _animStartScale + (_animTargetScale - _animStartScale) * t;
+        });
+      });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _centerView();
-      context.read<BoardDataProvider>().load();
+      if (mounted) {
+        context.read<BoardDataProvider>().load();
+      }
     });
   }
 
   @override
   void dispose() {
-    _transformController.dispose();
-    _activeDragNotifier.dispose();
+    _cameraAnimController.dispose();
     super.dispose();
   }
 
-  void _centerView() {
-    final size = MediaQuery.of(context).size;
-    final scaleX = size.width / (_boardWidth * 0.85);
-    final scaleY = size.height / (_boardHeight * 0.85);
-    final initialScale = (scaleX < scaleY ? scaleX : scaleY).clamp(0.45, 0.95);
-    final cx = (_boardWidth * initialScale - size.width) / 2;
-    final cy = (_boardHeight * initialScale - size.height) / 2;
-
-    _transformController.value = Matrix4.identity()
-      ..scaleByDouble(initialScale, initialScale, 1.0, 1.0)
-      ..translateByDouble(-cx / initialScale, -cy / initialScale, 0.0, 1.0);
+  // ===========================================================================
+  // MATEMÁTICA DE CÁMARA Y CHUNKS (2X VIEWPORT)
+  // ===========================================================================
+  Offset _screenToWorld(Offset screenPt) {
+    return (screenPt - _cameraPan) / _cameraScale;
   }
 
-  void _zoomIn() {
-    final currentScale = _transformController.value.getMaxScaleOnAxis();
-    if (currentScale < 2.5) {
-      _transformController.value = _transformController.value.clone()
-        ..scaleByDouble(1.25, 1.25, 1.0, 1.0);
-      setState(() {});
-    }
+  Matrix4 get _worldToScreenMatrix {
+    return Matrix4.identity()
+      ..translateByDouble(_cameraPan.dx, _cameraPan.dy, 0.0, 1.0)
+      ..scaleByDouble(_cameraScale, _cameraScale, 1.0, 1.0);
   }
 
-  void _zoomOut() {
-    final currentScale = _transformController.value.getMaxScaleOnAxis();
-    if (currentScale > 0.25) {
-      _transformController.value = _transformController.value.clone()
-        ..scaleByDouble(0.8, 0.8, 1.0, 1.0);
-      setState(() {});
-    }
-  }
-
-  void _resetZoom() {
-    _centerView();
-    setState(() {});
-  }
-
-  Offset _getViewportCenterInWorld() {
-    final size = MediaQuery.of(context).size;
-    final screenCenter = Offset(size.width / 2, size.height / 2);
-    final inv = Matrix4.tryInvert(_transformController.value);
-    if (inv == null) return Offset(_boardWidth / 2, _boardHeight / 2);
-    final pt = MatrixUtils.transformPoint(inv, screenCenter);
-    return Offset(
-      pt.dx.clamp(60.0, _boardWidth - 60.0),
-      pt.dy.clamp(60.0, _boardHeight - 60.0),
+  /// Calcula el rectángulo del chunk activo en coordenadas del mundo equivalente
+  /// al DOBLE (2x) de las dimensiones mostradas actualmente en pantalla.
+  Rect _computeActiveChunkWorldRect(Size screenSize) {
+    final worldVisibleWidth = screenSize.width / _cameraScale;
+    final worldVisibleHeight = screenSize.height / _cameraScale;
+    final worldTopLeft = _screenToWorld(Offset.zero);
+    final visibleWorldRect = Rect.fromLTWH(
+      worldTopLeft.dx,
+      worldTopLeft.dy,
+      worldVisibleWidth,
+      worldVisibleHeight,
+    );
+    // Expandir 0.5x a cada lado => ancho total = 2x viewport, alto total = 2x viewport
+    return visibleWorldRect.inflate(
+      math.max(worldVisibleWidth * 0.5, 200.0),
     );
   }
 
-  double _snap(double val) {
-    if (!_snapToGrid) return val;
-    return (val / _gridSpacing).round() * _gridSpacing;
+  void _animateCameraTo({
+    required Offset targetPan,
+    required double targetScale,
+  }) {
+    _cameraAnimController.stop();
+    _animStartPan = _cameraPan;
+    _animTargetPan = targetPan;
+    _animStartScale = _cameraScale;
+    _animTargetScale = targetScale.clamp(_minCameraScale, _maxCameraScale);
+    _cameraAnimController.forward(from: 0.0);
   }
 
-  void _handleToolSelected(MilanoteToolType type) async {
-    final pv = context.read<BoardDataProvider>();
-    final center = _getViewportCenterInWorld();
-    final spawnX = _snap((center.dx - 110).clamp(40.0, _boardWidth - 280.0));
-    final spawnY = _snap((center.dy - 90).clamp(40.0, _boardHeight - 220.0));
+  /// Hace zoom suave hacia una nota para editarla, encuadrándola en el espacio disponible
+  /// a la izquierda del sidebar derecho de personalización.
+  void _focusAndEditElement(BoardElement el, Size screenSize) {
+    const double sidebarReservedWidth = 290.0;
+    final availableWidth =
+        math.max(180.0, screenSize.width - sidebarReservedWidth);
+    final availableHeight = screenSize.height * 0.82;
 
-    switch (type) {
-      case MilanoteToolType.note:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'note',
-          title: 'Nueva Nota',
-          content: 'Escribe aquí tus ideas...',
-          color: MilanotePalette.toHex(MilanotePalette.noteYellow),
-          x: spawnX,
-          y: spawnY,
-          width: 230,
-          height: 180,
-        );
-        break;
+    final scaleX = (availableWidth * 0.78) / math.max(120.0, el.width);
+    final scaleY = (availableHeight * 0.78) / math.max(100.0, el.height);
+    final idealScale = math.min(scaleX, scaleY).clamp(0.85, 1.65);
 
-      case MilanoteToolType.board:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'board',
-          title: 'Sub-Tablero',
-          content: 'Espacio anidado para proyecto',
-          color: MilanotePalette.toHex(MilanotePalette.noteBlue),
-          x: spawnX,
-          y: spawnY,
-          width: 240,
-          height: 150,
-        );
-        break;
+    final noteCenterWorld = Offset(
+      el.x + el.width / 2,
+      el.y + el.height / 2,
+    );
+    final targetScreenCenter = Offset(
+      availableWidth * 0.50,
+      screenSize.height * 0.48,
+    );
+    final targetPan = targetScreenCenter - (noteCenterWorld * idealScale);
 
-      case MilanoteToolType.column:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'column',
-          title: 'Por Hacer',
-          content: '',
-          color: MilanotePalette.toHex(const Color(0xFF2C2F36)),
-          x: spawnX,
-          y: spawnY,
-          width: 260,
-          height: 380,
-        );
-        break;
+    setState(() {
+      _editingElementId = el.id;
+      _activeTextTarget = const ActiveTextTarget.title();
+      _plusMenuOpen = false;
+      _settingsOpen = false;
+      _chalkMode = false;
+    });
 
-      case MilanoteToolType.checklist:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'checklist',
-          title: 'Lista de Tareas',
-          color: MilanotePalette.toHex(MilanotePalette.noteMint),
-          x: spawnX,
-          y: spawnY,
-          width: 240,
-          height: 220,
-          data: {
-            'items': [
-              {'text': 'Primer paso del proyecto', 'checked': false},
-              {'text': 'Segunda tarea', 'checked': false},
-            ]
-          },
-        );
-        break;
+    _animateCameraTo(
+      targetPan: targetPan,
+      targetScale: idealScale,
+    );
+  }
 
-      case MilanoteToolType.connect:
-        if (_selectedElementId != null) {
-          final elements = pv.getElementsByBoard(_currentBoardId);
-          final match = elements.firstWhere((e) => e.id == _selectedElementId, orElse: () => elements.first);
-          setState(() {
-            _connectingSource = match;
-          });
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Selecciona primero una tarjeta para conectar'), duration: Duration(seconds: 2)),
-          );
+  void _closeEditMode() {
+    if (_editingElementId == null) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _editingElementId = null;
+    });
+  }
+
+  // ===========================================================================
+  // DETECCIÓN DE COLISIÓN (HIT TESTING EN COORDENADAS DEL MUNDO)
+  // ===========================================================================
+  BoardElement? _hitTestNoteAtWorld(
+    Offset worldPt,
+    List<BoardElement> elements,
+  ) {
+    // Recorrer de arriba hacia abajo (los últimos en la lista están visualmente arriba)
+    for (int i = elements.length - 1; i >= 0; i--) {
+      final el = elements[i];
+      final rect = Rect.fromLTWH(el.x, el.y, el.width, el.height);
+      if (!rect.inflate(8.0).contains(worldPt)) continue;
+
+      final cfg = NoteStyleConfig.fromElement(
+        fallbackColor: el.color,
+        data: el.data,
+      );
+      final localPt = worldPt - Offset(el.x, el.y);
+      final path = NoteShapeUtils.buildShapePath(
+        cfg.shapeType,
+        Size(el.width, el.height),
+      );
+      if (path.contains(localPt) || rect.contains(worldPt)) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  bool _isPointOnResizeHandle(Offset worldPt, BoardElement el) {
+    final cfg = NoteStyleConfig.fromElement(
+      fallbackColor: el.color,
+      data: el.data,
+    );
+    final handleLocal = NoteShapeUtils.getResizeHandleCenter(
+      cfg.shapeType,
+      Size(el.width, el.height),
+    );
+    final handleWorld = Offset(el.x, el.y) + handleLocal;
+    final hitRadius = 22.0 / _cameraScale.clamp(0.4, 2.5);
+    return (worldPt - handleWorld).distance <= hitRadius;
+  }
+
+  // ===========================================================================
+  // GESTIÓN UNIFICADA DE PUNTEROS (PAN, ZOOM, DRAG 1:1, PINCH-SCALE EN NOTA, TIZA)
+  // ===========================================================================
+  void _onPointerDown(
+    PointerDownEvent event,
+    List<BoardElement> visibleElements,
+    BoardDataProvider provider,
+  ) {
+    _cameraAnimController.stop();
+    _activePointers[event.pointer] = event.localPosition;
+
+    if (_activePointers.length == 1) {
+      // Primer dedo en pantalla
+      _singlePointerId = event.pointer;
+      _pointerDownScreenPos = event.localPosition;
+      _hasExceededTapSlop = false;
+      _isTwoFingerGesture = false;
+      _isDraggingNote = false;
+      _isResizingCorner = false;
+
+      final worldPt = _screenToWorld(event.localPosition);
+      final hitEl = _hitTestNoteAtWorld(worldPt, visibleElements);
+
+      if (hitEl != null && hitEl.id != null) {
+        _touchedNoteId = hitEl.id;
+        _noteStartWorldPos = Offset(hitEl.x, hitEl.y);
+        if (_isPointOnResizeHandle(worldPt, hitEl)) {
+          _isResizingCorner = true;
         }
-        break;
-
-      case MilanoteToolType.colorSwatch:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'colorSwatch',
-          title: 'Paleta Creativa',
-          color: MilanotePalette.toHex(MilanotePalette.notePeach),
-          x: spawnX,
-          y: spawnY,
-          width: 170,
-          height: 160,
-          data: {'hex': '#FF8A65'},
+      } else {
+        _touchedNoteId = null;
+        _noteStartWorldPos = null;
+        if (_chalkMode && _editingElementId == null) {
+          setState(() {
+            _liveChalkPoints
+              ..clear()
+              ..add(worldPt);
+          });
+        }
+      }
+    } else if (_activePointers.length == 2) {
+      // Segundo dedo toca la pantalla -> Desambiguación inmediata:
+      // Si el primer dedo había empezado a mover ligeramente una nota por accidente,
+      // restauramos su posición inicial para no arrastrarla mientras se hace zoom.
+      if (_touchedNoteId != null &&
+          _noteStartWorldPos != null &&
+          _isDraggingNote) {
+        provider.updatePositionLocal(
+          _touchedNoteId!,
+          _noteStartWorldPos!.dx,
+          _noteStartWorldPos!.dy,
         );
-        break;
+      }
+      _isDraggingNote = false;
+      _isResizingCorner = false;
+      _liveChalkPoints.clear();
+      _isTwoFingerGesture = true;
 
-      case MilanoteToolType.image:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'image',
-          title: 'Inspiración Visual',
-          content: 'Referencia de diseño',
-          color: MilanotePalette.toHex(MilanotePalette.noteWhite),
-          x: spawnX,
-          y: spawnY,
-          width: 250,
-          height: 230,
-        );
-        break;
+      final pts = _activePointers.values.toList();
+      final p1Screen = pts[0];
+      final p2Screen = pts[1];
+      _initialPinchDistance = math.max(10.0, (p1Screen - p2Screen).distance);
+      _initialPinchMidScreen = (p1Screen + p2Screen) * 0.5;
+      _initialCameraPanOnPinch = _cameraPan;
+      _initialCameraScaleOnPinch = _cameraScale;
 
-      case MilanoteToolType.drawing:
-        await pv.addElement(
-          boardId: _currentBoardId,
-          type: 'drawing',
-          title: 'Boceto Rápido',
-          color: MilanotePalette.toHex(MilanotePalette.notePurple),
-          x: spawnX,
-          y: spawnY,
-          width: 240,
-          height: 200,
-        );
-        break;
+      // Verificar si AMBOS dedos están pinchando sobre la MISMA nota
+      final p1World = _screenToWorld(p1Screen);
+      final p2World = _screenToWorld(p2Screen);
+      final hit1 = _hitTestNoteAtWorld(p1World, visibleElements);
+      final hit2 = _hitTestNoteAtWorld(p2World, visibleElements);
+
+      if (hit1 != null && hit2 != null && hit1.id != null && hit1.id == hit2.id) {
+        // Pinch con 2 dedos sobre una nota -> Agrandar/achicar la nota de todos sus lados
+        _pinchingNoteId = hit1.id;
+        _initialNoteRectOnPinch =
+            Rect.fromLTWH(hit1.x, hit1.y, hit1.width, hit1.height);
+      } else {
+        // Al menos un dedo está fuera o en otra zona -> Zoom y desplazamiento del pizarrón
+        _pinchingNoteId = null;
+        _initialNoteRectOnPinch = null;
+      }
     }
   }
 
-  void _onCardTap(BoardElement el) {
-    if (_connectingSource != null) {
-      if (_connectingSource!.id != el.id) {
-        context.read<BoardDataProvider>().addConnection(
-          boardId: _currentBoardId,
-          fromElementId: _connectingSource!.id!,
-          toElementId: el.id!,
+  void _onPointerMove(
+    PointerMoveEvent event,
+    Size screenSize,
+    BoardDataProvider provider,
+  ) {
+    if (!_activePointers.containsKey(event.pointer)) return;
+    final prevScreenPos = _activePointers[event.pointer]!;
+    _activePointers[event.pointer] = event.localPosition;
+    final deltaScreen = event.localPosition - prevScreenPos;
+
+    // --- CASO 1: GESTO MULTITÁCTIL DE 2 DEDOS ---
+    if (_activePointers.length >= 2) {
+      final pts = _activePointers.values.toList();
+      final p1 = pts[0];
+      final p2 = pts[1];
+      final currentDist = math.max(10.0, (p1 - p2).distance);
+      final scaleRatio = currentDist / _initialPinchDistance;
+
+      if (_pinchingNoteId != null && _initialNoteRectOnPinch != null) {
+        // Agrandar o achicar la nota incrementalmente desde todos sus lados
+        final baseRect = _initialNoteRectOnPinch!;
+        final newW = (baseRect.width * scaleRatio).clamp(130.0, 950.0);
+        final newH = (baseRect.height * scaleRatio).clamp(110.0, 950.0);
+        final center = baseRect.center;
+        final newX = center.dx - newW / 2;
+        final newY = center.dy - newH / 2;
+
+        provider.updateGeometryLocal(
+          _pinchingNoteId!,
+          x: newX,
+          y: newY,
+          width: newW,
+          height: newH,
         );
-        HapticFeedback.mediumImpact();
+      } else {
+        // Zoom y paneo del pizarrón alrededor del punto medio de los 2 dedos
+        final currentMid = (p1 + p2) * 0.5;
+        final newScale = (_initialCameraScaleOnPinch * scaleRatio)
+            .clamp(_minCameraScale, _maxCameraScale);
+        final focalWorld =
+            (_initialPinchMidScreen - _initialCameraPanOnPinch) /
+                _initialCameraScaleOnPinch;
+        final newPan = currentMid - (focalWorld * newScale);
+
+        setState(() {
+          _cameraScale = newScale;
+          _cameraPan = newPan;
+        });
       }
+      return;
+    }
+
+    // --- CASO 2: GESTO DE 1 SOLO DEDO ---
+    if (_isTwoFingerGesture) return;
+    if (_singlePointerId != event.pointer) return;
+
+    if (!_hasExceededTapSlop && _pointerDownScreenPos != null) {
+      if ((event.localPosition - _pointerDownScreenPos!).distance > 6.0) {
+        _hasExceededTapSlop = true;
+      }
+    }
+
+    // Si tocó el agarre de esquina inferior derecha -> Redimensionar nota
+    if (_isResizingCorner && _touchedNoteId != null) {
+      final idx =
+          provider.elements.indexWhere((e) => e.id == _touchedNoteId);
+      if (idx != -1) {
+        final el = provider.elements[idx];
+        final dw = deltaScreen.dx / _cameraScale;
+        final dh = deltaScreen.dy / _cameraScale;
+        provider.updateGeometryLocal(
+          el.id!,
+          width: (el.width + dw).clamp(130.0, 950.0),
+          height: (el.height + dh).clamp(110.0, 950.0),
+        );
+      }
+      return;
+    }
+
+    // Si presionó sobre una nota -> Mover la nota (salvo que sea la nota que se está editando)
+    if (_touchedNoteId != null) {
+      if (_editingElementId == _touchedNoteId) {
+        // Mientras se edita esa nota, permitir interactuar con su texto sin arrastrarla
+        return;
+      }
+      if (!_hasExceededTapSlop) return;
+      _isDraggingNote = true;
+      final idx =
+          provider.elements.indexWhere((e) => e.id == _touchedNoteId);
+      if (idx != -1) {
+        final el = provider.elements[idx];
+        // División exacta por la escala en vivo del pizarrón -> velocidad 1:1 con o sin zoom
+        final dxWorld = deltaScreen.dx / _cameraScale;
+        final dyWorld = deltaScreen.dy / _cameraScale;
+        provider.updatePositionLocal(
+          el.id!,
+          el.x + dxWorld,
+          el.y + dyWorld,
+        );
+      }
+      return;
+    }
+
+    // Si presionó sobre el fondo vacío del pizarrón:
+    if (_chalkMode && _editingElementId == null) {
+      final worldPt = _screenToWorld(event.localPosition);
       setState(() {
-        _connectingSource = null;
+        _liveChalkPoints.add(worldPt);
       });
       return;
     }
 
-    setState(() {
-      _selectedElementId = el.id;
-    });
+    // Desplazar la cámara por el pizarrón infinito
+    if (_hasExceededTapSlop) {
+      setState(() {
+        _cameraPan += deltaScreen;
+      });
+    }
   }
 
-  void _enterSubBoard(int subBoardId, String title) {
-    setState(() {
-      _currentBoardId = subBoardId;
-      _boardStack.add({'id': subBoardId, 'title': title.isEmpty ? 'Sub-Tablero' : title});
-      _selectedElementId = null;
-      _connectingSource = null;
-    });
-    _centerView();
+  void _onPointerUpOrCancel(
+    PointerEvent event,
+    Size screenSize,
+    BoardDataProvider provider,
+  ) {
+    _activePointers.remove(event.pointer);
+
+    // Si estaba dibujando con tiza en el fondo, guardar el trazo
+    if (_chalkMode && _liveChalkPoints.isNotEmpty && _activePointers.isEmpty) {
+      final pts = List<Offset>.from(_liveChalkPoints);
+      setState(() {
+        _liveChalkPoints.clear();
+      });
+      provider.addChalkStroke(
+        boardId: _boardId,
+        points: pts,
+        colorHex: _chalkColorHex,
+        strokeWidth: _chalkStrokeWidth,
+      );
+    }
+
+    // Si fue un toque limpio (sin arrastrar) con 1 solo dedo
+    if (!_isTwoFingerGesture &&
+        !_hasExceededTapSlop &&
+        event is PointerUpEvent) {
+      if (_touchedNoteId != null) {
+        final idx =
+            provider.elements.indexWhere((e) => e.id == _touchedNoteId);
+        if (idx != -1) {
+          final tappedEl = provider.elements[idx];
+          if (_editingElementId != tappedEl.id) {
+            _focusAndEditElement(tappedEl, screenSize);
+          }
+        }
+      } else {
+        // Toque en el fondo vacío del pizarrón
+        if (_editingElementId != null) {
+          _closeEditMode();
+        } else if (_plusMenuOpen || _settingsOpen) {
+          setState(() {
+            _plusMenuOpen = false;
+            _settingsOpen = false;
+          });
+        }
+      }
+    }
+
+    if (_activePointers.isEmpty) {
+      _singlePointerId = null;
+      _touchedNoteId = null;
+      _noteStartWorldPos = null;
+      _isDraggingNote = false;
+      _isResizingCorner = false;
+      _isTwoFingerGesture = false;
+      _pinchingNoteId = null;
+      _initialNoteRectOnPinch = null;
+    }
   }
 
-  void _navigateToBreadcrumb(int index) {
-    setState(() {
-      _boardStack.removeRange(index + 1, _boardStack.length);
-      _currentBoardId = _boardStack[index]['id'] as int;
-      _selectedElementId = null;
-      _connectingSource = null;
-    });
-    _centerView();
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      _cameraAnimController.stop();
+      final zoomDelta = event.scrollDelta.dy < 0 ? 1.12 : 0.89;
+      final newScale =
+          (_cameraScale * zoomDelta).clamp(_minCameraScale, _maxCameraScale);
+      final focalWorld = _screenToWorld(event.localPosition);
+      final newPan = event.localPosition - (focalWorld * newScale);
+      setState(() {
+        _cameraScale = newScale;
+        _cameraPan = newPan;
+      });
+    }
   }
 
+  // ===========================================================================
+  // CREACIÓN Y EDICIÓN DE ELEMENTOS (NOTA / LISTA DE TAREAS / IMÁGENES)
+  // ===========================================================================
+  Future<void> _createNewElement(
+    String type,
+    Size screenSize,
+    BoardDataProvider provider,
+  ) async {
+    final centerWorld = _screenToWorld(
+      Offset(screenSize.width / 2, screenSize.height / 2),
+    );
+    const width = 260.0;
+    const height = 220.0;
+
+    final defaultConfig = NoteStyleConfig(
+      solidColor: type == 'checklist' ? '#1F2D1E' : '#1E2436',
+      checklistItems: type == 'checklist'
+          ? [
+              {'text': '', 'done': false},
+            ]
+          : const [],
+    );
+
+    final created = await provider.addElement(
+      boardId: _boardId,
+      type: type,
+      title: '',
+      content: '',
+      color: defaultConfig.solidColor,
+      x: centerWorld.dx - width / 2,
+      y: centerWorld.dy - height / 2,
+      width: width,
+      height: height,
+      data: defaultConfig.toDataMap(),
+    );
+
+    if (!mounted) return;
+    _focusAndEditElement(created, screenSize);
+  }
+
+  Future<void> _pickImageForEditingNote({
+    required bool isBackground,
+    required BoardElement element,
+    required NoteStyleConfig currentConfig,
+    required BoardDataProvider provider,
+  }) async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1100,
+        maxHeight: 1100,
+        imageQuality: 78,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      final b64 = base64Encode(bytes);
+
+      final updatedCfg = isBackground
+          ? currentConfig.copyWith(
+              baseMode: 'image',
+              bgImageBase64: b64,
+            )
+          : currentConfig.copyWith(
+              inlineImageBase64: b64,
+            );
+
+      await provider.updateElement(
+        element.copyWith(
+          color: updatedCfg.solidColor,
+          data: updatedCfg.toDataMap(),
+        ),
+      );
+    } catch (_) {}
+  }
+
+  // ===========================================================================
+  // BUILD PRINCIPAL
+  // ===========================================================================
   @override
   Widget build(BuildContext context) {
-    final pv = context.watch<BoardDataProvider>();
-    final elements = pv.getElementsByBoard(_currentBoardId);
-    final cardElements = elements.where((e) => e.type != 'connection').toList();
+    final screenSize = MediaQuery.of(context).size;
+    final provider = context.watch<BoardDataProvider>();
+
+    // Chunk activo = 2x el tamaño de lo mostrado actualmente en pantalla
+    final activeChunkWorldRect = _computeActiveChunkWorldRect(screenSize);
+
+    // Filtrar solo notas/listas de tareas y trazos de tiza dentro del chunk 2x
+    final chunkElements = provider.getInteractiveElementsInChunk(
+      _boardId,
+      activeChunkWorldRect,
+      alwaysIncludeId: _editingElementId ?? _touchedNoteId,
+    );
+    final chunkChalkStrokes = provider.getChalkStrokesInChunk(
+      _boardId,
+      activeChunkWorldRect,
+    );
+
+    final boardBgHex = provider.getBoardBackgroundColor(_boardId);
+    final boardBgColor = PizarronPalette.parseHex(
+      boardBgHex,
+      fallback: const Color(0xFF141820),
+    );
+
+    BoardElement? editingElement;
+    if (_editingElementId != null) {
+      final idx =
+          provider.elements.indexWhere((e) => e.id == _editingElementId);
+      if (idx != -1) {
+        editingElement = provider.elements[idx];
+      }
+    }
 
     return Scaffold(
-      backgroundColor: MilanotePalette.canvasDark,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // LIENZO FINITO
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () {
-                  FocusScope.of(context).unfocus();
-                  setState(() {
-                    _selectedElementId = null;
-                    _connectingSource = null;
-                  });
+      backgroundColor: boardBgColor,
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. LIENZO INFINITO (FONDO DE TIZA + OBJETOS DEL CHUNK ACTIVO)
+          Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) => _onPointerDown(e, chunkElements, provider),
+            onPointerMove: (e) => _onPointerMove(e, screenSize, provider),
+            onPointerUp: (e) => _onPointerUpOrCancel(e, screenSize, provider),
+            onPointerCancel: (e) =>
+                _onPointerUpOrCancel(e, screenSize, provider),
+            onPointerSignal: _onPointerSignal,
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: [
+                // Capa 0: Fondo sólido + Puntos espaciales + Trazos de Tiza (debajo de las notas)
+                RepaintBoundary(
+                  child: CustomPaint(
+                    painter: BoardChalkBackgroundPainter(
+                      worldToScreenMatrix: _worldToScreenMatrix,
+                      activeWorldChunkRect: activeChunkWorldRect,
+                      boardBackgroundColor: boardBgColor,
+                      activeChalkStrokes: chunkChalkStrokes,
+                      currentLiveStroke: _liveChalkPoints,
+                      currentChalkColorHex: _chalkColorHex,
+                      currentChalkWidth: _chalkStrokeWidth,
+                    ),
+                    size: Size.infinite,
+                  ),
+                ),
+
+                // Capa 1: Notas y Listas de Tareas del chunk activo transformadas por la cámara
+                Transform(
+                  transform: _worldToScreenMatrix,
+                  alignment: Alignment.topLeft,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      for (final el in chunkElements)
+                        _buildPositionedElement(el, provider),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 2. OVERLAY LATERAL DERECHO (Solo cuando una nota está en modo edición)
+          if (editingElement != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: PizarronSidebarOverlay(
+                config: NoteStyleConfig.fromElement(
+                  fallbackColor: editingElement.color,
+                  data: editingElement.data,
+                ),
+                activeTarget: _activeTextTarget,
+                onTargetChanged: (t) => setState(() => _activeTextTarget = t),
+                onConfigChanged: (updatedCfg) {
+                  provider.updateElement(
+                    editingElement!.copyWith(
+                      color: updatedCfg.solidColor,
+                      data: updatedCfg.toDataMap(),
+                    ),
+                  );
                 },
-                child: InteractiveViewer(
-                  transformationController: _transformController,
-                  panEnabled: !_isDraggingElement,
-                  scaleEnabled: !_isDraggingElement,
-                  minScale: 0.25,
-                  maxScale: 2.5,
-                  boundaryMargin: const EdgeInsets.all(60),
-                  constrained: false,
-                  child: Container(
-                    width: _boardWidth,
-                    height: _boardHeight,
-                    decoration: BoxDecoration(
-                      color: MilanotePalette.canvasDark,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Stack(
-                      children: [
-                        // Cuadrícula punteada Milanote finita optimizada con RepaintBoundary
-                        Positioned.fill(
-                          child: RepaintBoundary(
-                            child: CustomPaint(
-                              painter: MilanoteGridPainter(
-                                width: _boardWidth,
-                                height: _boardHeight,
-                                gridSpacing: _gridSpacing,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Líneas y flechas conectoras que escuchan el elemento en arrastre en tiempo real
-                        Positioned.fill(
-                          child: ValueListenableBuilder<BoardElement?>(
-                            valueListenable: _activeDragNotifier,
-                            builder: (context, activeEl, _) {
-                              return CustomPaint(
-                                painter: ConnectorLinePainter(
-                                  elements: elements,
-                                  activeDraggedElement: activeEl,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-
-                        // Elementos / Tarjetas
-                        ...cardElements.map((el) {
-                          return MilanoteElementCard(
-                            key: ValueKey(el.id),
-                            element: el,
-                            canvasScale: _transformController.value.getMaxScaleOnAxis(),
-                            isSelected: _selectedElementId == el.id,
-                            isConnectingSource: _connectingSource?.id == el.id,
-                            onTap: () => _onCardTap(el),
-                            onDragStart: () {
-                              if (!_isDraggingElement) {
-                                setState(() => _isDraggingElement = true);
-                              }
-                            },
-                            onDragUpdate: (worldDx, worldDy, totalDx, totalDy) {
-                              _activeDragNotifier.value = el.copyWith(
-                                x: el.x + totalDx,
-                                y: el.y + totalDy,
-                              );
-                            },
-                            onDragEnd: (totalDx, totalDy) {
-                              _activeDragNotifier.value = null;
-                              setState(() => _isDraggingElement = false);
-                              if (el.id != null) {
-                                final finalX = _snap((el.x + totalDx).clamp(20.0, _boardWidth - el.width - 20.0));
-                                final finalY = _snap((el.y + totalDy).clamp(20.0, _boardHeight - el.height - 20.0));
-                                pv.updatePositionLocal(el.id!, finalX, finalY);
-                              }
-                            },
-                            onDelete: () {
-                              if (el.id != null) pv.deleteElement(el.id!);
-                            },
-                            onDuplicate: () {
-                              if (el.id != null) pv.duplicateElement(el.id!);
-                            },
-                            onStartConnect: () {
-                              setState(() {
-                                _connectingSource = el;
-                              });
-                            },
-                            onUpdate: (updated) {
-                              pv.updateElement(updated);
-                            },
-                            onOpenSubBoard: _enterSubBoard,
-                          );
-                        }),
-                      ],
-                    ),
+                onPickBackgroundImage: () => _pickImageForEditingNote(
+                  isBackground: true,
+                  element: editingElement!,
+                  currentConfig: NoteStyleConfig.fromElement(
+                    fallbackColor: editingElement.color,
+                    data: editingElement.data,
                   ),
+                  provider: provider,
                 ),
+                onPickInlineImage: () => _pickImageForEditingNote(
+                  isBackground: false,
+                  element: editingElement!,
+                  currentConfig: NoteStyleConfig.fromElement(
+                    fallbackColor: editingElement.color,
+                    data: editingElement.data,
+                  ),
+                  provider: provider,
+                ),
+                onDuplicate: () async {
+                  final id = editingElement!.id;
+                  if (id == null) return;
+                  final copy = await provider.duplicateElement(id);
+                  if (copy != null && mounted) {
+                    _focusAndEditElement(copy, screenSize);
+                  }
+                },
+                onDelete: () async {
+                  final id = editingElement!.id;
+                  _closeEditMode();
+                  if (id != null) {
+                    await provider.deleteElement(id);
+                  }
+                },
+                onCloseEdit: _closeEditMode,
               ),
             ),
 
-            // BARRA SUPERIOR: BREADCRUMBS & NAVEGACIÓN
+          // 3. ÚNICO BOTÓN '+' VERDE OPACO VIBRANTE ABAJO A LA DERECHA
+          // (Oculto mientras se edita una nota para dejar lugar al sidebar derecho)
+          if (editingElement == null)
             Positioned(
-              top: 12,
-              left: 14,
-              right: 14,
-              child: Row(
-                children: [
-                  // Botón Volver a la App Principal
-                  _circleButton(
-                    icon: Icons.arrow_back_rounded,
-                    tooltip: 'Volver',
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Breadcrumbs de tableros anidados
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: MilanotePalette.dockBackground,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: List.generate(_boardStack.length, (idx) {
-                            final item = _boardStack[idx];
-                            final isLast = idx == _boardStack.length - 1;
-                            return Row(
-                              children: [
-                                InkWell(
-                                  onTap: () => _navigateToBreadcrumb(idx),
-                                  child: Text(
-                                    item['title'] as String,
-                                    style: TextStyle(
-                                      color: isLast ? const Color(0xFF00E5FF) : Colors.white70,
-                                      fontSize: 13,
-                                      fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                                if (!isLast)
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 6),
-                                    child: Icon(Icons.chevron_right, size: 16, color: Colors.white38),
-                                  ),
-                              ],
-                            );
-                          }),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // Toggle Snap a Grilla
-                  _circleButton(
-                    icon: _snapToGrid ? Icons.grid_on_rounded : Icons.grid_off_rounded,
-                    color: _snapToGrid ? const Color(0xFF39FF14) : Colors.white60,
-                    tooltip: _snapToGrid ? 'Ajuste a Grilla Activo' : 'Ajuste a Grilla Libre',
-                    onTap: () {
-                      setState(() => _snapToGrid = !_snapToGrid);
-                    },
-                  ),
-                ],
+              right: 20,
+              bottom: 24,
+              child: _buildBottomRightSingleButtonCluster(
+                screenSize,
+                provider,
+                boardBgHex,
               ),
             ),
+        ],
+      ),
+    );
+  }
 
-            // CONTROLES DE ZOOM LATERALES (HUD)
-            Positioned(
-              right: 14,
-              bottom: 80,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: MilanotePalette.dockBackground,
-                  borderRadius: BorderRadius.circular(25),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 10),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.add_rounded, color: Colors.white70, size: 20),
-                      tooltip: 'Acercar Zoom',
-                      onPressed: _zoomIn,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.filter_center_focus_rounded, color: Colors.white70, size: 18),
-                      tooltip: 'Centrar Vista',
-                      onPressed: _resetZoom,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.remove_rounded, color: Colors.white70, size: 20),
-                      tooltip: 'Alejar Zoom',
-                      onPressed: _zoomOut,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+  Widget _buildPositionedElement(
+    BoardElement el,
+    BoardDataProvider provider,
+  ) {
+    final isEditing = _editingElementId != null && _editingElementId == el.id;
+    final styleConfig = NoteStyleConfig.fromElement(
+      fallbackColor: el.color,
+      data: el.data,
+    );
 
-            // DOCK INFERIOR MILANOTE
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 14,
-              child: Center(
-                child: MilanoteDock(
-                  onToolSelected: _handleToolSelected,
-                  isConnectingMode: _connectingSource != null,
-                  onCancelConnect: () {
-                    setState(() => _connectingSource = null);
-                  },
-                ),
+    return Positioned(
+      key: ValueKey('pizarron_el_${el.id}'),
+      left: el.x,
+      top: el.y,
+      width: el.width,
+      height: el.height,
+      child: RepaintBoundary(
+        child: PizarronNoteWidget(
+          element: el,
+          styleConfig: styleConfig,
+          isEditing: isEditing,
+          getCurrentCanvasScale: () => _cameraScale,
+          activeTarget: isEditing
+              ? _activeTextTarget
+              : const ActiveTextTarget.bodyDefault(),
+          onActiveTargetChanged: (target) {
+            if (isEditing) {
+              setState(() => _activeTextTarget = target);
+            }
+          },
+          onTapNote: () {
+            if (!isEditing) {
+              _focusAndEditElement(el, MediaQuery.of(context).size);
+            }
+          },
+          onDragNote: (dx, dy) {
+            if (el.id != null) {
+              provider.updatePositionLocal(el.id!, el.x + dx, el.y + dy);
+            }
+          },
+          onResizeNote: (dw, dh) {
+            if (el.id != null) {
+              provider.updateGeometryLocal(
+                el.id!,
+                width: (el.width + dw).clamp(130.0, 950.0),
+                height: (el.height + dh).clamp(110.0, 950.0),
+              );
+            }
+          },
+          onPinchScaleNote: (scaleFactor, focalWorld) {},
+          onTextChanged: (newTitle, newContent) {
+            provider.updateElement(
+              el.copyWith(
+                title: newTitle,
+                content: newContent,
               ),
-            ),
-          ],
+            );
+          },
+          onStyleChanged: (updatedCfg) {
+            provider.updateElement(
+              el.copyWith(
+                color: updatedCfg.solidColor,
+                data: updatedCfg.toDataMap(),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _circleButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-    Color color = Colors.white70,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: MilanotePalette.dockBackground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(9),
-            child: Icon(icon, color: color, size: 20),
+  // ===========================================================================
+  // CLUSTER DEL ÚNICO BOTÓN '+' ABAJO A LA DERECHA (100% ICONOS, CERO LETRAS)
+  // ===========================================================================
+  Widget _buildBottomRightSingleButtonCluster(
+    Size screenSize,
+    BoardDataProvider provider,
+    String currentBoardBgHex,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Panel de Tuerca (Personalizar color sólido del pizarrón + Tiza en el fondo)
+        if (_settingsOpen || _chalkMode) ...[
+          Container(
+            width: 228,
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1F2E),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Fila superior: Color de fondo del pizarrón vs Modo Tiza
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSmallOptionButton(
+                      icon: Icons.palette_rounded,
+                      active: !_chalkMode,
+                      onTap: () => setState(() => _chalkMode = false),
+                    ),
+                    _buildSmallOptionButton(
+                      icon: Icons.edit_rounded,
+                      active: _chalkMode,
+                      activeColor: _vibrantGreen,
+                      activeIconColor: const Color(0xFF141820),
+                      onTap: () => setState(() => _chalkMode = !_chalkMode),
+                    ),
+                    if (_chalkMode) ...[
+                      _buildSmallOptionButton(
+                        icon: Icons.undo_rounded,
+                        active: false,
+                        onTap: () => provider.undoLastChalkStroke(_boardId),
+                      ),
+                      _buildSmallOptionButton(
+                        icon: Icons.cleaning_services_rounded,
+                        active: false,
+                        onTap: () => provider.clearChalkStrokes(_boardId),
+                      ),
+                    ],
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                if (!_chalkMode) ...[
+                  // Colores sólidos para el fondo del pizarrón
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final hex in PizarronPalette.boardColors)
+                        GestureDetector(
+                          onTap: () =>
+                              provider.setBoardBackgroundColor(_boardId, hex),
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: PizarronPalette.parseHex(hex),
+                              shape: BoxShape.circle,
+                            ),
+                            child: currentBoardBgHex.toUpperCase() ==
+                                    hex.toUpperCase()
+                                ? Icon(
+                                    Icons.check_rounded,
+                                    size: 18,
+                                    color: PizarronPalette.parseHex(hex)
+                                                .computeLuminance() >
+                                            0.5
+                                        ? const Color(0xFF141820)
+                                        : _vibrantGreen,
+                                  )
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ] else ...[
+                  // Colores de Tiza y grosor de Tiza
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final hex in PizarronPalette.chalkColors)
+                        GestureDetector(
+                          onTap: () => setState(() => _chalkColorHex = hex),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: PizarronPalette.parseHex(hex),
+                              shape: BoxShape.circle,
+                            ),
+                            child: _chalkColorHex.toUpperCase() ==
+                                    hex.toUpperCase()
+                                ? const Icon(
+                                    Icons.check_rounded,
+                                    size: 17,
+                                    color: Color(0xFF141820),
+                                  )
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.line_weight_rounded,
+                        color: Colors.white70,
+                        size: 18,
+                      ),
+                      Expanded(
+                        child: SliderTheme(
+                          data: SliderThemeData(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 7,
+                            ),
+                            activeTrackColor: _vibrantGreen,
+                            inactiveTrackColor: const Color(0xFF252C40),
+                            thumbColor: Colors.white,
+                          ),
+                          child: Slider(
+                            value: _chalkStrokeWidth,
+                            min: 3.0,
+                            max: 20.0,
+                            onChanged: (v) =>
+                                setState(() => _chalkStrokeWidth = v),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
           ),
+        ],
+
+        // Opciones al tocar el botón '+': Nota, Lista de Tareas y Tuerca (Ajustes)
+        if (_plusMenuOpen) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 1. Tuerca: personalizar fondo y tiza
+                _buildOptionOrb(
+                  key: const ValueKey('pizarron_opt_settings'),
+                  icon: Icons.settings_rounded,
+                  bgColor: _settingsOpen
+                      ? const Color(0xFF7B2CBF)
+                      : const Color(0xFF252C40),
+                  iconColor: Colors.white,
+                  onTap: () {
+                    setState(() {
+                      _settingsOpen = !_settingsOpen;
+                      if (!_settingsOpen) _chalkMode = false;
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+                // 2. Lista de tareas
+                _buildOptionOrb(
+                  key: const ValueKey('pizarron_opt_checklist'),
+                  icon: Icons.checklist_rounded,
+                  bgColor: const Color(0xFF252C40),
+                  iconColor: Colors.white,
+                  onTap: () => _createNewElement(
+                    'checklist',
+                    screenSize,
+                    provider,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // 3. Nota
+                _buildOptionOrb(
+                  key: const ValueKey('pizarron_opt_note'),
+                  icon: Icons.sticky_note_2_rounded,
+                  bgColor: const Color(0xFF252C40),
+                  iconColor: Colors.white,
+                  onTap: () => _createNewElement(
+                    'note',
+                    screenSize,
+                    provider,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // Botón único principal '+' verde opaco vibrante
+        GestureDetector(
+          key: const ValueKey('pizarron_main_plus_button'),
+          onTap: () {
+            setState(() {
+              if (_chalkMode) {
+                _chalkMode = false;
+                _settingsOpen = false;
+                _plusMenuOpen = false;
+              } else {
+                _plusMenuOpen = !_plusMenuOpen;
+                if (!_plusMenuOpen) {
+                  _settingsOpen = false;
+                }
+              }
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              color: _vibrantGreen,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Icon(
+              (_plusMenuOpen || _chalkMode)
+                  ? Icons.close_rounded
+                  : Icons.add_rounded,
+              color: const Color(0xFF141820),
+              size: 32,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOptionOrb({
+    Key? key,
+    required IconData icon,
+    required Color bgColor,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      key: key,
+      onTap: onTap,
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Icon(
+          icon,
+          color: iconColor,
+          size: 24,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSmallOptionButton({
+    required IconData icon,
+    required bool active,
+    required VoidCallback onTap,
+    Color activeColor = const Color(0xFF7B2CBF),
+    Color activeIconColor = Colors.white,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 40,
+        decoration: BoxDecoration(
+          color: active ? activeColor : const Color(0xFF252C40),
+          borderRadius: BorderRadius.circular(13),
+        ),
+        child: Icon(
+          icon,
+          color: active ? activeIconColor : Colors.white,
+          size: 20,
         ),
       ),
     );

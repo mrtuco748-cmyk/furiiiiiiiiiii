@@ -1,5 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:furi_app/models/board_element.dart';
+import 'package:furi_app/screens/milanote/models/note_style_config.dart';
+import 'package:furi_app/screens/milanote/painters/note_shape_utils.dart';
 
 void main() {
   group('BoardElement model tests', () {
@@ -120,6 +123,98 @@ void main() {
       expect(moved.x, 100);
       expect(moved.y, 200);
       expect(moved.title, 'Movido');
+    });
+  });
+
+  group('NoteStyleConfig & NoteShapeUtils tests', () {
+    test('serializes and deserializes 3-stop gradient, patterns, shapes, borders, and paragraph overrides', () {
+      final config = NoteStyleConfig(
+        baseMode: 'gradient',
+        gradientStartColor: '#FF2A85',
+        gradientMidColor: '#7B2CBF',
+        gradientEndColor: '#00F5D4',
+        gradientAngle: 45.0,
+        patternType: NotePatternType.waves,
+        patternStrokeWidth: 3.5,
+        patternSpacing: 28.0,
+        patternScale: 20.0,
+        patternOpacity: 0.45,
+        patternUseGradient: true,
+        shapeType: NoteShapeType.diamond,
+        borderType: NoteBorderType.dashed,
+        borderWidth: 4.0,
+        borderSpacing: 10.0,
+        borderColor: '#2EE50F',
+        hasShine: true,
+        titleFont: 'Cinzel',
+        titleFormat: TextBlockFormat.escuadra,
+        bodyFont: 'Space Mono',
+        inlineImagePosition: InlineImagePosition.middleBody,
+        paragraphOverrides: const {
+          1: ParagraphStyleOverride(
+            fontFamily: 'Pacifico',
+            colorHex: '#FFB703',
+            fontSize: 18.0,
+            format: TextBlockFormat.sunken,
+          ),
+        },
+      );
+
+      final map = config.toDataMap();
+      final restored = NoteStyleConfig.fromElement(
+        fallbackColor: '#1E2436',
+        data: map,
+      );
+
+      expect(restored.baseMode, 'gradient');
+      expect(restored.gradientStartColor, '#FF2A85');
+      expect(restored.gradientMidColor, '#7B2CBF');
+      expect(restored.gradientEndColor, '#00F5D4');
+      expect(restored.gradientAngle, 45.0);
+      expect(restored.patternType, NotePatternType.waves);
+      expect(restored.patternUseGradient, isTrue);
+      expect(restored.shapeType, NoteShapeType.diamond);
+      expect(restored.borderType, NoteBorderType.dashed);
+      expect(restored.hasShine, isTrue);
+      expect(restored.titleFont, 'Cinzel');
+      expect(restored.titleFormat, TextBlockFormat.escuadra);
+      expect(restored.inlineImagePosition, InlineImagePosition.middleBody);
+      expect(restored.paragraphOverrides[1]?.fontFamily, 'Pacifico');
+      expect(restored.paragraphOverrides[1]?.format, TextBlockFormat.sunken);
+    });
+
+    test('context-sensitive pattern capabilities match pattern semantics', () {
+      const chessCfg = NoteStyleConfig(patternType: NotePatternType.chess);
+      expect(chessCfg.patternSupportsSpacing, isFalse);
+      expect(chessCfg.patternSupportsStrokeWidth, isFalse);
+      expect(chessCfg.patternSupportsScale, isTrue);
+
+      const lineCfg = NoteStyleConfig(patternType: NotePatternType.linesOblique);
+      expect(lineCfg.patternSupportsStrokeWidth, isTrue);
+      expect(lineCfg.patternSupportsSpacing, isTrue);
+      expect(lineCfg.patternSupportsFillToggle, isFalse);
+
+      const circleCfg = NoteStyleConfig(patternType: NotePatternType.circlesEmpty);
+      expect(circleCfg.patternSupportsSpacing, isTrue);
+      expect(circleCfg.patternSupportsStrokeWidth, isTrue);
+      expect(circleCfg.patternSupportsFillToggle, isTrue);
+    });
+
+    test('NoteShapeUtils computes valid paths, content padding, and perimeter resize handles for all shapes', () {
+      const size = Size(260, 220);
+      for (final shape in NoteShapeType.values) {
+        final path = NoteShapeUtils.buildShapePath(shape, size);
+        expect(path.getBounds().width, greaterThan(100));
+        expect(path.getBounds().height, greaterThan(100));
+
+        final pad = NoteShapeUtils.getContentPadding(shape, size);
+        expect(pad.left, greaterThanOrEqualTo(16));
+        expect(pad.top, greaterThanOrEqualTo(16));
+
+        final handle = NoteShapeUtils.getResizeHandleCenter(shape, size);
+        expect(handle.dx, inInclusiveRange(size.width * 0.5, size.width));
+        expect(handle.dy, inInclusiveRange(size.height * 0.5, size.height));
+      }
     });
   });
 }

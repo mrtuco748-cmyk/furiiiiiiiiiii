@@ -7,6 +7,24 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~CRÍTICA - Congelamiento y crash de la app al hacer scroll en Pinterest embebido (SurfaceTexture deadlock, OOM heap y reproducción automática de videos)~~ ✅ RESUELTO 2026-10-20
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `android/app/src/main/AndroidManifest.xml`, `pubspec.yaml`
+- **Qué pasaba**: Al ingresar a Pinterest dentro de la aplicación, el usuario podía scrollear un momento, pero a los pocos segundos la aplicación se pausaba/congelaba completamente y se cerraba de golpe (crash / salida forzada al launcher de Android).
+- **Causa raíz**:
+  1. **Modo de renderizado por Texture Layer (TLHC)**: `WebViewWidget` usaba el modo predeterminado de renderizado sobre `SurfaceTexture`. Al scrollear un feed masivo e infinito con cientos de imágenes WebP/JPEG de alta resolución como Pinterest, la cola de buffers de Android (`GraphicBufferProducer`) se saturaba y desincronizaba con el Raster Thread de Flutter, produciendo un deadlock en `dequeueBuffer`/`eglSwapBuffers` que congelaba la interfaz y forzaba el cierre del proceso por el sistema.
+  2. **Límite de memoria heap de la aplicación**: `AndroidManifest.xml` no tenía habilitado `android:largeHeap="true"`. Al navegar una aplicación web tan pesada, el uso de memoria sobrepasaba el heap estándar (128-192MB), disparando el Out-Of-Memory (OOM) killer del sistema operativo Android.
+  3. **Agotamiento de decodificadores de hardware por video pins**: Los pins de video de Pinterest comenzaban a reproducirse automáticamente al entrar en el viewport. Al scrollear rápidamente, se instanciaban múltiples decodificadores de hardware (`MediaCodec`) simultáneos, excediendo el límite del chipset y colapsando el proceso GPU de Chromium.
+  4. **Redirecciones a esquemas externos y tiendas**: Durante el scroll, Pinterest disparaba redirecciones a esquemas no capturados o a tiendas de apps (`play.google.com`).
+  5. **Trampas modales y banners dinámicos**: Pinterest inyectaba modales y bloqueaba el scroll de `body` con `overflow: hidden`.
+- **Fix**:
+  1. **Hybrid Composition**: Se implementó `displayWithHybridComposition: true` mediante `AndroidWebViewWidgetCreationParams` de `webview_flutter_android`. El WebView nativo se integra directamente en la jerarquía de vistas de Android sin la penalización ni los deadlocks de buffer de `SurfaceTexture`.
+  2. **Gesto directo instantáneo**: Se configuró `gestureRecognizers` con `Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new)` para que los toques y scrolls se despachen de forma inmediata y directa al navegador sin ambigüedades en la arena de gestos de Flutter.
+  3. **Ampliación de Heap a 512MB**: Se agregó `android:largeHeap="true"` a `<application>` en `AndroidManifest.xml`.
+  4. **Bloqueo de videos en segundo plano**: Se invocó `setMediaPlaybackRequiresUserGesture(true)` en `AndroidWebViewController` para impedir que los videos se reproduzcan sin interacción explícita del usuario.
+  5. **Navegación estricta Web**: Se validó que solo se permita navegación con esquemas `http` y `https`, bloqueando cualquier esquema externo y suprimiendo redirecciones a tiendas de apps.
+  6. **Limpieza continua con MutationObserver**: Se inyectó un `MutationObserver` y CSS para eliminar permanentemente banners de app upsell y asegurar `overflow-y: auto !important` en todo momento durante el scroll.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-20
+
 ### ~~MEDIA - No aparecía la botonera de música en la ventana de notificaciones de Android~~ ✅ RESUELTO 2026-10-19
 - **Dónde**: `android/app/src/main/AndroidManifest.xml`, `lib/services/notification_service.dart`, `lib/providers/music_player_provider.dart`
 - **Qué pasaba**: Al reproducir música, no se mostraba la botonera con controles en la bandeja de notificaciones de Android.

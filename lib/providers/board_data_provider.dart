@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_state.dart';
@@ -11,7 +13,8 @@ import '../supabase_config.dart';
 
 /// Provider central para el Pizarrón Infinito colaborativo de F.U.R.I.
 /// Soporta persistencia local SQLite (offline-first), sync en tiempo real
-/// con Supabase y debounced sync para movimientos de arrastre a 60/120 FPS.
+/// con Supabase, carga en chunks (2x viewport) y debounced sync para
+/// movimientos y escalado a 60/120 FPS.
 class BoardDataProvider extends ChangeNotifier {
   static const _tableName = 'board_elements';
 
@@ -72,8 +75,10 @@ class BoardDataProvider extends ChangeNotifier {
               'height': 160.0,
               'data': '{}',
               'synced': 0,
-              'created_at': n['created_at']?.toString() ?? DateTime.now().toIso8601String(),
-              'updated_at': n['updated_at']?.toString() ?? DateTime.now().toIso8601String(),
+              'created_at':
+                  n['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+              'updated_at':
+                  n['updated_at']?.toString() ?? DateTime.now().toIso8601String(),
             });
             curX += 240.0;
             if (curX > 800) {
@@ -87,26 +92,9 @@ class BoardDataProvider extends ChangeNotifier {
         developer.log('Error al migrar notas legacy: $e');
       }
     }
+    // Pizarrón infinito: sin recortes ni límites artificiales de coordenadas
     _elements = result.map((m) {
       final map = Map<String, dynamic>.from(m);
-      double x = (map['x'] as num?)?.toDouble() ?? 0.0;
-      double y = (map['y'] as num?)?.toDouble() ?? 0.0;
-      bool changed = false;
-      if (x > 2200.0) {
-        x -= 3400.0;
-        if (x < 40.0) x = 120.0;
-        map['x'] = x;
-        changed = true;
-      }
-      if (y > 1500.0) {
-        y -= 3400.0;
-        if (y < 40.0) y = 120.0;
-        map['y'] = y;
-        changed = true;
-      }
-      if (changed && map['id'] != null) {
-        db.update(_tableName, {'x': x, 'y': y}, where: 'id = ?', whereArgs: [map['id']]);
-      }
       return BoardElement.fromMap(map);
     }).toList();
   }
@@ -174,7 +162,6 @@ class BoardDataProvider extends ChangeNotifier {
       if (local == null) {
         await db.insert(_tableName, c.toMap(includeId: false));
       } else {
-        // Si el cloud es más reciente o el local está sincronizado, mergear
         final localUp = DateTime.tryParse(local.updatedAt ?? '') ?? DateTime(1970);
         final cloudUp = DateTime.tryParse(c.updatedAt ?? '') ?? DateTime(1970);
         if (cloudUp.isAfter(localUp) && local.synced == 1) {
@@ -188,7 +175,6 @@ class BoardDataProvider extends ChangeNotifier {
       }
     }
 
-    // Si fue eliminado en la nube y estaba sincronizado, borrarlo local
     for (final local in localByCloud.values) {
       if (!cloudIds.contains(local.cloudId!) && local.synced == 1) {
         await db.delete(_tableName, where: 'id = ?', whereArgs: [local.id]);
@@ -210,9 +196,163 @@ class BoardDataProvider extends ChangeNotifier {
     }
   }
 
-  /// Obtiene los elementos correspondientes a un tablero específico (sub-tableros anidados)
+  /// Obtiene los elementos correspondientes a un tablero específico
   List<BoardElement> getElementsByBoard(int boardId) {
-    return _elements.where((e) => e.boardId == boardId).toList();
+    return _elements
+        .where((e) =>
+            e.boardId == boardId &&
+            e.type != 'board_config' &&
+            e.type != 'chalk_stroke')
+        .toList();
+  }
+
+  /// Filtra los elementos interactivos (notas y listas de tareas) que caen dentro
+  /// del chunk activo (2x el tamaño de lo mostrado en pantalla).
+  /// Si un elemento está siendo editado o arrastrado (`alwaysIncludeId`), siempre se incluye.
+  List<BoardElement> getInteractiveElementsInChunk(
+    int boardId,
+    Rect activeChunkWorldRect, {
+    int? alwaysIncludeId,
+  }) {
+    final result = <BoardElement>[];
+    for (final e in _elements) {
+      if (e.boardId != boardId) continue;
+      if (e.type == 'board_config' ||
+          e.type == 'chalk_stroke' ||
+          e.type == 'connection') {
+        continue;
+      }
+      if (alwaysIncludeId != null && e.id == alwaysIncludeId) {
+        result.add(e);
+        continue;
+      }
+      final elRect = Rect.fromLTWH(e.x, e.y, e.width, e.height);
+      if (activeChunkWorldRect.overlaps(elRect)) {
+        result.add(e);
+      }
+    }
+    return result;
+  }
+
+  /// Obtiene los trazos de tiza en el fondo del pizarrón que intersectan el chunk activo (2x viewport).
+  List<BoardElement> getChalkStrokesInChunk(
+    int boardId,
+    Rect activeChunkWorldRect,
+  ) {
+    final result = <BoardElement>[];
+    for (final e in _elements) {
+      if (e.boardId != boardId || e.type != 'chalk_stroke') continue;
+      final elRect = Rect.fromLTWH(
+        e.x - 20,
+        e.y - 20,
+        math.max(40.0, e.width + 40),
+        math.max(40.0, e.height + 40),
+      );
+      if (activeChunkWorldRect.overlaps(elRect)) {
+        result.add(e);
+      }
+    }
+    return result;
+  }
+
+  /// Obtiene todos los trazos de tiza del tablero.
+  List<BoardElement> getAllChalkStrokes(int boardId) {
+    return _elements
+        .where((e) => e.boardId == boardId && e.type == 'chalk_stroke')
+        .toList();
+  }
+
+  /// Obtiene el color sólido de fondo configurado para el pizarrón (por defecto #141820).
+  String getBoardBackgroundColor(int boardId) {
+    for (final e in _elements) {
+      if (e.boardId == boardId && e.type == 'board_config') {
+        if (e.color.isNotEmpty) return e.color;
+      }
+    }
+    return '#141820';
+  }
+
+  /// Actualiza el color sólido del fondo del pizarrón y lo sincroniza.
+  Future<void> setBoardBackgroundColor(int boardId, String hexColor) async {
+    final existingIdx = _elements.indexWhere(
+      (e) => e.boardId == boardId && e.type == 'board_config',
+    );
+    if (existingIdx != -1) {
+      final updated = _elements[existingIdx].copyWith(color: hexColor);
+      await updateElement(updated);
+    } else {
+      await addElement(
+        boardId: boardId,
+        type: 'board_config',
+        title: 'board_config',
+        color: hexColor,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+      );
+    }
+  }
+
+  /// Añade un trazo de tiza al fondo del pizarrón con su caja delimitadora en coordenadas del mundo.
+  Future<BoardElement?> addChalkStroke({
+    int boardId = 1,
+    required List<Offset> points,
+    required String colorHex,
+    double strokeWidth = 6.0,
+  }) async {
+    if (points.isEmpty) return null;
+    double minX = points.first.dx;
+    double maxX = points.first.dx;
+    double minY = points.first.dy;
+    double maxY = points.first.dy;
+
+    final serializedPoints = <List<double>>[];
+    for (final p in points) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dy > maxY) maxY = p.dy;
+      serializedPoints.add([
+        double.parse(p.dx.toStringAsFixed(1)),
+        double.parse(p.dy.toStringAsFixed(1)),
+      ]);
+    }
+
+    return addElement(
+      boardId: boardId,
+      type: 'chalk_stroke',
+      title: 'chalk',
+      color: colorHex,
+      x: minX,
+      y: minY,
+      width: math.max(1.0, maxX - minX),
+      height: math.max(1.0, maxY - minY),
+      data: {
+        'points': serializedPoints,
+        'strokeWidth': strokeWidth,
+      },
+    );
+  }
+
+  /// Deshace el último trazo de tiza del tablero.
+  Future<void> undoLastChalkStroke(int boardId) async {
+    final strokes = getAllChalkStrokes(boardId);
+    if (strokes.isEmpty) return;
+    final last = strokes.last;
+    if (last.id != null) {
+      await deleteElement(last.id!);
+    }
+  }
+
+  /// Borra todos los trazos de tiza del tablero.
+  Future<void> clearChalkStrokes(int boardId) async {
+    final strokes = getAllChalkStrokes(boardId);
+    for (final s in strokes) {
+      if (s.id != null) {
+        await deleteElement(s.id!);
+      }
+    }
   }
 
   /// Añade un nuevo elemento al canvas
@@ -230,7 +370,8 @@ class BoardDataProvider extends ChangeNotifier {
   }) async {
     final now = DateTime.now().toIso8601String();
     final rawIdentity = AppState.identity;
-    final author = (rawIdentity != null && rawIdentity.isNotEmpty) ? rawIdentity : 'Facu';
+    final author =
+        (rawIdentity != null && rawIdentity.isNotEmpty) ? rawIdentity : 'Facu';
     final el = BoardElement(
       boardId: boardId,
       userId: author,
@@ -259,8 +400,9 @@ class BoardDataProvider extends ChangeNotifier {
     return created;
   }
 
-  /// Duplica un elemento con un desplazamiento de grilla (estilo Milanote)
-  Future<BoardElement?> duplicateElement(int localId, {double offset = 30.0}) async {
+  /// Duplica un elemento con un desplazamiento de grilla
+  Future<BoardElement?> duplicateElement(int localId,
+      {double offset = 30.0}) async {
     final idx = _elements.indexWhere((e) => e.id == localId);
     if (idx == -1) return null;
     final original = _elements[idx];
@@ -336,11 +478,38 @@ class BoardDataProvider extends ChangeNotifier {
 
     _moveDebouncers[localId]?.cancel();
     _moveDebouncers[localId] = Timer(const Duration(milliseconds: 300), () {
-      _persistPosition(localId, newX, newY);
+      _persistGeometry(localId);
     });
   }
 
-  Future<void> _persistPosition(int localId, double x, double y) async {
+  /// Actualización suave de posición y tamaño (llamado al estirar desde la esquina
+  /// o al hacer pinch con dos dedos sobre una nota a 60/120 FPS).
+  void updateGeometryLocal(
+    int localId, {
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+  }) {
+    final idx = _elements.indexWhere((e) => e.id == localId);
+    if (idx == -1) return;
+
+    final cur = _elements[idx];
+    _elements[idx] = cur.copyWith(
+      x: x ?? cur.x,
+      y: y ?? cur.y,
+      width: width ?? cur.width,
+      height: height ?? cur.height,
+    );
+    notifyListeners();
+
+    _moveDebouncers[localId]?.cancel();
+    _moveDebouncers[localId] = Timer(const Duration(milliseconds: 300), () {
+      _persistGeometry(localId);
+    });
+  }
+
+  Future<void> _persistGeometry(int localId) async {
     final idx = _elements.indexWhere((e) => e.id == localId);
     if (idx == -1) return;
     final el = _elements[idx];
@@ -350,22 +519,36 @@ class BoardDataProvider extends ChangeNotifier {
       final db = await DatabaseHelper().database;
       await db.update(
         _tableName,
-        {'x': x, 'y': y, 'updated_at': now, 'synced': el.cloudId == null ? 0 : 0},
+        {
+          'x': el.x,
+          'y': el.y,
+          'width': el.width,
+          'height': el.height,
+          'updated_at': now,
+          'synced': 0,
+        },
         where: 'id = ?',
         whereArgs: [localId],
       );
 
       if (el.cloudId != null) {
         await SupabaseConfig.client.from(_tableName).update({
-          'x': x,
-          'y': y,
+          'x': el.x,
+          'y': el.y,
+          'width': el.width,
+          'height': el.height,
           'updated_at': now,
         }).eq('id', el.cloudId!);
 
-        await db.update(_tableName, {'synced': 1}, where: 'id = ?', whereArgs: [localId]);
+        await db.update(
+          _tableName,
+          {'synced': 1},
+          where: 'id = ?',
+          whereArgs: [localId],
+        );
       }
     } catch (e) {
-      developer.log('BoardDataProvider _persistPosition error: $e');
+      developer.log('BoardDataProvider _persistGeometry error: $e');
     }
   }
 
@@ -413,7 +596,10 @@ class BoardDataProvider extends ChangeNotifier {
       await db.delete(_tableName, where: 'id = ?', whereArgs: [localId]);
 
       if (el.cloudId != null) {
-        await SupabaseConfig.client.from(_tableName).delete().eq('id', el.cloudId!);
+        await SupabaseConfig.client
+            .from(_tableName)
+            .delete()
+            .eq('id', el.cloudId!);
       }
     } catch (e) {
       developer.log('BoardDataProvider deleteElement error: $e');
@@ -461,13 +647,14 @@ class BoardDataProvider extends ChangeNotifier {
 
       final idx = _elements.indexWhere((e) => e.cloudId == incoming.cloudId);
       if (idx == -1) {
-        // Elemento nuevo insertado por la pareja
         _elements.add(incoming);
         notifyListeners();
         DatabaseHelper().database.then((db) async {
           try {
-            final newId = await db.insert(_tableName, incoming.toMap(includeId: false));
-            final insertedIdx = _elements.indexWhere((e) => e.cloudId == incoming.cloudId);
+            final newId =
+                await db.insert(_tableName, incoming.toMap(includeId: false));
+            final insertedIdx =
+                _elements.indexWhere((e) => e.cloudId == incoming.cloudId);
             if (insertedIdx != -1) {
               _elements[insertedIdx] = incoming.copyWith(id: newId);
             }
@@ -478,12 +665,14 @@ class BoardDataProvider extends ChangeNotifier {
           developer.log('BoardDataProvider realtime insert error: $e');
         });
       } else {
-        // Elemento existente actualizado
         final current = _elements[idx];
-        final currentUp = DateTime.tryParse(current.updatedAt ?? '') ?? DateTime(1970);
-        final incomingUp = DateTime.tryParse(incoming.updatedAt ?? '') ?? DateTime(1970);
+        final currentUp =
+            DateTime.tryParse(current.updatedAt ?? '') ?? DateTime(1970);
+        final incomingUp =
+            DateTime.tryParse(incoming.updatedAt ?? '') ?? DateTime(1970);
 
-        if (incomingUp.isAfter(currentUp) || incomingUp.isAtSameMomentAs(currentUp)) {
+        if (incomingUp.isAfter(currentUp) ||
+            incomingUp.isAtSameMomentAs(currentUp)) {
           _elements[idx] = incoming.copyWith(id: current.id);
           notifyListeners();
           DatabaseHelper().database.then((db) async {

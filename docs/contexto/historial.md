@@ -1,5 +1,37 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-20] - BUGFIX / STABILITY - Correccion de Congelamiento y Crash al Scrollear en Pinterest Embebido (Hybrid Composition, Heap Ampliado y Control de Videos)
+
+**Resumen**:
+- **Problema previo**:
+  - Al ingresar a la seccion de Pinterest dentro de la aplicacion, el usuario solo podia scrollear durante unos momentos antes de que la aplicacion se pausara/congelara por completo y se cerrara de golpe (crash forzado en Android).
+- **Causas raiz identificadas**:
+  1. **Saturacion y Deadlock en SurfaceTexture (TLHC)**: Flutter por defecto inicializaba el WebView en modo Texture Layer (displayWithHybridComposition: false). En feeds con scroll infinito masivo y cientos de imagenes de alta resolucion como Pinterest, la cola de buffers de la GPU de Android (GraphicBufferProducer) se saturaba y producia un deadlock entre el hilo de Chromium y el Rasterizer Thread de Flutter, bloqueando la interfaz y provocando la terminacion del proceso por el sistema.
+  2. **Limite de memoria Dalvik/App Heap**: En AndroidManifest.xml, la etiqueta <application> no declaraba android:largeHeap="true". Al navegar Pinterest movil, la memoria acumulada por el motor Web sobrepasaba el umbral base (128-192MB), activando el Out-Of-Memory (OOM) killer del sistema operativo.
+  3. **Agotamiento de Decodificadores Hardware de Video**: Los videos de Pinterest se reproducian automaticamente en segundo plano a medida que entraban en pantalla, instanciando multiples decodificadores de hardware simultaneos y colapsando el proceso de medios de Android.
+  4. **Redirecciones a Tiendas y Esquemas Externos**: Enlaces o scripts de descarga de la app movil generaban redirecciones no interceptadas hacia play.google.com o esquemas no admitidos.
+  5. **Trampas de scroll y banners dinamicos**: Pinterest inyectaba dinamicamente avisos de descarga que colocaban overflow: hidden en el documento HTML.
+- **Solucion implementada**:
+  - **Hybrid Composition Nativo**: Se configuro displayWithHybridComposition: true a traves de AndroidWebViewWidgetCreationParams (paquete webview_flutter_android). El WebView se monta directamente en la jerarquia de vistas nativa de Android, evitando el paso intermedio por SurfaceTexture y permitiendo un rendimiento fluido y libre de deadlocks.
+  - **Gestos Eager**: Se incorporo Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new) para transferir el control tactil y el scroll vertical directamente al navegador de manera inmediata sin interferencia de la arena de gestos de Flutter.
+  - **Memoria Heap Ampliada**: Se agrego android:largeHeap="true" en android/app/src/main/AndroidManifest.xml, otorgando hasta 512MB de memoria de trabajo al proceso.
+  - **Requisito de Gesto para Reproduccion de Video**: Se invoco setMediaPlaybackRequiresUserGesture(true) en AndroidWebViewController, eliminando la reproduccion y pre-decodificacion automatica de videos durante el scroll.
+  - **Validacion Estricta de Esquemas Web**: onNavigationRequest ahora restringe la navegacion exclusivamente a http y https, bloqueando esquemas desconocidos y redirecciones hacia tiendas de aplicaciones (play.google.com, apps.apple.com).
+  - **Limpieza Continua con MutationObserver**: Se implemento una rutina de inyeccion que no solo inserta CSS con overflow-y: auto !important y display: none para banners molestos, sino que mantiene un MutationObserver activo para remover dinamicamente cualquier elemento modal de bloqueo que Pinterest cree en tiempo real.
+  - **Gestion de Recursos**: Se anadio el metodo dispose() en PinterestScreen para liberar la referencia del controlador.
+- **Verificacion**:
+  - flutter analyze: 0 errores, 0 warnings.
+  - flutter test: 318 de 318 pruebas automatizadas pasando con exito.
+
+**Archivos impactados**:
+- lib/screens/galeria/pinterest_screen.dart
+- android/app/src/main/AndroidManifest.xml
+- pubspec.yaml
+- docs/contexto/errores-conocidos.md
+- docs/contexto/historial.md
+
+---
+
 ## [2026-10-19] - FEATURE - Sistema de Presencia en Tiempo Real ("En línea") y "Última vez" en Chat
 
 **Resumen**:
@@ -1330,7 +1362,7 @@ otifications y chat_typing (líneas 147-159), las ramas EXCEPTION WHEN duplicate
 
 ## [2026-10-14] - FIX - Empaquetado de Release Windows: Inclusión automática de DLLs y data bundle
 
-**Resumen**: Al compilar para Windows con lutter build windows --release, el ejecutable en unner\Release\ requería las DLLs del motor Flutter (lutter_windows.dll), los plugins C++ (udioplayers_windows_plugin.dll, ecord_windows_plugin.dll, sqlite3.dll, etc.) y la carpeta data/. Se sincronizó el bundle completo desde install\ a unner\Release\ y se automatizó en scripts/build-windows.ps1.
+**Resumen**: Al compilar para Windows con flutter build windows --release, el ejecutable en unner\Release\ requería las DLLs del motor Flutter (flutter_windows.dll), los plugins C++ (udioplayers_windows_plugin.dll, ecord_windows_plugin.dll, sqlite3.dll, etc.) y la carpeta data/. Se sincronizó el bundle completo desde install\ a unner\Release\ y se automatizó en scripts/build-windows.ps1.
 
 **Archivos impactados**: scripts/build-windows.ps1, uild\windows\x64\runner\Release\.
 
@@ -4562,3 +4594,45 @@ Ahora viven en `globalThis` y sobreviven las reconexiones.
 - Los atajos en una barra de acceso rápido tienen verdadero valor cuando ahorran múltiples toques hacia pantallas anidadas (ej. entrar a Nosotros -> abrir Cartas), en lugar de duplicar botones que ya existen en el primer nivel del Home.
 **Impacto**: `lib/screens/home_screen.dart`, `lib/screens/music/music_screen.dart`, `lib/router.dart`, `docs/contexto/historial.md`.
 **Relacionado con**: forma-de-trabajo-con-el-usuario.md, arquitectura.md.
+
+
+---
+
+## 2026-10-20 — [FEATURE / REFACTOR] Reconstrucción integral del Pizarrón Infinito desde cero (Chunks 2x, Capas, Patrones, 11 Formas, Bordes, 22 Fuentes, Tiza en Fondo y Multitouch)
+
+### Resumen de cambios realizados
+- **Pizarrón Infinito con Carga en Chunks (2x Viewport)**:
+  - Se eliminaron todos los límites finitos (`2400x1600`) en `BoardDataProvider._reloadFromLocal()` y `MilanoteScreen`.
+  - Se implementó cálculo dinámico del chunk activo en el mundo equivalente al doble (`2x`) de lo mostrado en pantalla (`_computeActiveChunkWorldRect`), renderizando únicamente las notas, listas de tareas y trazos de tiza que intersectan el chunk activo.
+- **Interfaz Minimalista de Un Único Botón (`+` verde opaco vibrante `#2EE50F`, 100% íconos, cero popups)**:
+  - Al entrar al pizarrón solo existe el botón `+` abajo a la derecha; al tocarlo se despliegan con íconos las opciones de **Nota**, **Lista de tareas** y **Tuerca (Ajustes)** para personalizar el color sólido del fondo del pizarrón y activar el dibujo con textura de tiza.
+- **Dibujo en el Fondo con Textura de Tiza (`BoardChalkBackgroundPainter`)**:
+  - Los trazos de tiza se dibujan directamente sobre la capa de fondo del pizarrón (debajo de todas las notas) en coordenadas del mundo, con granulado determinístico poroso de tiza y sincronización en tiempo real vía `BoardDataProvider`.
+- **Mismo Objeto en Vista y Edición + Zoom hacia la Nota + Sidebar Derecho (`PizarronNoteWidget` & `PizarronSidebarOverlay`)**:
+  - La nota en el pizarrón y la nota editada son exactamente el mismo widget sin botones internos de configuración.
+  - Al tocar una nota una vez, la cámara hace zoom suave hacia ella y abre la barra lateral derecha de íconos.
+- **Fluidez 1:1 Independiente del Zoom y Desambiguación Multitáctil**:
+  - El arrastre de notas divide el delta de pantalla por la escala viva `_cameraScale` a 60/120 FPS, moviéndose igual de fluido con o sin zoom.
+  - Si un segundo dedo toca la pantalla, se cancela cualquier arrastre accidental de nota: si ambos dedos están sobre la misma nota, la nota se agranda/achica incrementalmente desde todos sus lados; de lo contrario, se hace zoom/paneo del pizarrón.
+- **Personalización Multicapa Profunda (`NoteStyleConfig`, `NoteCardPainter`, `NoteShapeUtils`)**:
+  - **Capa 1 (Base)**: Color sólido, degradado de 3 partes (inicial, medio, final) con dirección ajustable, o foto de fondo.
+  - **Capa 2 (Patrones con controles contextuales)**: Ajedrez (sin espaciado ni relleno), líneas oblicuas/horizontales/verticales (grosor y espaciado, sin relleno), ondas, círculos rellenos y vacíos (con espaciado y toggle de relleno), puntos, cuadrícula y patrón de emojis/texto repetido.
+  - **Capa 3 (Brillo animado)**: Efecto opcional de barrido luminoso.
+  - **11 Formas con Padding Inscrito y Agarre de Esquina Adaptativo**: Cuadrada, redondeada, nota doblada, papel, hoja, círculo, rombo, hexágono, octágono, escudo y etiqueta. El texto se centra/ajusta dentro de cada forma y la esquina inferior derecha de estiramiento se posiciona matemáticamente sobre el perímetro real de la forma.
+  - **6 Tipos de Borde sobre el `Path` exacto**: Sin borde, sólido, punteado, líneas de rayas, doble línea y ondulado.
+  - **Tipografía y Formatos por Párrafo**: 22 fuentes extravagantes de Google Fonts, formatos decorativos para título y párrafos individuales (`escuadra`, `escuadraLeft`, `thickUnderline`, `topBottomLines`, `sunken` hundido oscuro, `quoteBar`, `framed`), e imagen integrada en 4 posiciones (`aboveBody`, `middleBody`, `belowBody`, `footer`).
+
+### Lecciones aprendidas
+- Gestionar la matriz de transformación del mundo (`_cameraPan` y `_cameraScale`) directamente junto con un `Listener` multitáctil permite desambiguar sin conflictos el paneo del lienzo, el zoom con dos dedos, el escalado simétrico de una nota con dos dedos y el arrastre 1:1 de notas a cualquier nivel de zoom.
+
+### Archivos impactados
+- `lib/providers/board_data_provider.dart`
+- `lib/screens/milanote/models/note_style_config.dart`
+- `lib/screens/milanote/painters/note_shape_utils.dart`
+- `lib/screens/milanote/painters/note_card_painter.dart`
+- `lib/screens/milanote/painters/board_chalk_painter.dart`
+- `lib/screens/milanote/widgets/pizarron_note_widget.dart`
+- `lib/screens/milanote/widgets/pizarron_sidebar_overlay.dart`
+- `lib/screens/milanote/milanote_screen.dart`
+- `test/models/board_element_test.dart`
+- `pizarron.md`
