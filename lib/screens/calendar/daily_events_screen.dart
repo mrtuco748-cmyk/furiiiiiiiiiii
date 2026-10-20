@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -15,12 +13,12 @@ import '../../router.dart';
 import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../../widgets/tap_tile.dart';
+import 'widgets/daily_date_nav.dart';
+import 'widgets/daily_events_list_view.dart';
 
 const _c = Color(0xFF00D4FF);
 const _dark = Color(0xFF0D0D0D);
 const _near = Color(0xFF1A1A1A);
-const _cDeep = Color(0xFF003344);
-const _cBright = Color(0xFF0088AA);
 
 /// Lista de eventos fechados + clases recurrentes de un día concreto,
 /// con navegación día a día y date picker.
@@ -96,8 +94,8 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
       lastDate: DateTime(2030),
       builder: (context, child) => Theme(
         data: ThemeData.dark().copyWith(
-          colorScheme:
-              const ColorScheme.dark(primary: _c, onPrimary: _dark, surface: _near),
+          colorScheme: const ColorScheme.dark(
+              primary: _c, onPrimary: _dark, surface: _near),
         ),
         child: child!,
       ),
@@ -127,60 +125,7 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
   Future<void> _deleteEvent(Schedule s) async {
     if (s.id == null) return;
     HapticFeedback.heavyImpact();
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _near,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: Colors.red, width: 4),
-        ),
-        title: const Icon(Icons.delete_forever, color: Colors.red, size: 40),
-        content: Text(s.title,
-            style: GoogleFonts.bangers(color: Colors.white, fontSize: 16),
-            textAlign: TextAlign.center),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TapTile(
-            onTap: () => Navigator.pop(ctx, false),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _near,
-                  border: Border.all(color: _near, width: 3),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)
-                  ],
-                ),
-                child: const Icon(Icons.close, color: Color(0xFF00D4FF), size: 24),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          TapTile(
-            onTap: () => Navigator.pop(ctx, true),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  border: Border.all(color: Colors.red, width: 3),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0xFF000000), offset: Offset(3, 3), blurRadius: 0)
-                  ],
-                ),
-                child: const Icon(Icons.check, color: Color(0xFF0D0D0D), size: 24),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    final confirm = await DailyDeleteDialog.show(context, s);
     if (confirm == true && mounted) {
       await context.read<ScheduleProvider>().deleteSchedule(s.id!);
       await _loadData();
@@ -203,391 +148,150 @@ class _DailyEventsScreenState extends State<DailyEventsScreen> {
             if (_isLoading) return _loadingState(w, h);
             if (_hasError) return _errorState(w, h);
 
-            return SizedBox(width: w, height: h, child: Stack(children: [
-              _backBtn(w, h),
-              _dateNav(w, h),
-              _listBlock(w, h),
-              _addBtn(w, h),
-              _xFloating(w, h),
-            ]));
+            final events = _dayEvents;
+            final classes = _dayClasses;
+            final isEmpty = events.isEmpty && classes.isEmpty;
+
+            return SizedBox(
+              width: w,
+              height: h,
+              child: Stack(
+                children: [
+                  _backBtn(w, h),
+                  Positioned(
+                    left: w * 0.16,
+                    top: h * 0.012,
+                    width: w * 0.68,
+                    height: h * 0.055,
+                    child: DailyDateNav(
+                      selectedDate: _selectedDate,
+                      onShiftDay: _shiftDay,
+                      onPickDate: _pickDate,
+                    ),
+                  ),
+                  Positioned(
+                    left: isEmpty ? w * 0.08 : w * 0.04,
+                    top: isEmpty ? h * 0.12 : h * 0.10,
+                    width: isEmpty ? w * 0.84 : w * 0.92,
+                    height: isEmpty ? h * 0.60 : h * 0.82,
+                    child: DailyEventsListView(
+                      events: events,
+                      classes: classes,
+                      eventTypeResolver: _eventType,
+                      onOpenForm: _openForm,
+                      onOpenClasses: _openClasses,
+                      onEditEvent: _editEvent,
+                      onDeleteEvent: _deleteEvent,
+                    ),
+                  ),
+                  _addBtn(w, h),
+                  _xFloating(w, h),
+                ],
+              ),
+            );
           }),
         ],
       ),
     );
   }
 
-  Widget _backBtn(double w, double h) {
-    return Positioned(
-      left: w * 0.02,
-      top: h * 0.01,
-      width: w * 0.12,
-      height: h * 0.06,
-      child: TapTile(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          Navigator.of(context).pop();
-        },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _c,
-              border: Border.all(color: _c, width: 4),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
-              ],
-            ),
-            child: const Center(
-                child: Icon(Icons.arrow_back, color: Color(0xFF0D0D0D), size: 26)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _dateNav(double w, double h) {
-    final today = _sameDay(_selectedDate, DateTime.now());
-    return Positioned(
-      left: w * 0.16,
-      top: h * 0.012,
-      width: w * 0.68,
-      height: h * 0.055,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _cDeep,
-            border: Border.all(color: _cDeep, width: 3),
+  Widget _backBtn(double w, double h) => Positioned(
+        left: w * 0.02,
+        top: h * 0.01,
+        width: w * 0.12,
+        height: h * 0.06,
+        child: TapTile(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            Navigator.of(context).pop();
+          },
+          child: ClipRRect(
             borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
-            ],
-          ),
-          child: Row(children: [
-            TapTile(
-              onTap: () => _shiftDay(-1),
-              child: const Icon(Icons.chevron_left, color: Color(0xFF00D4FF), size: 24),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: _pickDate,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      DateFormat('EEEE d MMM', 'es').format(_selectedDate),
-                      style: GoogleFonts.bangers(
-                          color: today ? _c : Colors.white, fontSize: 13),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (today)
-                      Text('HOY',
-                          style: GoogleFonts.bangers(
-                              color: _cBright, fontSize: 9)),
-                  ],
-                ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: _c,
+                border: Border.all(color: _c, width: 4),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5))
+                ],
+              ),
+              child: const Center(
+                child: Icon(Icons.arrow_back, color: Color(0xFF0D0D0D), size: 26),
               ),
             ),
-            TapTile(
-              onTap: () => _shiftDay(1),
-              child: const Icon(Icons.chevron_right, color: Color(0xFF00D4FF), size: 24),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _listBlock(double w, double h) {
-    final events = _dayEvents;
-    final classes = _dayClasses;
-
-    if (events.isEmpty && classes.isEmpty) {
-      return Positioned(
-        left: w * 0.08,
-        top: h * 0.12,
-        width: w * 0.84,
-        height: h * 0.60,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _near,
-              border: Border.all(color: _near, width: 3),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
-              ],
-            ),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.event_busy, color: _cBright, size: 48),
-              const SizedBox(height: 10),
-              Text('Sin eventos este dia',
-                  style: GoogleFonts.bangers(
-                      color: Colors.white.withValues(alpha: 0.5), fontSize: 14)),
-              const SizedBox(height: 14),
-              TapTile(
-                onTap: _openForm,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: _c,
-                      border: Border.all(color: _c, width: 4),
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
-                      ],
-                    ),
-                    child: const Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30),
-                  ),
-                ),
-              ),
-            ]),
           ),
         ),
       );
-    }
 
-    return Positioned(
-      left: w * 0.04,
-      top: h * 0.10,
-      width: w * 0.92,
-      height: h * 0.82,
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 12),
-        children: [
-          if (classes.isNotEmpty) ...[
-            Text('CLASES', style: GoogleFonts.bangers(color: _c, fontSize: 13)),
-            const SizedBox(height: 4),
-            ...classes.map((cs) => _classCard(cs)),
-            const SizedBox(height: 10),
-          ],
-          if (events.isNotEmpty) ...[
-            Text('EVENTOS', style: GoogleFonts.bangers(color: _c, fontSize: 13)),
-            const SizedBox(height: 4),
-            ...events.map((e) => _eventCard(e)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _classCard(ClassSchedule cs) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        onTap: _openClasses,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _near,
-              border: Border.all(color: _near, width: 3),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
-              ],
-            ),
-            child: Row(children: [
-              const Icon(Icons.school, color: Color(0xFF00D4FF), size: 26),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(cs.title,
-                        style: GoogleFonts.bangers(
-                            color: Colors.white, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    Text(
-                      cs.endTime.isNotEmpty
-                          ? '${cs.startTime} - ${cs.endTime}${cs.professor.isNotEmpty ? ' · ${cs.professor}' : ''}'
-                          : '${cs.startTime}${cs.professor.isNotEmpty ? ' · ${cs.professor}' : ''}',
-                      style: GoogleFonts.bangers(
-                          color: _cBright, fontSize: 10),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+  Widget _addBtn(double w, double h) => Positioned(
+        right: w * 0.04,
+        bottom: h * 0.04,
+        width: w * 0.13,
+        height: w * 0.13,
+        child: TapTile(
+          onTap: _openForm,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              decoration: BoxDecoration(
+                color: _c,
+                border: Border.all(color: _c, width: 5),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5))
+                ],
               ),
-              Icon(Icons.chevron_right,
-                  color: Colors.white.withValues(alpha: 0.3), size: 20),
-            ]),
+              child: const Center(
+                child: Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30),
+              ),
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _eventCard(Schedule s) {
-    final type = _eventType(s.type);
-    final color = type != null ? Color(type.color) : Color(s.color);
-    final icon = type?.iconData ?? Icons.event;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        onTap: () => _editEvent(s),
-        onLongPress: () => _deleteEvent(s),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _near,
-              border: Border.all(color: _near, width: 3),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
-              ],
-            ),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color, width: 2),
-                ),
-                child: Icon(icon, color: _dark, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(s.title,
-                        style: GoogleFonts.bangers(
-                            color: Colors.white, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    Text(
-                      '${s.startTime} - ${s.endTime}${s.location.isNotEmpty ? ' · ${s.location}' : ''}',
-                      style: GoogleFonts.bangers(color: color, fontSize: 10),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.edit, color: color, size: 18),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _addBtn(double w, double h) {
-    return Positioned(
-      right: w * 0.04,
-      bottom: h * 0.04,
-      width: w * 0.13,
-      height: w * 0.13,
-      child: TapTile(
-        onTap: _openForm,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _c,
-              border: Border.all(color: _c, width: 5),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
-              ],
-            ),
-            child: const Center(
-                child: Icon(Icons.add, color: Color(0xFF0D0D0D), size: 30)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _loadingState(double w, double h) {
-    return SizedBox(
+  Widget _loadingState(double w, double h) => SizedBox(
         width: w,
         height: h,
-        child: Stack(children: [
-          _backBtn(w, h),
-          Positioned(
-            left: w * 0.08,
-            top: h * 0.20,
-            width: w * 0.84,
-            height: h * 0.30,
-            child: Center(
-                child: SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: CircularProgressIndicator(color: _c, strokeWidth: 4))),
-          ),
-        ]));
-  }
+        child: Stack(
+          children: [
+            _backBtn(w, h),
+            Positioned(
+              left: w * 0.08,
+              top: h * 0.20,
+              width: w * 0.84,
+              height: h * 0.30,
+              child: const DailyLoadingView(),
+            ),
+          ],
+        ),
+      );
 
-  Widget _errorState(double w, double h) {
-    return SizedBox(
+  Widget _errorState(double w, double h) => SizedBox(
         width: w,
         height: h,
-        child: Stack(children: [
-          _backBtn(w, h),
-          Positioned(
-            left: w * 0.12,
-            top: h * 0.28,
-            width: w * 0.76,
-            height: h * 0.38,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF330000),
-                  border: Border.all(color: Colors.red, width: 5),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0xFF000000), offset: Offset(5, 5), blurRadius: 0)
-                  ],
-                ),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.warning_amber, color: Colors.red, size: 44),
-                  const SizedBox(height: 14),
-                  TapTile(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      _loadData();
-                    },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: _near,
-                          border: Border.all(color: _near, width: 3),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: const [
-                            BoxShadow(color: Color(0xFF000000), offset: Offset(4, 4), blurRadius: 0)
-                          ],
-                        ),
-                        child: const Icon(Icons.refresh, color: Colors.red, size: 28),
-                      ),
-                    ),
-                  ),
-                ]),
+        child: Stack(
+          children: [
+            _backBtn(w, h),
+            Positioned(
+              left: w * 0.12,
+              top: h * 0.28,
+              width: w * 0.76,
+              height: h * 0.38,
+              child: DailyErrorView(
+                onRetry: () {
+                  HapticFeedback.lightImpact();
+                  _loadData();
+                },
               ),
             ),
-          ),
-        ]));
-  }
+          ],
+        ),
+      );
 
-  Widget _xFloating(double w, double h) {
-    return Positioned(
-      left: w * 0.01,
-      top: h * 0.55,
-      child: Container(width: 4, height: 22, color: _c),
-    );
-  }
+  Widget _xFloating(double w, double h) => Positioned(
+        left: w * 0.01,
+        top: h * 0.55,
+        child: Container(width: 4, height: 22, color: _c),
+      );
 }

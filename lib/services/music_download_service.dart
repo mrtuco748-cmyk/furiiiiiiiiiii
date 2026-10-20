@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -10,30 +9,11 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../app_state.dart';
 import '../database/database_helper.dart';
 import '../models/music_track.dart';
+import '../models/youtube_search_result.dart';
 import '../supabase_config.dart';
+import 'helpers/audio_converter_downloader.dart';
 
-/// Resultado simplificado de búsqueda de YouTube
-class YouTubeSearchResult {
-  final String id;
-  final String title;
-  final String author;
-  final int durationSeconds;
-  final String thumbnailUrl;
-
-  YouTubeSearchResult({
-    required this.id,
-    required this.title,
-    required this.author,
-    required this.durationSeconds,
-    required this.thumbnailUrl,
-  });
-
-  String get durationFormatted {
-    final minutes = durationSeconds ~/ 60;
-    final seconds = durationSeconds % 60;
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
-  }
-}
+export '../models/youtube_search_result.dart';
 
 /// Servicio que busca en YouTube, descarga el audio comprimido
 /// y lo almacena en Supabase Storage y base de datos compartida.
@@ -109,7 +89,6 @@ class MusicDownloadService {
       final author = (rawIdentity != null && rawIdentity.isNotEmpty) ? rawIdentity : 'Facu';
       final now = DateTime.now().toIso8601String();
 
-      // 1. Guardar primero en Supabase Cloud
       final cloudData = {
         'youtube_id': item.id,
         'title': item.title,
@@ -130,7 +109,6 @@ class MusicDownloadService {
           .single();
       final cloudId = (res['id'] as num?)?.toInt();
 
-      // 2. Guardar metadatos en SQLite local SIN guardar archivo permanente en el dispositivo (localPath = '')
       final localTrack = MusicTrack(
         cloudId: cloudId,
         youtubeId: item.id,
@@ -139,7 +117,7 @@ class MusicDownloadService {
         durationSeconds: item.durationSeconds,
         thumbnailUrl: item.thumbnailUrl,
         audioUrl: publicUrl,
-        localPath: '', // No ocupa espacio permanente en el dispositivo
+        localPath: '',
         addedBy: author,
         sizeBytes: fileSize,
         isFavorite: false,
@@ -157,7 +135,6 @@ class MusicDownloadService {
       developer.log('MusicDownloadService.downloadAndUploadTrack error: $e');
       rethrow;
     } finally {
-      // Garantizar que el archivo temporal se elimine inmediatamente para no ocupar espacio en el disco
       if (tempFile != null) {
         try {
           if (await tempFile.exists()) {
@@ -182,7 +159,11 @@ class MusicDownloadService {
 
     // 1. Intentar descargar mediante el convertidor de audio online de alta fiabilidad
     try {
-      final success = await _downloadViaConverter(item.id, tempFile, onProgress: onProgress);
+      final success = await AudioConverterDownloader.download(
+        item.id,
+        tempFile,
+        onProgress: onProgress,
+      );
       if (success && await tempFile.exists() && await tempFile.length() > 50000) {
         return tempFile;
       }
@@ -201,92 +182,6 @@ class MusicDownloadService {
     }
 
     throw Exception('No se pudo extraer el audio de la canción.');
-  }
-
-  /// Convertidor online con polling de estado que devuelve audio MP3 limpio
-  Future<bool> _downloadViaConverter(
-    String youtubeId,
-    File destination, {
-    Function(double progress, String status)? onProgress,
-  }) async {
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 10);
-    try {
-      onProgress?.call(0.12, 'Conectando con servicio de conversión...');
-      final req = await client.getUrl(Uri.parse(
-        'https://loader.to/ajax/download.php?format=mp3&url=https://www.youtube.com/watch?v=$youtubeId',
-      ));
-      req.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-      final res = await req.close().timeout(const Duration(seconds: 12));
-      if (res.statusCode != 200) return false;
-
-      final body = await res.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final contentB64 = json['content'] as String?;
-      if (contentB64 == null) return false;
-
-      final html = utf8.decode(base64Decode(contentB64));
-      final idMatch = RegExp(r'id="(v2_stream_[a-f0-9]+)_downloadLink"').firstMatch(html) ??
-          RegExp(r'id="card-(v2_stream_[a-f0-9]+)"').firstMatch(html);
-      final streamId = idMatch?.group(1);
-      if (streamId == null) return false;
-
-      String? downloadUrl;
-      // Polling por hasta 30 segundos
-      for (int i = 0; i < 25; i++) {
-        await Future.delayed(const Duration(milliseconds: 1200));
-        final pReq = await client.getUrl(Uri.parse('https://p.savenow.to/ajax/progress.php?id=$streamId'));
-        pReq.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-        final pRes = await pReq.close().timeout(const Duration(seconds: 8));
-        if (pRes.statusCode != 200) continue;
-
-        final pBody = await pRes.transform(utf8.decoder).join();
-        final pJson = jsonDecode(pBody) as Map<String, dynamic>;
-
-        final dl = pJson['download_url'] as String?;
-        if (dl != null && dl.isNotEmpty) {
-          downloadUrl = dl;
-          break;
-        }
-
-        // Progreso de conversión (0.15 a 0.48)
-        final pVal = (pJson['progress'] as num?)?.toDouble() ?? 50.0;
-        final pNorm = (0.15 + (pVal / 1000.0) * 0.33).clamp(0.15, 0.48);
-        final statusText = pJson['text'] as String? ?? 'Preparando audio comprimido...';
-        onProgress?.call(pNorm, statusText);
-      }
-
-      if (downloadUrl == null || downloadUrl.isEmpty) return false;
-
-      onProgress?.call(0.50, 'Descargando audio...');
-      final dReq = await client.getUrl(Uri.parse(downloadUrl));
-      final dRes = await dReq.close().timeout(const Duration(seconds: 15));
-      if (dRes.statusCode != 200 && dRes.statusCode != 206) return false;
-
-      final totalBytes = dRes.contentLength;
-      final fileSink = destination.openWrite();
-      int downloaded = 0;
-
-      await for (final chunk in dRes) {
-        fileSink.add(chunk);
-        downloaded += chunk.length;
-        if (totalBytes > 0) {
-          final p = 0.50 + (downloaded / totalBytes) * 0.20;
-          onProgress?.call(p.clamp(0.50, 0.70), 'Descargando: ${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB');
-        } else {
-          onProgress?.call(0.60, 'Descargando: ${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB');
-        }
-      }
-      await fileSink.flush();
-      await fileSink.close();
-
-      return downloaded > 50000;
-    } catch (e) {
-      developer.log('_downloadViaConverter error: $e');
-      return false;
-    } finally {
-      client.close();
-    }
   }
 
   /// Descarga directa via youtube_explode_dart con guardas de timeout estrictas

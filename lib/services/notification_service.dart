@@ -1,48 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:developer' as developer;
-import 'dart:io';
-import 'dart:isolate';
-import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:timezone/data/latest.dart' as tzdata;
-import 'package:timezone/timezone.dart' as tz;
-import '../supabase_config.dart';
+
 import '../app_state.dart';
 import '../firebase_options.dart';
-import 'local_cache.dart';
+import 'helpers/fcm_push_manager.dart';
+import 'helpers/local_notifications_initializer.dart';
+import 'helpers/music_notification_manager.dart';
+import 'helpers/notification_repository.dart';
+import 'helpers/scheduled_notification_service.dart';
 
-@pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse notificationResponse) {
-  final actionId = notificationResponse.actionId;
-  if (actionId != null && actionId.isNotEmpty) {
-    final sendPort = IsolateNameServer.lookupPortByName(NotificationService.musicPortName);
-    if (sendPort != null) {
-      sendPort.send(actionId);
-    }
-  }
-}
-
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  final data = message.data;
-  final msgId = data['message_id'];
-  if (msgId != null) {
-    final id = int.tryParse(msgId.toString());
-    if (id != null) {
-      await NotificationService.markMessageDelivered(id);
-    }
-  }
-  NotificationService._handleMessage(message);
-}
+export 'helpers/music_notification_manager.dart' show notificationTapBackground;
 
 class InAppNotificationItem {
   final String title;
@@ -67,10 +38,9 @@ class NotificationService {
   static FirebaseMessaging? _fcm;
   static bool _initialized = false;
   static bool _firebaseAvailable = false;
-  static StreamSubscription<String>? _tokenRefreshSub;
 
-  /// Stream para notificaciones in-app personalizadas estilo WhatsApp
-  static final StreamController<InAppNotificationItem> _inAppNotificationStream =
+  static final StreamController<InAppNotificationItem>
+      _inAppNotificationStream =
       StreamController<InAppNotificationItem>.broadcast();
   static Stream<InAppNotificationItem> get inAppNotificationStream =>
       _inAppNotificationStream.stream;
@@ -81,85 +51,51 @@ class NotificationService {
     }
   }
 
-  /// Callback para acciones de la botonera musical desde la ventana flotante del celular
-  static void Function(String actionId)? onMusicAction;
-  static void Function(Duration position)? onMusicSeek;
-  static VoidCallback? onWebViewRendererGone;
-  static const int musicNotificationId = 99999;
-  static const String musicPortName = 'furi_music_isolate_port';
-  static ReceivePort? _musicReceivePort;
-  static const MethodChannel _musicServiceChannel =
-      MethodChannel('com.furiapp.furi_app/music_service');
-  static bool _musicChannelInitialized = false;
+  static void Function(String actionId)? get onMusicAction =>
+      MusicNotificationManager.onMusicAction;
+  static set onMusicAction(void Function(String actionId)? fn) =>
+      MusicNotificationManager.onMusicAction = fn;
 
-  static void _ensureMusicChannelInitialized() {
-    if (_musicChannelInitialized || kIsWeb || !Platform.isAndroid) return;
-    _musicChannelInitialized = true;
-    _musicServiceChannel.setMethodCallHandler((call) async {
-      if (call.method == 'onMusicAction') {
-        final args = call.arguments;
-        if (args is Map) {
-          final actionId = args['actionId']?.toString();
-          final posRaw = args['positionMs'];
-          if (actionId == 'webview_renderer_gone') {
-            onWebViewRendererGone?.call();
-          } else if (actionId == 'music_seek' && posRaw is num) {
-            onMusicSeek?.call(Duration(milliseconds: posRaw.toInt()));
-          } else if (actionId != null && actionId.isNotEmpty) {
-            onMusicAction?.call(actionId);
-          }
-        }
-      }
-    });
-  }
+  static void Function(Duration position)? get onMusicSeek =>
+      MusicNotificationManager.onMusicSeek;
+  static set onMusicSeek(void Function(Duration position)? fn) =>
+      MusicNotificationManager.onMusicSeek = fn;
 
-  static Future<void> protectAndroidWebViews() async {
-    if (kIsWeb || !Platform.isAndroid) return;
-    _ensureMusicChannelInitialized();
-    try {
-      await _musicServiceChannel.invokeMethod('protectWebViews');
-    } catch (e) {
-      debugPrint('NotificationService.protectAndroidWebViews error: $e');
-    }
-  }
+  static VoidCallback? get onWebViewRendererGone =>
+      MusicNotificationManager.onWebViewRendererGone;
+  static set onWebViewRendererGone(VoidCallback? fn) =>
+      MusicNotificationManager.onWebViewRendererGone = fn;
 
-  /// Firebase Messaging solo tiene plugin nativo en Android/iOS.
-  /// En desktop (Windows, macOS) el MethodChannel no existe y lanza
-  /// MissingPluginException; por eso se desactiva fuera de móvil.
-  static bool get _supportsMessaging =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  static const int musicNotificationId =
+      MusicNotificationManager.musicNotificationId;
+  static const String musicPortName = MusicNotificationManager.musicPortName;
 
   static void Function(Map<String, dynamic> data)? onNotificationTap;
+  static VoidCallback? onNewMessage;
+  static VoidCallback? onNewNotification;
+
+  static bool get _supportsMessaging => FcmPushManager.supportsMessaging;
+
+  static Future<void> protectAndroidWebViews() =>
+      MusicNotificationManager.protectAndroidWebViews();
 
   static Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
 
-    _ensureMusicChannelInitialized();
-
-    // Configurar canal de comunicación entre background isolate y main isolate para controles de música
-    try {
-      _musicReceivePort?.close();
-      _musicReceivePort = ReceivePort();
-      IsolateNameServer.removePortNameMapping(musicPortName);
-      IsolateNameServer.registerPortWithName(_musicReceivePort!.sendPort, musicPortName);
-      _musicReceivePort!.listen((message) {
-        if (message is String) {
-          onMusicAction?.call(message);
-        }
-      });
-    } catch (e) {
-      debugPrint('NotificationService isolate port setup error: $e');
-    }
+    MusicNotificationManager.ensureMusicChannelInitialized();
+    MusicNotificationManager.setupIsolatePort();
 
     try {
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform);
       _firebaseAvailable = true;
       debugPrint('[FURI] Firebase core OK');
     } catch (e) {
       _firebaseAvailable = false;
       debugPrint('[FURI] Firebase core error: $e');
     }
+
     if (_firebaseAvailable && _supportsMessaging) {
       try {
         _fcm = FirebaseMessaging.instance;
@@ -172,242 +108,34 @@ class NotificationService {
       _fcm = null;
     }
 
-    const androidSettings = AndroidInitializationSettings('@drawable/ic_notification_fox');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+    await LocalNotificationsInitializer.initialize(
+      _localNotifications,
+      onMusicAction: (action) =>
+          MusicNotificationManager.onMusicAction?.call(action),
+      onNotificationTap: (data) => onNotificationTap?.call(data),
     );
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-
-    await _localNotifications.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        if (response.actionId != null && response.actionId!.isNotEmpty) {
-          onMusicAction?.call(response.actionId!);
-        } else if (response.payload != null) {
-          final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-          onNotificationTap?.call(data);
-        }
-      },
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
-    );
-
-    if (Platform.isAndroid) {
-      final androidImpl = _localNotifications
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      if (androidImpl != null) {
-        await androidImpl.requestNotificationsPermission();
-
-        const musicChannel = AndroidNotificationChannel(
-          'furi_music_channel',
-          'F.U.R.I Música',
-          description: 'Controles multimedia de música de F.U.R.I',
-          importance: Importance.defaultImportance,
-          playSound: false,
-          enableVibration: false,
-          showBadge: false,
-        );
-        await androidImpl.createNotificationChannel(musicChannel);
-      }
-    }
 
     if (_firebaseAvailable && _fcm != null) {
-      await _requestPermission();
-      _listenFCMForeground();
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      await FcmPushManager.requestPermission(_fcm);
+      FcmPushManager.listenFCMForeground(_fcm, (title, body, data) {
+        showInAppNotification(InAppNotificationItem(
+          title: title,
+          body: body,
+          data: data,
+        ));
+      });
+      FirebaseMessaging.onBackgroundMessage(
+          firebaseMessagingBackgroundHandler);
     }
   }
 
   static Future<void> registerToken() async => registerTokenAfterLogin();
 
-  static Future<void> registerTokenAfterLogin() async {
-    if (!_firebaseAvailable || _fcm == null || !_supportsMessaging) return;
-    try {
-      final token = await _fcm!.getToken();
-      if (token != null) await _storeToken(token);
+  static Future<void> registerTokenAfterLogin() async =>
+      FcmPushManager.registerTokenAfterLogin(_fcm, _firebaseAvailable);
 
-      _tokenRefreshSub?.cancel();
-      _tokenRefreshSub = _fcm!.onTokenRefresh.listen((token) {
-        _storeToken(token);
-      });
-    } catch (e) {
-      debugPrint('NotificationService.registerTokenAfterLogin error: $e');
-    }
-  }
-
-  static Future<void> _requestPermission() async {
-    if (_fcm == null) return;
-    await _fcm!.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-  }
-
-  static Future<void> _storeToken(String token) async {
-    if (AppState.myId == null) return;
-    try {
-      final nowUtc = DateTime.now().toUtc().toIso8601String();
-      // Eliminar este token si estaba registrado para otro usuario (evita que el dispositivo reciba notificaciones cruzadas)
-      await SupabaseConfig.client
-          .from('device_tokens')
-          .delete()
-          .eq('token', token)
-          .neq('user_id', AppState.myId!);
-
-      final existing = await SupabaseConfig.client
-          .from('device_tokens')
-          .select('id')
-          .eq('user_id', AppState.myId!)
-          .eq('token', token)
-          .maybeSingle();
-      if (existing == null) {
-        await SupabaseConfig.client.from('device_tokens').insert({
-          'user_id': AppState.myId!,
-          'token': token,
-          'platform': Platform.isAndroid ? 'android' : 'ios',
-          'created_at': nowUtc,
-        });
-      } else {
-        await SupabaseConfig.client.from('device_tokens').update({
-          'created_at': nowUtc,
-        }).eq('id', existing['id']);
-      }
-    } catch (e) {
-      debugPrint('NotificationService._storeToken error: $e');
-    }
-  }
-
-  /// Marca un mensaje entrante como entregado (2 checks grises en el remitente)
-  /// al recibir la notificación o el evento en tiempo real en el dispositivo.
-  static Future<void> markMessageDelivered(int messageId) async {
-    try {
-      final nowUtc = DateTime.now().toUtc().toIso8601String();
-      await SupabaseConfig.client
-          .from('messages')
-          .update({'delivered_at': nowUtc})
-          .eq('id', messageId)
-          .filter('delivered_at', 'is', 'null');
-    } catch (e) {
-      debugPrint('NotificationService.markMessageDelivered error: $e');
-    }
-  }
-
-  static void _listenFCMForeground() {
-    if (_fcm == null) return;
-    FirebaseMessaging.onMessage.listen((message) {
-      final data = message.data;
-      final msgId = data['message_id'];
-      if (msgId != null) {
-        final id = int.tryParse(msgId.toString());
-        if (id != null) {
-          unawaited(markMessageDelivered(id));
-        }
-      }
-
-      final title = message.notification?.title ?? (data['title'] as String?) ?? '';
-      final body = message.notification?.body ?? (data['body'] as String?) ?? '';
-      if (title.isNotEmpty || body.isNotEmpty) {
-        // En primer plano mostramos la notificación in-app personalizada estilo WhatsApp
-        showInAppNotification(InAppNotificationItem(
-          title: title.isNotEmpty ? title : 'F.U.R.I',
-          body: body,
-          data: data,
-        ));
-        _storePushNotification(data, title, body);
-      }
-    });
-  }
-
-  static void _handleMessage(RemoteMessage message) {
-    final title = message.notification?.title ?? '';
-    final body = message.notification?.body ?? '';
-    final data = message.data;
-    if (title.isNotEmpty || body.isNotEmpty) {
-      _showLocalNotification(title, body, data);
-      _storePushNotification(data, title, body);
-    }
-  }
-
-  static Future<void> _storePushNotification(
-    Map<String, dynamic> data,
-    String title,
-    String body,
-  ) async {
-    final type = data['type'] as String? ?? 'notification';
-    try {
-      final myName = (AppState.myName ?? AppState.identity ?? '').trim().toLowerCase().replaceAll('í', 'i');
-      final cleanTitle = title.trim().toLowerCase().replaceAll('í', 'i');
-
-      // Si el título es el nombre propio, el push fue generado por una acción propia
-      // y está destinado a la pareja (partnerId). Si no, vino de la pareja para mí (myId).
-      final bool isAuthoredByMe = myName.isNotEmpty &&
-          (cleanTitle == myName || (data['from_user'] != null && data['from_user'] == AppState.myId));
-
-      final targetUserId = isAuthoredByMe ? AppState.partnerId : AppState.myId;
-      final senderUserId = isAuthoredByMe ? AppState.myId : AppState.partnerId;
-
-      if (targetUserId == null) return;
-
-      await SupabaseConfig.client.from('notifications').insert({
-        'user_id': targetUserId,
-        'from_user': senderUserId,
-        'type': type,
-        'title': title,
-        'body': body,
-        'data': data,
-        'read': false,
-      });
-    } catch (e) {
-      debugPrint('NotificationService._storePushNotification error: $e');
-    }
-  }
-
-  static Future<void> _showLocalNotification(
-    String title,
-    String body,
-    Map<String, dynamic> data,
-  ) async {
-    if (!_initialized) return;
-    try {
-      const androidDetails = AndroidNotificationDetails(
-        'furi_notifications',
-        'F.U.R.I Notificaciones',
-        channelDescription: 'Notificaciones de la app F.U.R.I',
-        importance: Importance.high,
-        priority: Priority.high,
-        showWhen: true,
-        enableVibration: true,
-        playSound: true,
-        icon: '@drawable/ic_notification_fox',
-        color: Color(0xFFFF7A00),
-      );
-      const iosDetails = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      );
-      const details = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      );
-
-      final id = DateTime.now().millisecondsSinceEpoch.remainder(1 << 31);
-      await _localNotifications.show(
-        id,
-        title,
-        body,
-        details,
-        payload: jsonEncode(data),
-      );
-    } catch (e) {
-      debugPrint('NotificationService._showLocalNotification error: $e');
-    }
-  }
+  static Future<void> markMessageDelivered(int messageId) =>
+      FcmPushManager.markMessageDelivered(messageId);
 
   static Future<void> showNotification({
     required String title,
@@ -421,8 +149,6 @@ class NotificationService {
     ));
   }
 
-  /// Muestra o actualiza la botonera de música en la ventana flotante / panel de notificaciones del celular
-  /// al estilo de YouTube Music o Spotify con controles interactivos (Anterior, Play/Pausa, Siguiente) y barra de tiempo.
   static Future<void> updateMusicNotification({
     required String title,
     required String artist,
@@ -430,176 +156,46 @@ class NotificationService {
     String thumbnailUrl = '',
     int positionMs = 0,
     int durationMs = 0,
-  }) async {
-    if (!_supportsMessaging) return;
-    if (Platform.isAndroid) {
-      _ensureMusicChannelInitialized();
-      try {
-        await _musicServiceChannel.invokeMethod('updateMediaState', {
-          'title': title,
-          'artist': artist.isNotEmpty ? artist : 'F.U.R.I Música',
-          'thumbnailUrl': thumbnailUrl,
-          'isPlaying': isPlaying,
-          'positionMs': positionMs,
-          'durationMs': durationMs,
-        });
-        return;
-      } catch (e) {
-        debugPrint('NotificationService native updateMediaState fallback: $e');
-      }
-    }
-
-    if (!_initialized) return;
-    try {
-      final actions = <AndroidNotificationAction>[
-        const AndroidNotificationAction(
-          'music_prev',
-          'Anterior',
-          icon: DrawableResourceAndroidBitmap('ic_music_prev'),
-          showsUserInterface: false,
-          cancelNotification: false,
-        ),
-        AndroidNotificationAction(
-          'music_play_pause',
-          isPlaying ? 'Pausar' : 'Reproducir',
-          icon: DrawableResourceAndroidBitmap(isPlaying ? 'ic_music_pause' : 'ic_music_play'),
-          showsUserInterface: false,
-          cancelNotification: false,
-        ),
-        const AndroidNotificationAction(
-          'music_next',
-          'Siguiente',
-          icon: DrawableResourceAndroidBitmap('ic_music_next'),
-          showsUserInterface: false,
-          cancelNotification: false,
-        ),
-      ];
-
-      final androidDetails = AndroidNotificationDetails(
-        'furi_media_playback_v3',
-        'F.U.R.I Reproductor de Música',
-        channelDescription: 'Controles de reproducción y barra de progreso de música de F.U.R.I',
-        importance: Importance.defaultImportance,
-        priority: Priority.defaultPriority,
-        ongoing: isPlaying,
-        autoCancel: false,
-        onlyAlertOnce: true,
-        showWhen: false,
-        actions: actions,
-        category: AndroidNotificationCategory.transport,
-        color: const Color(0xFF00F0FF),
-        playSound: false,
-        enableVibration: false,
-        visibility: NotificationVisibility.public,
+  }) =>
+      MusicNotificationManager.updateMusicNotification(
+        localNotifications: _localNotifications,
+        isInitialized: _initialized,
+        title: title,
+        artist: artist,
+        isPlaying: isPlaying,
+        thumbnailUrl: thumbnailUrl,
+        positionMs: positionMs,
+        durationMs: durationMs,
       );
 
-      await _localNotifications.show(
-        musicNotificationId,
-        title,
-        artist.isNotEmpty ? artist : 'F.U.R.I Música',
-        NotificationDetails(android: androidDetails),
-        payload: jsonEncode({'type': 'music'}),
-      );
-    } catch (e) {
-      debugPrint('NotificationService.updateMusicNotification error: $e');
-    }
-  }
-
-  /// Actualiza la posición y duración en la barra de tiempo de la MediaSession nativa en Android
   static Future<void> updateMusicProgress({
     required bool isPlaying,
     required int positionMs,
     required int durationMs,
-  }) async {
-    if (kIsWeb || !Platform.isAndroid) return;
-    _ensureMusicChannelInitialized();
-    try {
-      await _musicServiceChannel.invokeMethod('updateMediaProgress', {
-        'isPlaying': isPlaying,
-        'positionMs': positionMs,
-        'durationMs': durationMs,
-      });
-    } catch (e) {
-      debugPrint('NotificationService.updateMusicProgress error: $e');
-    }
-  }
+  }) =>
+      MusicNotificationManager.updateMusicProgress(
+        isPlaying: isPlaying,
+        positionMs: positionMs,
+        durationMs: durationMs,
+      );
 
-  /// Cancela la notificación de música cuando se detiene el reproductor
-  static Future<void> cancelMusicNotification() async {
-    if (!_supportsMessaging) return;
-    if (Platform.isAndroid) {
-      _ensureMusicChannelInitialized();
-      try {
-        await _musicServiceChannel.invokeMethod('stopMediaService');
-      } catch (e) {
-        debugPrint('NotificationService.stopMediaService error: $e');
-      }
-    }
-    if (!_initialized) return;
-    try {
-      await _localNotifications.cancel(musicNotificationId);
-    } catch (e) {
-      debugPrint('NotificationService.cancelMusicNotification error: $e');
-    }
-  }
+  static Future<void> cancelMusicNotification() =>
+      MusicNotificationManager.cancelMusicNotification(
+        localNotifications: _localNotifications,
+        isInitialized: _initialized,
+      );
 
-  /// Envía una notificación push FCM v1 directamente al celular de la pareja
-  /// (nunca al usuario actual). Funciona aunque la pareja tenga la app cerrada.
   static Future<void> sendPushToPartner({
     required String title,
     required String body,
     Map<String, dynamic> data = const {},
-  }) async {
-    final partnerId = AppState.partnerId;
-    if (partnerId == null || partnerId.isEmpty) return;
-    try {
-      await SupabaseConfig.client.functions.invoke(
-        'send-push',
-        body: {
-          'user_id': partnerId,
-          'title': title,
-          'body': body,
-          'data': data,
-        },
+  }) =>
+      FcmPushManager.sendPushToPartner(
+        title: title,
+        body: body,
+        data: data,
       );
-    } catch (e) {
-      debugPrint('NotificationService.sendPushToPartner error: $e');
-    }
-  }
 
-  static bool _tzReady = false;
-
-  /// Inicializa la zona horaria del dispositivo para `zonedSchedule`.
-  /// Sin esto, `tz.local` queda en UTC y los recordatorios programados se
-  /// disparan desfasados. Fallback: ubicación construida con el offset
-  /// actual (suficiente para zonas sin DST, como Argentina).
-  static Future<void> _ensureTz() async {
-    if (_tzReady) return;
-    _tzReady = true;
-    try {
-      tzdata.initializeTimeZones();
-      final name = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(name));
-    } catch (e) {
-      debugPrint('NotificationService._ensureTz error: $e');
-      try {
-        tzdata.initializeTimeZones();
-        final offset = DateTime.now().timeZoneOffset;
-        tz.setLocalLocation(tz.Location(
-          'device-local',
-          [tz.minTime],
-          [0],
-          [tz.TimeZone(offset.inSeconds, isDst: false, abbreviation: 'loc')],
-        ));
-      } catch (e2) {
-        debugPrint('NotificationService._ensureTz fallback error: $e2');
-      }
-    }
-  }
-
-  /// Programa un recordatorio local para una fecha futura.
-  /// No-op seguro en desktop (flutter_local_notifications no soporta
-  /// zonedSchedule en Windows/Linux).
   static Future<void> scheduleNotification({
     required int id,
     required String title,
@@ -607,207 +203,76 @@ class NotificationService {
     required DateTime scheduledDate,
     String? payload,
     DateTimeComponents? matchDateTimeComponents,
-  }) async {
-    if (!_initialized) return;
-    try {
-      await _ensureTz();
-      if (!scheduledDate.isAfter(DateTime.now())) return;
-      const androidDetails = AndroidNotificationDetails(
-        'furi_notifications',
-        'F.U.R.I Notificaciones',
-        channelDescription: 'Notificaciones de la app F.U.R.I',
-        importance: Importance.high,
-        priority: Priority.high,
-        showWhen: true,
-        enableVibration: true,
-        playSound: true,
-        icon: '@drawable/ic_notification_fox',
-        color: Color(0xFFFF7A00),
-      );
-      const iosDetails = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      );
-      const details = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      );
-      await _localNotifications.zonedSchedule(
-        id,
-        title,
-        body,
-        tz.TZDateTime.from(scheduledDate, tz.local),
-        details,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+  }) =>
+      ScheduledNotificationService.scheduleNotification(
+        localNotifications: _localNotifications,
+        isInitialized: _initialized,
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: scheduledDate,
         payload: payload,
         matchDateTimeComponents: matchDateTimeComponents,
       );
-    } catch (e) {
-      debugPrint('NotificationService.scheduleNotification error: $e');
-    }
-  }
 
-  static Future<void> cancel(int id) async {
-    if (!_initialized) return;
-    try {
-      await _localNotifications.cancel(id);
-    } catch (e) {
-      debugPrint('NotificationService.cancel error: $e');
-    }
-  }
-
-  static Future<List<Map<String, dynamic>>> getNotifications() async {
-    if (AppState.myId == null) return [];
-    try {
-      final res = await SupabaseConfig.client
-          .from('notifications')
-          .select()
-          .eq('user_id', AppState.myId!)
-          .order('created_at', ascending: false);
-      final list = (res as List).cast<Map<String, dynamic>>();
-      // Optionally update local cache for offline support
-      await LocalCache.setList('cache_notifications', list);
-      return list;
-    } catch (e) {
-      debugPrint('NotificationService.getNotifications error: $e');
-      // Fallback to cache if available
-      final cached = await LocalCache.getList('cache_notifications');
-      return cached;
-    }
-  }
-
-  static Future<void> markAsRead(int notificationId) async {
-    try {
-      await SupabaseConfig.client
-          .from('notifications')
-          .update({'read': true})
-          .eq('id', notificationId);
-    } catch (e) {
-      debugPrint('NotificationService.markAsRead error: $e');
-    }
-  }
-
-  static Future<void> markAllAsRead() async {
-    if (AppState.myId == null) return;
-    try {
-      await SupabaseConfig.client
-          .from('notifications')
-          .update({'read': true})
-          .eq('user_id', AppState.myId!)
-          .eq('read', false);
-    } catch (e) {
-      debugPrint('NotificationService.markAllAsRead error: $e');
-    }
-  }
-
-  static RealtimeChannel? _globalChannel;
-  static VoidCallback? onNewMessage;
-
-  static RealtimeChannel? _notifChannel;
-  static VoidCallback? onNewNotification;
-
-  static void startListening() {
-    _globalChannel?.unsubscribe();
-    if (AppState.myId == null || AppState.partnerId == null) return;
-
-    _globalChannel = SupabaseConfig.client.channel('global-notif-${AppState.myId}');
-
-    _globalChannel!
-      .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'messages',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'to_user', value: AppState.myId!),
-        callback: (payload) {
-          final rawId = payload.newRecord['id'];
-          final msgId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
-          if (msgId != null) {
-            unawaited(markMessageDelivered(msgId));
-          }
-          final content = payload.newRecord['content'] as String? ?? '';
-          if (content.isEmpty) return;
-          showInAppNotification(InAppNotificationItem(
-            title: AppState.partnerName.isNotEmpty ? AppState.partnerName : 'Nuevo mensaje',
-            body: content,
-            data: {'type': 'message', if (msgId != null) 'message_id': msgId.toString()},
-          ));
-          onNewMessage?.call();
-        },
-      )
-      .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'messages',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'from_user', value: AppState.myId!),
-        callback: (payload) {},
+  static Future<void> cancel(int id) =>
+      ScheduledNotificationService.cancel(
+        localNotifications: _localNotifications,
+        isInitialized: _initialized,
+        id: id,
       );
 
-    _globalChannel!.subscribe();
+  static Future<List<Map<String, dynamic>>> getNotifications() =>
+      NotificationRepository.getNotifications();
+
+  static Future<void> markAsRead(int notificationId) =>
+      NotificationRepository.markAsRead(notificationId);
+
+  static Future<void> markAllAsRead() =>
+      NotificationRepository.markAllAsRead();
+
+  static Future<int> getUnreadCount() =>
+      NotificationRepository.getUnreadCount();
+
+  static void startListening() {
+    NotificationRepository.startListeningMessages(
+      onNewMessageReceived: (msgId, content) {
+        if (msgId != null) {
+          unawaited(markMessageDelivered(msgId));
+        }
+        showInAppNotification(InAppNotificationItem(
+          title: AppState.partnerName.isNotEmpty
+              ? AppState.partnerName
+              : 'Nuevo mensaje',
+          body: content,
+          data: {
+            'type': 'message',
+            if (msgId != null) 'message_id': msgId.toString(),
+          },
+        ));
+      },
+      onNewMessage: () => onNewMessage?.call(),
+    );
 
     registerToken();
     startListeningNotifications();
   }
 
-  /// Suscribirse a cambios en la tabla `notifications` para actualizar
-  /// el panel de notificaciones en tiempo real cuando llegan nuevas.
   static void startListeningNotifications() {
-    _notifChannel?.unsubscribe();
-    if (AppState.myId == null) return;
-
-    _notifChannel = SupabaseConfig.client.channel('notifications-${AppState.myId}');
-
-    _notifChannel!
-      .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'notifications',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: AppState.myId!),
-        callback: (payload) {
-          developer.log('NotificationService: nueva notificación via realtime');
-          // En desktop (donde FCM no corre nativo), mostramos notificación local.
-          // En móvil, FCM foreground listener ya la muestra evitando avisos duplicados.
-          final record = payload.newRecord;
-          final title = record['title'] as String? ?? 'F.U.R.I';
-          final body = record['body'] as String? ?? '';
-          final data = (record['data'] as Map<String, dynamic>?) ?? {};
-          if (title.isNotEmpty || body.isNotEmpty) {
-            showInAppNotification(InAppNotificationItem(
-              title: title,
-              body: body,
-              data: data,
-            ));
-          }
-          onNewNotification?.call();
-        },
-      )
-      .subscribe();
+    NotificationRepository.startListeningNotifications(
+      onNewNotificationReceived: (title, body, data) {
+        showInAppNotification(InAppNotificationItem(
+          title: title,
+          body: body,
+          data: data,
+        ));
+      },
+      onNewNotification: () => onNewNotification?.call(),
+    );
   }
 
-  static void stopListening() {
-    _globalChannel?.unsubscribe();
-    _globalChannel = null;
-  }
+  static void stopListening() => NotificationRepository.stopListening();
 
-  static void stopListeningNotifications() {
-    _notifChannel?.unsubscribe();
-    _notifChannel = null;
-  }
-
-  static Future<int> getUnreadCount() async {
-    if (AppState.myId == null) return 0;
-    try {
-      final res = await SupabaseConfig.client
-          .from('notifications')
-          .select('id')
-          .eq('user_id', AppState.myId!)
-          .eq('read', false);
-      return (res as List).length;
-    } catch (e) {
-      debugPrint('NotificationService.getUnreadCount error: $e');
-      return 0;
-    }
-  }
+  static void stopListeningNotifications() =>
+      NotificationRepository.stopListeningNotifications();
 }

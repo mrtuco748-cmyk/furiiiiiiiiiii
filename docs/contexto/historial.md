@@ -1,5 +1,159 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-20] - REFACTOR - Limpieza y Organización de Archivos Sueltos en la Raíz
+
+**Resumen**:
+- Se limpiaron todos los archivos sueltos y temporales que saturaban la raíz del proyecto, reubicándolos en sus carpetas correspondientes.
+- **Archivos organizados**:
+  - supabase_schema.sql y UNIVERSAL.sql ➔ movidos a supabase/.
+  - Logs y salidas de tests (nalyze.txt, ca_test.txt, ca_test2.txt, lutter_01.log, ull_test.txt, 
+osotros_screen.txt, 	est_output.txt, hola.obj) ➔ movidos a docs/logs/.
+  - Archivos de OpenCode (FURI-Nosotros-OpenCode.json, opencode.json) ➔ movidos a docs/opencode/.
+  - Documentación y skills (skill_visual .md renombrado a skill_visual.md, FURI-Nosotros-Skill.md, pizarron.md, skill-pantallas.md, MONITOREO_2026-08-31.md) ➔ movidos a docs/.
+  - Módulo IDEA (uri_app.iml) ➔ movido a .idea/.
+- **Raíz del proyecto**: Ahora contiene únicamente README.md, AGENTS.md y los archivos esenciales del framework (pubspec.yaml, pubspec.lock, .gitignore, .env, nalysis_options.yaml, .metadata, .flutter-plugins-dependencies).
+- **Referencias actualizadas**:
+  - AGENTS.md, docs/contexto/convenciones.md, docs/contexto/mapa-del-codigo.md actualizados con las nuevas rutas docs/skill_visual.md y docs/FURI-Nosotros-Skill.md.
+- **Verificación**: lutter analyze lib sin errores.
+
+---
+
+## [2026-10-20] - REFACTOR - Modularización Completa del Proyecto (Límite Estricto <= 300 Líneas por Archivo)
+
+**Resumen**:
+- Se completó la modularización total de todos los archivos de la aplicación que superaban las 300 líneas de código, alcanzando el 100% de cumplimiento con la regla de arquitectura (342 archivos analizados en lib/, 0 archivos > 300 líneas).
+- **Archivos modularizados en esta fase**:
+  1. lib/screens/nosotros_screen.dart (387 -> 296 líneas) -> extraído a lib/screens/nosotros/ (widgets y helpers).
+  2. lib/screens/milanote/widgets/milanote_element_card.dart (1212 -> 297 líneas) -> extraído a lib/screens/milanote/widgets/card/.
+  3. lib/screens/chat_screen.dart (1285 -> 295 líneas) -> extraído a lib/screens/chat/widgets/ y helpers/.
+  4. lib/screens/ejercicios/ejercicios_screen.dart (1390 -> 275 líneas) -> extraído a lib/screens/ejercicios/widgets/.
+  5. lib/screens/milanote/widgets/pizarron_sidebar_overlay.dart (1423 -> 212 líneas) -> extraído a lib/screens/milanote/widgets/sidebar/.
+  6. lib/screens/home_screen.dart (1490 -> 250 líneas) -> extraído a lib/screens/home/ (home_main_grid.dart, home_grid_overlays.dart, home_drawer_drag_handler.dart, home_grid_tiles.dart, home_notification_panel.dart, home_shortcut_panel.dart, home_shortcut_config_dialog.dart, home_shortcut_handler.dart, home_sliding_drawer.dart, home_shortcut_models.dart).
+  7. lib/screens/music/music_screen.dart (2143 -> 142 líneas) -> extraído a lib/screens/music/ (music_library_tab.dart, music_playlists_tab.dart, music_search_tab.dart, music_bottom_player.dart, music_header_tabs.dart, music_track_card.dart, music_comments_sheet.dart, music_download_queue_modal.dart, music_playlist_sheets.dart, music_track_options_sheet.dart, music_ui_helpers.dart).
+- **Verificación**:
+  - lutter analyze: 0 errores, 0 warnings en todo el proyecto.
+  - lutter test: 322/322 tests pasados exitosamente.
+  - Cero regresiones visuales o de comportamiento: reglas de skill_visual .md preservadas (bloques sólidos monocromáticos, cero bordes contrastantes, radio consistente).
+
+**Archivos impactados**:
+- lib/screens/home_screen.dart y subcarpeta lib/screens/home/
+- lib/screens/music/music_screen.dart y subcarpetas lib/screens/music/
+- lib/screens/milanote/widgets/pizarron_sidebar_overlay.dart y sidebar/
+- lib/screens/galeria/galeria_screen.dart
+
+---
+
+## [2026-10-20] - DEVOPS / FEATURE - Despliegue de furi-notification-bot como Pusheador Cloud en Render
+
+**Resumen**:
+- **Separación de roles de arquitectura**:
+  - Se independizó el rol de notificaciones: **furi-notification-bot** se encarga de la nube y los push directos a los celulares (FCM v1), mientras que **mini-furi-bot** queda exclusivamente como asistente interactivo de WhatsApp (para recordatorios, recetas, cartas y consultas a la base).
+- **Acciones Realizadas**:
+  - Se creó el repositorio `mrtuco748-cmyk/furi-notification-bot` en GitHub.
+  - Se configuró `bot-furi/server.js` para operar como despachador puro de push (`ENABLE_WHATSAPP=false`), evitando cualquier conflicto con el socket de WhatsApp de mini-furi-bot.
+  - Se subió el código al repositorio nuevo y se desplegó en la nueva cuenta de Render (`derrame_company@yahoo.com`, Service ID `srv-dbbs81g473hc73cbqkf0`).
+  - Se configuraron las variables: `NODE_VERSION=22`, `PORT=10000`, `SUPABASE_URL`, `SUPABASE_KEY`, `FIREBASE_SERVICE_ACCOUNT` (Service Account de Firebase `furi-7cf63`), `ENABLE_WHATSAPP=false`.
+  - Health check configurado en `/ping`.
+
+**Archivos impactados**:
+- `bot-furi/server.js`
+- `bot-furi/render.yaml`
+- `docs/contexto/bot-whatsapp.md`
+- `docs/contexto/historial.md`
+
+---
+
+## [2026-10-20] - DEVOPS / MIGRATION - Migración Exitosa de mini-furi-bot a Nueva Cuenta Render
+
+**Resumen**:
+- **Problema previo**:
+  - El workspace previo de Render de Facundo fue suspendido al alcanzar el límite de 5 GB de ancho de banda gratuito en el plan Hobby. El usuario solicitó expresamente no tocar bot-turnos y migrar únicamente mini-furi-bot a una nueva cuenta creada con derrame_company@yahoo.com.
+- **Acciones Realizadas**:
+  - Se creó y activó la nueva cuenta de Render con derrame_company@yahoo.com mediante confirmación por email en Yahoo Mail.
+  - Se vinculó la cuenta de GitHub mrtuco748-cmyk.
+  - Se desplegó mini-furi-bot como Web Service en el plan Free (0 USD/mes) en región Oregon.
+  - Se configuraron las 12 variables de entorno exactas (BOT_ID, BOT_NUMERO, FACU_NUMERO, ROCIO_NUMERO, SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY, GEMINI_API_KEY, SPOONACULAR_API_KEY, TICK_MODE, TICK_SECRET, NODE_VERSION).
+  - Se identificó y resolvió incompatibilidad de @supabase/supabase-js que requiere Node.js 22+ para WebSocket nativo, ajustando NODE_VERSION=22 (Node 22.23.3).
+  - Despliegue completado con éxito (Deploy succeeded).
+- **Verificación**:
+  - GET / responde 200 OK con 'mini-furi-bot online'.
+  - GET /estado responde 200 OK confirmando: conectado=true, socket=abierto, sesión restaurada de Supabase=true, LIDs resueltos.
+  - POST /tick verificado con secreto, respondiendo 200 OK (ok=true).
+  - Nueva URL activa: https://mini-furi-bot-rsl6.onrender.com.
+
+**Archivos impactados**:
+- mini_F.U.R.I._bot/render.yaml
+- docs/contexto/bot-whatsapp.md
+- docs/contexto/historial.md
+
+---
+
+## [2026-10-20] - UX / ENHANCEMENT - Encuadre Centrado y Simetrico de Notas al Editar en Pizarron
+
+**Resumen**:
+- **Problema previo**:
+  - Al tocar una nota para editarla, la camara hacia zoom pero la dejaba excesivamente escorada hacia la izquierda de la pantalla (vailW * 0.50 con 
+eservedW = 290.0), generando una sensacion incomoda de asimetria.
+- **Causa raiz**:
+  - _focusAndEditElement reservaba preventivamente 290px horizontales como si el subpanel derecho de herramientas estuviera siempre abierto. Como el riel de iconos en reposo solo mide 54px (+12px de padding = 66px), en pantallas moviles estandar (360-400px) la nota era empujada a apenas 90px del margen izquierdo.
+- **Solucion implementada**:
+  - Se recalculo el espacio util considerando el riel de iconos (
+ailW = 66px).
+  - El centro objetivo horizontal de la nota se ubico exactamente en el punto medio del area disponible (vailW * 0.50), dejando exactamente la misma distancia (simetria pixel-perfect ~25.5px) entre el borde izquierdo de la pantalla y la nota, y entre la nota y el riel derecho.
+  - Se optimizo la escala ideal (vailW * 0.88, con clamp a 0.90..1.35) y la altura al 44% para mantener la nota completamente visible y confortable sobre el teclado virtual.
+- **Verificacion**:
+  - flutter analyze: 0 errores.
+  - milanote_screen.dart permanece estrictamente en 299 lineas (< 300).
+
+**Archivos impactados**:
+- lib/screens/milanote/milanote_screen.dart
+- docs/contexto/historial.md
+
+---
+
+## [2026-10-20] - BUGFIX - Deteccion de Toque y Escritura en Titulo y Cuerpo de Notas del Pizarron (Unbounded Hit-Test Stack y Foco Opaque)
+
+**Resumen**:
+- **Problema**:
+  - Al apretar sobre el titulo o sobre el cuerpo de una nota en el Pizarron, la app no detectaba el toque, el teclado no abria y no se podia escribir en ningun lado.
+- **Causa raiz**:
+  1. **Hit test descartado por RenderStack.hitTest**: En Flutter, RenderStack verifica if (_size!.contains(position)) antes de comprobar a sus hijos. Al estar el Stack dentro de un lienzo transformado por matriz (camara pan/zoom), las coordenadas de los hijos son coordenadas del mundo (ej. x: 800, y: 1200 o valores negativos). Dado que _size era el tamano estandar de la pantalla (390x844), cualquier elemento con coordenadas mayores era ignorado al 100% por Flutter sin evaluar sus hijos, impidiendo que el toque alcanzara los TextField.
+  2. **Zonas de toque minimas en notas sin texto**: Cuando el titulo o cuerpo estaban vacios, el TextField solo media ~20px de alto, dejando el resto del contenedor Expanded dentro de SingleChildScrollView como espacio vacio no reactivo.
+  3. **Falta de enlace directo de foco**: Tocar la nota en el canvas abria el modo de edicion pero no ejecutaba 
+equestFocus() en el nodo deseado ni permitia cambiar entre titulo y parrafos al tocar.
+- **Solucion implementada**:
+  1. Se creo UnboundedHitTestStack (RenderUnboundedHitTestStack) que evalua hitTestChildren directamente en coordenadas de mundo sin filtrar por _size!.contains(position).
+  2. Se envolvieron el bloque del titulo, los parrafos y toda el area del cuerpo (Expanded) en GestureDetector(behavior: HitTestBehavior.opaque) que solicitan explictamente 
+equestFocus() en sus respectivos FocusNode.
+  3. Se anadio discriminacion de zona en PizarronGestureCoordinator (localY <= 65 para titulo, > 65 para cuerpo) para enfocar inmediatamente el campo correspondiente.
+  4. Modularizacion estricta bajo la regla de < 300 lineas: milanote_screen.dart (reducido a 297 lineas) y pizarron_note_widget.dart (reducido a 296 lineas) divididos en componentes atomicos en lib/screens/milanote/widgets/.
+- **Verificacion**:
+  - 322/322 pruebas automatizadas pasando con exito (100%).
+  - lutter analyze lib/screens/milanote: 0 errores, 0 warnings.
+
+**Archivos impactados**:
+- lib/screens/milanote/milanote_screen.dart
+- lib/screens/milanote/widgets/pizarron_note_widget.dart
+- lib/screens/milanote/widgets/unbounded_hit_test_stack.dart
+- lib/screens/milanote/widgets/pizarron_title_block.dart
+- lib/screens/milanote/widgets/pizarron_body_interior.dart
+- lib/screens/milanote/widgets/pizarron_checklist_interior.dart
+- lib/screens/milanote/widgets/pizarron_card_frame.dart
+- lib/screens/milanote/widgets/pizarron_resize_handle.dart
+- lib/screens/milanote/widgets/pizarron_formatted_block.dart
+- lib/screens/milanote/widgets/pizarron_paragraph_state_helper.dart
+- lib/screens/milanote/widgets/pizarron_inline_image.dart
+- lib/screens/milanote/widgets/pizarron_camera_controller.dart
+- lib/screens/milanote/widgets/pizarron_camera_math.dart
+- lib/screens/milanote/widgets/pizarron_element_ops.dart
+- lib/screens/milanote/widgets/pizarron_gesture_coordinator.dart
+- lib/screens/milanote/widgets/pizarron_positioned_note.dart
+- lib/screens/milanote/widgets/pizarron_bottom_cluster.dart
+- docs/contexto/errores-conocidos.md
+- docs/contexto/historial.md
+
+---
+
 ## [2026-10-20] - RELEASE v1.0.11 - MediaSession Nativa con Barra Interactiva, Arreglo de Salida/Crash en Pinterest y Modularizacion
 
 **Resumen**:

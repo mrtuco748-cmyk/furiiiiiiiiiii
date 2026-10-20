@@ -1,14 +1,14 @@
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:video_player/video_player.dart';
 
 import '../../../models/message.dart';
 import '../../../widgets/tap_tile.dart';
 import '../chat_style.dart';
+import 'chat_audio_player_tile.dart';
+import 'chat_video_thumb.dart';
 
 /// Cuerpo de una burbuja según si es texto o media (descargable/local).
 class ChatMediaBody extends StatelessWidget {
@@ -177,9 +177,9 @@ class _ChatLocalMediaView extends StatelessWidget {
           ],
         );
       case 'video':
-        return _ChatVideoThumb(path: path, textColor: textColor);
+        return ChatVideoThumb(path: path, textColor: textColor);
       case 'voice':
-        return _ChatAudioPlayerTile(path: path, textColor: textColor);
+        return ChatAudioPlayerTile(path: path, textColor: textColor);
       default:
         return TapTile(
           onTap: () => OpenFilex.open(path),
@@ -206,148 +206,5 @@ class _ChatLocalMediaView extends StatelessWidget {
           ),
         );
     }
-  }
-}
-
-class _ChatVideoThumb extends StatefulWidget {
-  final String path;
-  final Color textColor;
-  const _ChatVideoThumb({required this.path, required this.textColor});
-
-  @override
-  State<_ChatVideoThumb> createState() => _ChatVideoThumbState();
-}
-
-class _ChatVideoThumbState extends State<_ChatVideoThumb> {
-  VideoPlayerController? _ctrl;
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = VideoPlayerController.file(File(widget.path))
-      ..initialize().then((_) {
-        if (mounted) setState(() => _ready = true);
-      });
-  }
-
-  @override
-  void dispose() {
-    _ctrl?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_ready || _ctrl == null) {
-      return SizedBox(
-        width: 200,
-        height: 120,
-        child: Center(
-          child: CircularProgressIndicator(color: widget.textColor, strokeWidth: 2),
-        ),
-      );
-    }
-    return TapTile(
-      onTap: () {
-        final c = _ctrl!;
-        setState(() {
-          c.value.isPlaying ? c.pause() : c.play();
-        });
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 220,
-          child: AspectRatio(
-            aspectRatio: _ctrl!.value.aspectRatio == 0
-                ? 16 / 9
-                : _ctrl!.value.aspectRatio,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                VideoPlayer(_ctrl!),
-                if (!_ctrl!.value.isPlaying)
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: ChatStyle.bg,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(Icons.play_arrow,
-                        color: ChatStyle.primary, size: 28),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatAudioPlayerTile extends StatefulWidget {
-  final String path;
-  final Color textColor;
-  const _ChatAudioPlayerTile({required this.path, required this.textColor});
-
-  @override
-  State<_ChatAudioPlayerTile> createState() => _ChatAudioPlayerTileState();
-}
-
-class _ChatAudioPlayerTileState extends State<_ChatAudioPlayerTile> {
-  final _player = AudioPlayer();
-  bool _playing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _playing = false);
-    });
-  }
-
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-
-  Future<void> _toggle() async {
-    if (_playing) {
-      await _player.stop();
-      setState(() => _playing = false);
-      return;
-    }
-    await _player.play(DeviceFileSource(widget.path));
-    setState(() => _playing = true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TapTile(
-      onTap: _toggle,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _playing ? Icons.stop : Icons.play_arrow,
-            color: widget.textColor,
-            size: 26,
-          ),
-          const SizedBox(width: 6),
-          Icon(Icons.graphic_eq, color: widget.textColor, size: 20),
-          const SizedBox(width: 6),
-          Text(
-            'Audio',
-            style: GoogleFonts.bangers(
-              fontSize: 13,
-              color: widget.textColor,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

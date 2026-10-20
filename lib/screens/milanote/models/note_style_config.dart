@@ -1,114 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-/// Posiciones posibles para la imagen integrada dentro de una nota.
-enum InlineImagePosition {
-  aboveBody,  // Arriba del texto del cuerpo (debajo del título)
-  middleBody, // En el medio de los párrafos del cuerpo
-  belowBody,  // Abajo del texto del cuerpo
-  footer,     // En el pie de página de la nota
-}
+import 'note_style_serializer.dart';
+import 'note_style_types.dart';
 
-/// Formatos decorativos para el título y párrafos.
-enum TextBlockFormat {
-  none,            // Sin decoración extra
-  escuadra,        // Línea vertical derecha + línea horizontal inferior gruesa
-  escuadraLeft,    // Línea vertical izquierda + línea horizontal inferior gruesa
-  thickUnderline,  // Subrayado grueso
-  topBottomLines,  // Líneas arriba y abajo
-  sunken,          // Sombreado oscuro hundido (inset dark box)
-  quoteBar,        // Barra vertical lateral + fondo suave
-  framed,          // Marco completo de línea
-}
-
-/// Formas disponibles para la nota/tarjeta.
-enum NoteShapeType {
-  square,   // Cuadrada recta
-  rounded,  // Bordes redondeados suaves
-  note,     // Nota con esquina inferior/superior doblada
-  paper,    // Hoja de papel con borde dentado suave
-  leaf,     // Forma de hoja (dos esquinas opuestas curvas, dos en punta)
-  circle,   // Círculo / elipse
-  diamond,  // Rombo
-  hexagon,  // Hexágono
-  octagon,  // Octágono
-  shield,   // Escudo
-  tag,      // Etiqueta recortada
-}
-
-/// Tipos de borde que siguen exactamente el contorno (Path) de la forma.
-enum NoteBorderType {
-  none,
-  solid,
-  dotted,
-  dashed,
-  doubleLine,
-  wavy,
-}
-
-/// Tipos de patrones para la Capa 2 de la nota.
-enum NotePatternType {
-  none,
-  chess,            // Ajedrez (sin espaciado ni relleno, solo tamaño de bloque)
-  linesOblique,     // Líneas oblicuas (grosor, espaciado, sin relleno)
-  linesHorizontal,  // Líneas horizontales (grosor, espaciado, sin relleno)
-  linesVertical,    // Líneas verticales (grosor, espaciado, sin relleno)
-  waves,            // Ondas (grosor, espaciado, escala, sin relleno)
-  circlesFilled,    // Círculos rellenos (escala, espaciado)
-  circlesEmpty,     // Círculos vacíos (escala, espaciado, grosor)
-  dots,             // Puntos (escala, espaciado)
-  grid,             // Cuadrícula (grosor, espaciado)
-  emoji,            // Emojis o texto repetido en patrón (texto, escala, espaciado)
-}
-
-/// Estilo individual por párrafo para permitir múltiples fuentes, colores y formatos
-/// (como el formato "hundido") dentro de un mismo cuerpo de nota.
-class ParagraphStyleOverride {
-  final String? fontFamily;
-  final String? colorHex;
-  final double? fontSize;
-  final TextBlockFormat format;
-
-  const ParagraphStyleOverride({
-    this.fontFamily,
-    this.colorHex,
-    this.fontSize,
-    this.format = TextBlockFormat.none,
-  });
-
-  ParagraphStyleOverride copyWith({
-    String? fontFamily,
-    String? colorHex,
-    double? fontSize,
-    TextBlockFormat? format,
-  }) {
-    return ParagraphStyleOverride(
-      fontFamily: fontFamily ?? this.fontFamily,
-      colorHex: colorHex ?? this.colorHex,
-      fontSize: fontSize ?? this.fontSize,
-      format: format ?? this.format,
-    );
-  }
-
-  Map<String, dynamic> toMap() => {
-        if (fontFamily != null) 'fontFamily': fontFamily,
-        if (colorHex != null) 'colorHex': colorHex,
-        if (fontSize != null) 'fontSize': fontSize,
-        'format': format.name,
-      };
-
-  factory ParagraphStyleOverride.fromMap(Map<String, dynamic> m) {
-    return ParagraphStyleOverride(
-      fontFamily: m['fontFamily'] as String?,
-      colorHex: m['colorHex'] as String?,
-      fontSize: (m['fontSize'] as num?)?.toDouble(),
-      format: TextBlockFormat.values.firstWhere(
-        (e) => e.name == m['format'],
-        orElse: () => TextBlockFormat.none,
-      ),
-    );
-  }
-}
+export 'note_style_types.dart';
+export 'pizarron_font_catalog.dart';
+export 'pizarron_palette.dart';
 
 /// Configuración completa de capas, forma, bordes, tipografía e imagen de una Nota/Lista.
 /// Se serializa dentro de `BoardElement.data` para sincronización transparente con SQLite y Supabase.
@@ -130,10 +27,10 @@ class NoteStyleConfig {
   final String patternColor2;
   final bool patternUseGradient;
   final double patternOpacity;
-  final double patternStrokeWidth; // Grosor (para líneas, ondas, círculos vacíos, cuadrícula)
-  final double patternSpacing;     // Espaciado (no aplica a ajedrez)
-  final double patternScale;       // Tamaño de bloque / radio de círculo / tamaño emoji
-  final String patternEmojiText;   // Emoji o texto para el patrón
+  final double patternStrokeWidth; // Grosor
+  final double patternSpacing; // Espaciado
+  final double patternScale; // Tamaño de bloque / radio de círculo / tamaño emoji
+  final String patternEmojiText; // Emoji o texto para el patrón
 
   // --- CAPA 3: FORMA Y BORDES ---
   final NoteShapeType shapeType;
@@ -155,8 +52,6 @@ class NoteStyleConfig {
   final TextBlockFormat bodyFormat;
   final TextAlign textAlign;
 
-  /// Overrides por índice de párrafo (0, 1, 2...) para permitir distintas fuentes,
-  /// colores y formatos (ej. párrafo hundido) en el mismo texto.
   final Map<int, ParagraphStyleOverride> paragraphOverrides;
 
   // --- IMAGEN INTEGRADA EN LA NOTA ---
@@ -210,7 +105,6 @@ class NoteStyleConfig {
     this.checklistItems = const [],
   });
 
-  /// Reglas contextuales de qué parámetros tienen sentido para el patrón seleccionado.
   bool get patternSupportsStrokeWidth {
     switch (patternType) {
       case NotePatternType.linesOblique:
@@ -232,7 +126,7 @@ class NoteStyleConfig {
   bool get patternSupportsSpacing {
     switch (patternType) {
       case NotePatternType.none:
-      case NotePatternType.chess: // Ajedrez: bloques juntos sin separación
+      case NotePatternType.chess:
         return false;
       case NotePatternType.linesOblique:
       case NotePatternType.linesHorizontal:
@@ -265,14 +159,11 @@ class NoteStyleConfig {
     }
   }
 
-  bool get patternSupportsFillToggle {
-    return patternType == NotePatternType.circlesFilled ||
-        patternType == NotePatternType.circlesEmpty;
-  }
+  bool get patternSupportsFillToggle =>
+      patternType == NotePatternType.circlesFilled ||
+      patternType == NotePatternType.circlesEmpty;
 
-  bool get patternSupportsEmojiInput {
-    return patternType == NotePatternType.emoji;
-  }
+  bool get patternSupportsEmojiInput => patternType == NotePatternType.emoji;
 
   bool get hasInlineImage =>
       (inlineImageBase64 != null && inlineImageBase64!.isNotEmpty) ||
@@ -373,373 +264,14 @@ class NoteStyleConfig {
     );
   }
 
-  Map<String, dynamic> toDataMap() {
-    final encodedOverrides = <String, dynamic>{};
-    paragraphOverrides.forEach((k, v) {
-      encodedOverrides[k.toString()] = v.toMap();
-    });
-
-    return {
-      'baseMode': baseMode,
-      'solidColor': solidColor,
-      'gradientStartColor': gradientStartColor,
-      'gradientMidColor': gradientMidColor,
-      'gradientEndColor': gradientEndColor,
-      'gradientAngle': gradientAngle,
-      if (bgImageBase64 != null) 'bgImageBase64': bgImageBase64,
-      if (bgImageUrl != null) 'bgImageUrl': bgImageUrl,
-      'bgImageOpacity': bgImageOpacity,
-      'patternType': patternType.name,
-      'patternColor1': patternColor1,
-      'patternColor2': patternColor2,
-      'patternUseGradient': patternUseGradient,
-      'patternOpacity': patternOpacity,
-      'patternStrokeWidth': patternStrokeWidth,
-      'patternSpacing': patternSpacing,
-      'patternScale': patternScale,
-      'patternEmojiText': patternEmojiText,
-      'shapeType': shapeType.name,
-      'borderType': borderType.name,
-      'borderColor': borderColor,
-      'borderWidth': borderWidth,
-      'borderSpacing': borderSpacing,
-      'hasShine': hasShine,
-      'titleFont': titleFont,
-      'titleColor': titleColor,
-      'titleSize': titleSize,
-      'titleFormat': titleFormat.name,
-      'bodyFont': bodyFont,
-      'bodyColor': bodyColor,
-      'bodySize': bodySize,
-      'bodyFormat': bodyFormat.name,
-      'textAlign': textAlign.name,
-      'paragraphOverrides': encodedOverrides,
-      if (inlineImageBase64 != null) 'inlineImageBase64': inlineImageBase64,
-      if (inlineImageUrl != null) 'inlineImageUrl': inlineImageUrl,
-      'inlineImagePosition': inlineImagePosition.name,
-      'inlineImageHeightRatio': inlineImageHeightRatio,
-      'items': checklistItems,
-    };
-  }
+  Map<String, dynamic> toDataMap() => NoteStyleSerializer.toDataMap(this);
 
   factory NoteStyleConfig.fromElement({
     required String fallbackColor,
     required Map<String, dynamic> data,
-  }) {
-    final parsedOverrides = <int, ParagraphStyleOverride>{};
-    final rawOverrides = data['paragraphOverrides'];
-    if (rawOverrides is Map) {
-      rawOverrides.forEach((key, value) {
-        final idx = int.tryParse(key.toString());
-        if (idx != null && value is Map) {
-          parsedOverrides[idx] = ParagraphStyleOverride.fromMap(
-            Map<String, dynamic>.from(value),
-          );
-        }
-      });
-    }
-
-    final rawItems = data['items'];
-    final itemsList = <Map<String, dynamic>>[];
-    if (rawItems is List) {
-      for (final item in rawItems) {
-        if (item is Map) {
-          itemsList.add(Map<String, dynamic>.from(item));
-        }
-      }
-    }
-
-    // Compatibilidad hacia atrás con notas anteriores si tenían imageBase64
-    final String? legacyBase64 = data['imageBase64'] as String?;
-    final String? legacyUrl = data['imageUrl'] as String?;
-
-    final shapeName = data['shapeType']?.toString() ?? 'rounded';
-    final shape = NoteShapeType.values.firstWhere(
-      (e) => e.name == shapeName,
-      orElse: () => NoteShapeType.rounded,
-    );
-
-    // Si la forma es simétrica (rombo, círculo, hexágono, octágono, escudo),
-    // centrar por defecto si no se especificó alineación.
-    final defaultAlign = (shape == NoteShapeType.diamond ||
-            shape == NoteShapeType.circle ||
-            shape == NoteShapeType.hexagon ||
-            shape == NoteShapeType.octagon ||
-            shape == NoteShapeType.shield)
-        ? TextAlign.center
-        : TextAlign.left;
-
-    final alignName = data['textAlign']?.toString();
-    final align = alignName != null
-        ? TextAlign.values.firstWhere(
-            (e) => e.name == alignName,
-            orElse: () => defaultAlign,
-          )
-        : defaultAlign;
-
-    return NoteStyleConfig(
-      baseMode: data['baseMode']?.toString() ?? 'solid',
-      solidColor: data['solidColor']?.toString() ??
-          (fallbackColor.isNotEmpty ? fallbackColor : '#1E2436'),
-      gradientStartColor:
-          data['gradientStartColor']?.toString() ?? '#6A11CB',
-      gradientMidColor: data['gradientMidColor']?.toString() ?? '#C41C8A',
-      gradientEndColor: data['gradientEndColor']?.toString() ?? '#2575FC',
-      gradientAngle:
-          (data['gradientAngle'] as num?)?.toDouble() ?? 135.0,
-      bgImageBase64: data['bgImageBase64'] as String?,
-      bgImageUrl: data['bgImageUrl'] as String?,
-      bgImageOpacity:
-          (data['bgImageOpacity'] as num?)?.toDouble() ?? 0.85,
-      patternType: NotePatternType.values.firstWhere(
-        (e) => e.name == data['patternType'],
-        orElse: () => NotePatternType.none,
-      ),
-      patternColor1: data['patternColor1']?.toString() ?? '#FFFFFF',
-      patternColor2: data['patternColor2']?.toString() ?? '#00F5D4',
-      patternUseGradient: data['patternUseGradient'] == true,
-      patternOpacity:
-          (data['patternOpacity'] as num?)?.toDouble() ?? 0.22,
-      patternStrokeWidth:
-          (data['patternStrokeWidth'] as num?)?.toDouble() ?? 2.5,
-      patternSpacing:
-          (data['patternSpacing'] as num?)?.toDouble() ?? 22.0,
-      patternScale: (data['patternScale'] as num?)?.toDouble() ?? 18.0,
-      patternEmojiText: data['patternEmojiText']?.toString() ?? '✨',
-      shapeType: shape,
-      borderType: NoteBorderType.values.firstWhere(
-        (e) => e.name == data['borderType'],
-        orElse: () => NoteBorderType.none,
-      ),
-      borderColor: data['borderColor']?.toString() ?? '#FFFFFF',
-      borderWidth: (data['borderWidth'] as num?)?.toDouble() ?? 3.0,
-      borderSpacing: (data['borderSpacing'] as num?)?.toDouble() ?? 8.0,
-      hasShine: data['hasShine'] == true,
-      titleFont: data['titleFont']?.toString() ??
-          data['fontFamily']?.toString() ??
-          'Plus Jakarta Sans',
-      titleColor: data['titleColor']?.toString() ?? '#FFFFFF',
-      titleSize: (data['titleSize'] as num?)?.toDouble() ?? 19.0,
-      titleFormat: TextBlockFormat.values.firstWhere(
-        (e) => e.name == data['titleFormat'],
-        orElse: () => TextBlockFormat.none,
-      ),
-      bodyFont: data['bodyFont']?.toString() ??
-          data['fontFamily']?.toString() ??
-          'Plus Jakarta Sans',
-      bodyColor: data['bodyColor']?.toString() ?? '#E2E8F0',
-      bodySize: (data['bodySize'] as num?)?.toDouble() ??
-          (data['fontSize'] as num?)?.toDouble() ??
-          14.5,
-      bodyFormat: TextBlockFormat.values.firstWhere(
-        (e) => e.name == data['bodyFormat'],
-        orElse: () => TextBlockFormat.none,
-      ),
-      textAlign: align,
-      paragraphOverrides: parsedOverrides,
-      inlineImageBase64:
-          (data['inlineImageBase64'] as String?) ?? legacyBase64,
-      inlineImageUrl: (data['inlineImageUrl'] as String?) ?? legacyUrl,
-      inlineImagePosition: InlineImagePosition.values.firstWhere(
-        (e) => e.name == data['inlineImagePosition'],
-        orElse: () => InlineImagePosition.belowBody,
-      ),
-      inlineImageHeightRatio:
-          (data['inlineImageHeightRatio'] as num?)?.toDouble() ?? 0.34,
-      checklistItems: itemsList,
-    );
-  }
-}
-
-/// Catálogo de fuentes extravagantes, creativas y variadas para el Pizarrón.
-class PizarronFontCatalog {
-  static const List<String> fonts = [
-    'Plus Jakarta Sans',
-    'Space Mono',
-    'Syne',
-    'Pacifico',
-    'Caveat',
-    'Permanent Marker',
-    'Press Start 2P',
-    'Cinzel',
-    'Abril Fatface',
-    'Righteous',
-    'Orbitron',
-    'Monoton',
-    'Bungee',
-    'Creepster',
-    'Special Elite',
-    'Sacramento',
-    'Shadows Into Light',
-    'Bebas Neue',
-    'Lobster',
-    'UnifrakturMaguntia',
-    'VT323',
-    'Comfortaa',
-  ];
-
-  /// Glifo corto representativo para mostrar como ícono visual de cada fuente
-  /// sin usar etiquetas de texto largas.
-  static String glyphFor(String fontName) {
-    switch (fontName) {
-      case 'Plus Jakarta Sans':
-        return 'Aa';
-      case 'Space Mono':
-        return '{}';
-      case 'Syne':
-        return 'Sy';
-      case 'Pacifico':
-        return 'ℱ';
-      case 'Caveat':
-        return '✎';
-      case 'Permanent Marker':
-        return '★';
-      case 'Press Start 2P':
-        return '8B';
-      case 'Cinzel':
-        return 'IV';
-      case 'Abril Fatface':
-        return 'Æ';
-      case 'Righteous':
-        return 'Rg';
-      case 'Orbitron':
-        return '01';
-      case 'Monoton':
-        return '≡';
-      case 'Bungee':
-        return 'BG';
-      case 'Creepster':
-        return '⚡';
-      case 'Special Elite':
-        return 'T!';
-      case 'Sacramento':
-        return '𝒮';
-      case 'Shadows Into Light':
-        return '♪';
-      case 'Bebas Neue':
-        return 'BB';
-      case 'Lobster':
-        return 'Lb';
-      case 'UnifrakturMaguntia':
-        return '𝔉';
-      case 'VT323':
-        return '>_';
-      case 'Comfortaa':
-        return '◯';
-      default:
-        return 'Aa';
-    }
-  }
-
-  static TextStyle resolveFont(
-    String fontName, {
-    required double fontSize,
-    required Color color,
-    FontWeight fontWeight = FontWeight.w600,
-    double height = 1.3,
-  }) {
-    try {
-      return GoogleFonts.getFont(
-        fontName,
-        fontSize: fontSize,
-        color: color,
-        fontWeight: fontWeight,
-        height: height,
+  }) =>
+      NoteStyleSerializer.fromElement(
+        fallbackColor: fallbackColor,
+        data: data,
       );
-    } catch (_) {
-      return TextStyle(
-        fontSize: fontSize,
-        color: color,
-        fontWeight: fontWeight,
-        height: height,
-      );
-    }
-  }
-}
-
-/// Paleta curada de colores vibrantes y oscuros (sin negro puro #000000).
-class PizarronPalette {
-  static const List<String> noteColors = [
-    '#1E2436', // Slate profundo
-    '#2B193D', // Violeta noche
-    '#132A2E', // Petróleo oscuro
-    '#3B1C32', // Borgoña oscuro
-    '#1F2D1E', // Bosque oscuro
-    '#33261E', // Tierra oscuro
-    '#FF2A85', // Rosa fucsia vibrante
-    '#7B2CBF', // Púrpura eléctrico
-    '#3A86FF', // Azul intenso
-    '#00BBF9', // Cian vibrante
-    '#00F5D4', // Turquesa menta
-    '#2EE50F', // Verde lima sólido
-    '#FFB703', // Ámbar intenso
-    '#FB5607', // Naranja fuego
-    '#E63946', // Rojo coral
-    '#FFF3B0', // Crema pastel cálido
-    '#FDE2E4', // Rosa empolvado
-    '#E2ECE9', // Menta hielo
-    '#EAE4E9', // Lavanda suave
-    '#FFFFFF', // Blanco puro
-  ];
-
-  static const List<String> boardColors = [
-    '#141820', // Pizarra grafito (por defecto)
-    '#18241E', // Pizarrón escolar verde oscuro
-    '#1A162B', // Pizarra índigo profundo
-    '#241A1E', // Pizarra ciruela oscuro
-    '#16222F', // Pizarra azul marino
-    '#26231F', // Pizarra carbón cálido
-    '#2A3240', // Pizarra acero
-    '#EDE9E0', // Lienzo papel crema
-    '#E2E8F0', // Lienzo gris perla
-  ];
-
-  static const List<String> chalkColors = [
-    '#FFFFFF', // Tiza blanca
-    '#FFF3B0', // Tiza amarilla
-    '#FF8FA3', // Tiza rosa
-    '#80ED99', // Tiza verde
-    '#72EFDD', // Tiza celeste
-    '#C77DFF', // Tiza violeta
-    '#FFB703', // Tiza naranja
-  ];
-
-  static Color parseHex(String hex, {Color fallback = const Color(0xFF1E2436)}) {
-    final cleaned = hex.replaceAll('#', '').trim();
-    if (cleaned.length == 6) {
-      final val = int.tryParse('FF$cleaned', radix: 16);
-      if (val != null) return Color(val);
-    } else if (cleaned.length == 8) {
-      final val = int.tryParse(cleaned, radix: 16);
-      if (val != null) return Color(val);
-    }
-    return fallback;
-  }
-
-  static String toHex(Color color) {
-    final r = (color.r * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
-    final g = (color.g * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
-    final b = (color.b * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
-    return '#$r$g$b'.toUpperCase();
-  }
-
-  static final List<String> recentColors = [
-    '#FF2A85',
-    '#7B2CBF',
-    '#3A86FF',
-    '#2EE50F',
-    '#FFB703',
-    '#1E2436',
-    '#FFFFFF',
-  ];
-
-  static void addRecentColor(String hex) {
-    final clean = hex.trim().toUpperCase();
-    if (clean.isEmpty) return;
-    recentColors.remove(clean);
-    recentColors.insert(0, clean);
-    if (recentColors.length > 10) {
-      recentColors.removeLast();
-    }
-  }
 }

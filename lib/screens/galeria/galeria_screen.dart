@@ -30,7 +30,9 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => context.read<GalleryProvider>().load());
+    Future.microtask(() {
+      if (mounted) context.read<GalleryProvider>().load();
+    });
   }
 
   @override
@@ -55,6 +57,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
       album: null,
       label: 'Foto',
     );
+    if (!mounted) return;
     final err = context.read<GalleryProvider>().error;
     if (err != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

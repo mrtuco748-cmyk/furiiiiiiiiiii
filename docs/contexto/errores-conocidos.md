@@ -7,6 +7,19 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~ALTA - No detecta al apretar para escribir en el título ni en el cuerpo de las notas en el Pizarrón (RenderStack size.contains en lienzo infinito y zonas de toque reducidas)~~ ✅ RESUELTO 2026-10-20
+- **Dónde**: `lib/screens/milanote/milanote_screen.dart`, `lib/screens/milanote/widgets/pizarron_note_widget.dart`, `lib/screens/milanote/widgets/unbounded_hit_test_stack.dart`
+- **Qué pasaba**: Al presionar sobre el título o sobre el cuerpo de una nota para escribir, no se detectaba el toque, el teclado no aparecía y no se podía escribir en ningún lugar.
+- **Causa raíz**:
+  1. **Recorte de hit testing en `RenderStack.hitTest` por `size.contains(position)`**: En Flutter, `RenderStack` hereda de `RenderBox` cuya verificación de hit testing evalúa `if (_size!.contains(position))`. En un lienzo transformado por matriz (cámara con zoom y pan), los widgets hijos se encuentran en coordenadas del mundo (ej. x: 800, y: 1200 o valores negativos). Dado que el `Stack` se limitaba al tamaño de la pantalla (`screenSize`), cualquier elemento cuyas coordenadas de mundo estuvieran fuera de `(0, 0) .. (390, 844)` era descartado por Flutter de inmediato sin evaluar a sus hijos (`hitTestChildren`), impidiendo que el toque alcanzara los `TextField`.
+  2. **Áreas de toque mínimas en notas vacías**: Cuando el título o el párrafo estaban vacíos, el `TextField` solo medía ~20 píxeles de alto correspondiente al hint text `•••`. El resto del contenedor `Expanded` dentro de `SingleChildScrollView` era espacio vacío no interactivo que no transfería el foco ni abría el teclado.
+  3. **Falta de autoenfoque y discriminación de destino**: Al hacer tap sobre la nota desde el lienzo, no se diferenciaba si el usuario tocaba la zona del título o del cuerpo, y la apertura del modo de edición no solicitaba el foco sobre el `FocusNode`.
+- **Fix**:
+  1. Se implementó `UnboundedHitTestStack` (`RenderUnboundedHitTestStack`), sobreescribiendo `hitTest` para evaluar directamente `hitTestChildren` en coordenadas de mundo sin recortar por `_size!.contains(position)`.
+  2. Se envolvieron el bloque del título, los párrafos y toda el área del cuerpo (`Expanded`) en `GestureDetector(behavior: HitTestBehavior.opaque)` que solicitan explícitamente `requestFocus()` en sus respectivos `FocusNode` y sincronizan `_activeTextTarget`.
+  3. En `PizarronGestureCoordinator`, al recibir el tap sobre una nota, se discrimina la coordenada local (`localY <= 65` para título, `> 65` para cuerpo) para enfocar automáticamente el campo deseado al abrir la edición o al tocar la nota en curso.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-20
+
 ### ~~CRÍTICA - Salida automática / crash al entrar a Pinterest en Galería (`onHideCustomWidget` hacía `Navigator.pop()`, `onRenderProcessGone` no capturado y `removeChild` en React 18)~~ ✅ RESUELTO 2026-10-20
 - **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `lib/screens/galeria/galeria_screen.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
 - **Qué pasaba**: Al abrir Pinterest desde la Galería en Android, la página cargaba unos instantes y luego salía sola o cerraba la app de golpe.

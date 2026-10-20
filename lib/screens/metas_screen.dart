@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
-import '../supabase_config.dart';
 import '../services/local_cache.dart';
+import '../supabase_config.dart';
 import '../theme/app_theme.dart';
-import '../widgets/loca_screen.dart';
-import '../widgets/tap_tile.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/loca_screen.dart';
+import 'metas/widgets/meta_detail_panel.dart';
+import 'metas/widgets/meta_edit_dialog.dart';
+import 'metas/widgets/meta_history_panel.dart';
 
 /// Metas estilo "Nosotros": UN bloque-icono por cada meta (check = hecha /
 /// círculo = no hecha) en mosaico loco que ocupa toda la pantalla. Apretar una
@@ -27,10 +28,6 @@ class _MetasScreenState extends State<MetasScreen> {
   String? _error;
   RealtimeChannel? _channel;
 
-  // Tap counter logic (single vs double tap) - igual que en Retos
-  int _tapMetaId = 0;
-  Timer? _tapTimerMeta;
-
   @override
   void initState() {
     super.initState();
@@ -40,7 +37,6 @@ class _MetasScreenState extends State<MetasScreen> {
 
   @override
   void dispose() {
-    _tapTimerMeta?.cancel();
     _channel?.unsubscribe();
     super.dispose();
   }
@@ -64,8 +60,9 @@ class _MetasScreenState extends State<MetasScreen> {
   }
 
   Future<void> _loadMetas() async {
-    setState(() { _error = null; });
-    // Mostrar el cache local al instante (sin "carga"); luego sync con Supabase.
+    setState(() {
+      _error = null;
+    });
     if (_metas.isEmpty) {
       try {
         final cached = await LocalCache.getList('cache_metas');
@@ -75,14 +72,17 @@ class _MetasScreenState extends State<MetasScreen> {
       } catch (_) {}
     }
     try {
-      final data = await SupabaseConfig.client.from('goals').select('*')
-          .or('couple_id.eq.${AppState.myId ?? ''},couple_id.eq.${AppState.partnerId ?? ''}').order('created_at', ascending: true);
+      final data = await SupabaseConfig.client
+          .from('goals')
+          .select('*')
+          .or('couple_id.eq.${AppState.myId ?? ''},couple_id.eq.${AppState.partnerId ?? ''}')
+          .order('created_at', ascending: true);
       final list = List<Map<String, dynamic>>.from(data);
-      if (mounted) setState(() { _metas = list; });
+      if (mounted) setState(() => _metas = list);
       await LocalCache.setList('cache_metas', list);
     } catch (e) {
       developer.log('cargar metas fallo: $e');
-      if (mounted) setState(() { _error = 'No se pudieron cargar las metas'; });
+      if (mounted) setState(() => _error = 'No se pudieron cargar las metas');
     }
   }
 
@@ -94,8 +94,7 @@ class _MetasScreenState extends State<MetasScreen> {
         'completed_by': completed ? null : AppState.myId,
       }).eq('id', m['id']);
       if (!completed && mounted) {
-        AppFeedback.success(context, '¡Meta cumplida! 🎉',
-            celebration: true);
+        AppFeedback.success(context, '¡Meta cumplida! 🎉', celebration: true);
       }
     } catch (e) {
       developer.log('toggle meta fallo: $e');
@@ -118,7 +117,6 @@ class _MetasScreenState extends State<MetasScreen> {
     if (mounted) _loadMetas();
   }
 
-  /// Reinserta una meta borrada (deshacer).
   Future<void> _restoreMeta(Map<String, dynamic> m) async {
     try {
       await SupabaseConfig.client.from('goals').insert({
@@ -135,75 +133,91 @@ class _MetasScreenState extends State<MetasScreen> {
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: GoogleFonts.bangers(color: Colors.white)), backgroundColor: const Color(0xFFCC0000)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg, style: GoogleFonts.bangers(color: Colors.white)),
+        backgroundColor: const Color(0xFFCC0000)));
   }
 
-  Future<void> _addOrEdit({Map<String, dynamic>? existing}) async {
-    final titleCtrl = TextEditingController(text: existing?['title'] ?? '');
-    final descCtrl = TextEditingController(text: existing?['description'] ?? '');
-    await showDialog(context: context, builder: (ctx) {
-      final t = getTheme(widget.mode);
-      return AlertDialog(backgroundColor: t.mid, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Icon(existing != null ? Icons.edit : Icons.emoji_events, color: t.light, size: 34),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: titleCtrl, autofocus: true, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Titulo...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.e.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
-          const SizedBox(height: 10),
-          TextField(controller: descCtrl, maxLines: 2, style: GoogleFonts.bangers(color: t.light), decoration: InputDecoration(hintText: 'Descripcion...', hintStyle: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.4)), filled: true, fillColor: t.e.withValues(alpha: 0.25), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none))),
-        ]),
-        actions: [
-          TapTile(onTap: () => Navigator.pop(ctx), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.mid, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.close, color: t.light, size: 20))),
-          TapTile(onTap: () async {
-            Navigator.pop(ctx);
-            final title = titleCtrl.text.trim();
-            if (title.isEmpty) return;
-            try {
-              if (existing != null) {
-                await SupabaseConfig.client.from('goals').update({'title': title, 'description': descCtrl.text.trim()}).eq('id', existing['id']);
-              } else {
-                await SupabaseConfig.client.from('goals').insert({'couple_id': AppState.myId, 'title': title, 'description': descCtrl.text.trim()});
-              }
-              if (mounted) AppFeedback.saved(context, 'Meta guardada');
-            } catch (e) {
-              developer.log('guardar meta fallo: $e');
-              if (mounted) _showError('No se pudo guardar la meta');
-            }
-            _loadMetas();
-          }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: t.e, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.check, color: t.light, size: 20))),
-        ],
-      );
-    });
-    titleCtrl.dispose();
-    descCtrl.dispose();
+  void _addOrEdit({Map<String, dynamic>? existing}) {
+    MetaEditDialog.show(
+      context,
+      existing: existing,
+      theme: getTheme(widget.mode),
+      onSaved: _loadMetas,
+    );
   }
 
-  String get _myInitial => (AppState.identity?.substring(0, 1).toUpperCase() ?? '?');
-  String get _partnerInitial => _myInitial == 'F' ? 'R' : 'F';
+  void _showMetaModal(Map<String, dynamic> meta) {
+    final t = getTheme(widget.mode);
+    final done = _done(meta);
+    final title = meta['title'] as String? ?? '';
+    final description = meta['description'] as String? ?? '';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.mid,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Icon(Icons.flag, color: t.light, size: 34),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.bangers(
+                color: t.light,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                decoration: done ? TextDecoration.lineThrough : null,
+              ),
+            ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                description,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.bangers(
+                  color: t.light.withValues(alpha: 0.7),
+                  fontSize: 14,
+                  decoration: done ? TextDecoration.lineThrough : null,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   bool _done(Map<String, dynamic> m) => (m['completed'] as bool? ?? false);
 
   @override
   Widget build(BuildContext context) {
     final t = getTheme(widget.mode);
-    // Paleta variada SIN verde para las metas.
     final palette = [
-      const Color(0xFFFF6B00), // naranja
-      const Color(0xFF00D4FF), // cian
-      const Color(0xFF9D00FF), // violeta
-      const Color(0xFFFF1493), // rosa
-      const Color(0xFFFFDE59), // amarillo
-      const Color(0xFFFF00FF), // fucsia
-      const Color(0xFF7000FF), // morado
-      const Color(0xFFFF5757), // rojo
+      const Color(0xFFFF6B00),
+      const Color(0xFF00D4FF),
+      const Color(0xFF9D00FF),
+      const Color(0xFFFF1493),
+      const Color(0xFFFFDE59),
+      const Color(0xFFFF00FF),
+      const Color(0xFF7000FF),
+      const Color(0xFFFF5757),
     ];
-    final doneColor = const Color(0xFF39FF14); // verde lima solo para completadas
-    // Mosaico: solo las 8 metas más recientes (en su orden). El resto se ve
-    // desde "historial".
+    const doneColor = Color(0xFF39FF14);
     final shownMetas = _metas.take(8).toList();
+
     final entries = <LocaEntry>[
       if (_error != null)
-        LocaEntry(icon: Icons.cloud_off, color: const Color(0xFFCC0000), onTap: _loadMetas),
+        LocaEntry(
+            icon: Icons.cloud_off,
+            color: const Color(0xFFCC0000),
+            onTap: _loadMetas),
       for (var i = 0; i < shownMetas.length; i++)
         LocaEntry(
-          icon: _done(shownMetas[i]) ? Icons.check_circle : Icons.radio_button_unchecked,
+          icon: _done(shownMetas[i])
+              ? Icons.check_circle
+              : Icons.radio_button_unchecked,
           color: _done(shownMetas[i]) ? doneColor : palette[i % palette.length],
           label: shownMetas[i]['title'] as String? ?? '',
           panel: i,
@@ -223,196 +237,29 @@ class _MetasScreenState extends State<MetasScreen> {
         isAction: true,
       ),
     ];
+
     return LocaScreen(
       seed: 97,
       theme: t,
       entries: entries,
       panels: [
         for (var i = 0; i < shownMetas.length; i++)
-          (_, close) => _metaPanel(t, close, shownMetas[i]),
-        (_, close) => _historyPanel(t, close),
-      ],
-    );
-  }
-
-void _showMetaPanel(ThemeSet t, Map<String, dynamic> meta) {
-    final done = _done(meta);
-    final title = meta['title'] as String? ?? '';
-    final description = meta['description'] as String? ?? '';
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      backgroundColor: t.mid,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Icon(Icons.flag, color: t.light, size: 34),
-      content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
-            child: Row(children: [
-              Icon(Icons.emoji_events, color: t.d, size: 22),
-              const Spacer(),
-              LocaScreen.closeIcon(() => Navigator.pop(ctx), t.d, Icons.close),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(title, textAlign: TextAlign.center,
-                  style: GoogleFonts.bangers(color: t.light, fontSize: 26, fontWeight: FontWeight.w900,
-                    decoration: done ? TextDecoration.lineThrough : null)),
-                if (description.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(description, textAlign: TextAlign.center,
-                    style: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.7), fontSize: 14,
-                      decoration: done ? TextDecoration.lineThrough : null)),
-                ],
-              ]),
-          ),
-        ]),
-      ),
-      actions: [
-        TapTile(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: t.mid,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.close, color: t.light, size: 20),
-          ),
-        ),
-      ],
-    ));
-  }
-
-  Widget _historyPanel(ThemeSet t, VoidCallback close) {
-    return LocaScreen.panel(color: t.mid, borderColor: t.d, child: Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
-        child: Row(children: [
-          Icon(Icons.history, color: t.d, size: 22),
-          const Spacer(),
-          LocaScreen.closeIcon(close, t.d, Icons.close),
-        ]),
-      ),
-      const SizedBox(height: 4),
-      Expanded(
-        child: _metas.isEmpty
-            ? const Center(child: Icon(Icons.emoji_events, color: Color(0x66FFFFFF), size: 60))
-            : ListView.builder(
-                padding: const EdgeInsets.all(10),
-                itemCount: _metas.length,
-                itemBuilder: (context, i) => _historyMetaCard(t, _metas[i]),
+          (_, close) => MetaDetailPanel(
+                theme: t,
+                close: close,
+                meta: shownMetas[i],
+                onToggle: _toggle,
+                onEdit: (m) => _addOrEdit(existing: m),
+                onDelete: _delete,
               ),
-      ),
-    ]));
-  }
-
-Widget _historyMetaCard(ThemeSet t, Map<String, dynamic> meta) {
-    final done = _done(meta);
-    return TapTile(
-      onTap: () {
-        if (_tapMetaId == meta['id']) {
-          // Double tap within 500ms: show expanded panel, don't toggle.
-          _tapTimerMeta?.cancel();
-          _tapTimerMeta = null;
-          _tapMetaId = 0;
-          _showMetaPanel(t, meta);
-        } else {
-          // First tap: arm the toggle. Si llega un segundo tap dentro de
-          // 500ms, se abre el panel (el toggle se cancela).
-          _tapTimerMeta?.cancel();
-          setState(() => _tapMetaId = (meta['id'] as num).toInt());
-          _tapTimerMeta = Timer(const Duration(milliseconds: 500), () {
-            if (!mounted) return;
-            setState(() => _tapMetaId = 0);
-            _toggle(meta);
-          });
-        }
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.all(14),
-decoration: BoxDecoration(
-              color: t.mid,
-              borderRadius: BorderRadius.circular(18),
+        (_, close) => MetaHistoryPanel(
+              theme: t,
+              close: close,
+              metas: _metas,
+              onToggle: _toggle,
+              onOpenDetail: _showMetaModal,
             ),
-          child: Row(children: [
-            Icon(done ? Icons.check_circle : Icons.radio_button_unchecked, color: done ? t.d : t.e, size: 22),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(meta['title'] as String? ?? '',
-                style: GoogleFonts.bangers(
-                  color: t.light,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  decoration: done ? TextDecoration.lineThrough : null,
-                )),
-            ),
-            Icon(Icons.chevron_right, color: t.light.withValues(alpha: 0.4), size: 20),
-          ]),
-        ),
-      ),
+      ],
     );
-  }
-
-  Widget _metaPanel(ThemeSet t, VoidCallback close, Map<String, dynamic> meta) {
-    final done = _done(meta);
-    final title = meta['title'] as String? ?? '';
-    final description = meta['description'] as String? ?? '';
-    final completedBy = meta['completed_by'] as String?;
-    final doneInitial = done && completedBy != null
-        ? (completedBy == AppState.myId ? _myInitial : _partnerInitial)
-        : null;
-    return LocaScreen.panel(color: t.mid, borderColor: done ? t.d : t.e, child: Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
-        child: Row(children: [
-          Icon(Icons.emoji_events, color: t.d, size: 22),
-          const Spacer(),
-          LocaScreen.closeIcon(close, t.d, Icons.close),
-        ]),
-      ),
-      Expanded(
-        child: Center(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(title, textAlign: TextAlign.center,
-                  style: GoogleFonts.bangers(color: t.light, fontSize: 26, fontWeight: FontWeight.w900,
-                    decoration: done ? TextDecoration.lineThrough : null)),
-                if (description.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(description, textAlign: TextAlign.center,
-                    style: GoogleFonts.bangers(color: t.light.withValues(alpha: 0.7), fontSize: 14,
-                      decoration: done ? TextDecoration.lineThrough : null)),
-                ],
-                if (doneInitial != null) ...[
-                  const SizedBox(height: 12),
-                  Container(width: 22, height: 22, alignment: Alignment.center, decoration: BoxDecoration(color: t.d, borderRadius: BorderRadius.circular(6)),
-                    child: Text(doneInitial, style: GoogleFonts.bangers(color: t.light, fontSize: 11, fontWeight: FontWeight.w900))),
-                ],
-              ]),
-            ),
-          ),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(children: [
-          const Spacer(),
-          TapTile(onTap: () => _toggle(meta), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: done ? t.e : t.d, borderRadius: BorderRadius.circular(12)), child: Icon(done ? Icons.undo : Icons.check, color: t.light, size: 22))),
-          const SizedBox(width: 8),
-          TapTile(onTap: () => _addOrEdit(existing: meta), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: t.a, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.edit, color: t.dark, size: 22))),
-          const SizedBox(width: 8),
-          TapTile(onTap: () { HapticFeedback.heavyImpact(); _delete(meta); }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFCC0000), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.delete, color: t.light, size: 22))),
-          const SizedBox(width: 8),
-        ]),
-      ),
-      const SizedBox(height: 14),
-    ]));
   }
 }

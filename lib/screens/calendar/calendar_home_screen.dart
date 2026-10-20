@@ -2,25 +2,27 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import '../../providers/schedule_provider.dart';
-import '../../providers/event_type_provider.dart';
-import '../../providers/class_schedule_provider.dart';
+import 'package:provider/provider.dart';
+
+import '../../database/database_helper.dart';
 import '../../models/schedule.dart';
+import '../../providers/class_schedule_provider.dart';
+import '../../providers/event_type_provider.dart';
+import '../../providers/schedule_provider.dart';
 import '../../router.dart';
-import '../../widgets/tap_tile.dart';
 import '../../widgets/concrete_painter.dart';
 import '../../widgets/responsive_wrapper.dart';
-import '../../database/database_helper.dart';
+import '../../widgets/tap_tile.dart';
+import 'widgets/calendar_day_cell.dart';
+import 'widgets/calendar_upcoming_events.dart';
 
 bool isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
 const _c = Color(0xFF00D4FF);
 const _dark = Color(0xFF1A1A1A);
-const _cDeep = Color(0xFF003344);
 const _white = Color(0xFFFFFFFF);
 
 class CalendarHomeScreen extends StatefulWidget {
@@ -49,9 +51,8 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       final res = await DatabaseHelper().getAll('class_schedules');
       if (res.isEmpty && mounted) {
         final result = await context.push<bool>(RouterRoutes.classSetup);
-        if (result == true) {
-          final pv = context.read<ClassScheduleProvider>();
-          if (mounted) pv.loadSchedules();
+        if (result == true && mounted) {
+          context.read<ClassScheduleProvider>().loadSchedules();
         }
       }
     } catch (e) {
@@ -60,9 +61,12 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     try {
       await context.read<ScheduleProvider>().loadSchedules();
+      if (!mounted) return;
       await context.read<EventTypeProvider>().loadTypes();
+      if (!mounted) return;
       await context.read<ClassScheduleProvider>().loadSchedules();
       if (mounted) setState(() => _initialized = true);
     } catch (e) {
@@ -113,6 +117,13 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
     context.push(RouterRoutes.scheduleForm, extra: s).then((_) => _loadData());
   }
 
+  void _deleteSchedule(Schedule s) async {
+    if (s.id == null) return;
+    HapticFeedback.heavyImpact();
+    await context.read<ScheduleProvider>().deleteSchedule(s.id!);
+    _loadData();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -120,11 +131,16 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       body: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: ConcretePainter())),
         ResponsiveWrapper(builder: (context, w, h) {
-            if (!_initialized) return Center(child: CircularProgressIndicator(color: _c, strokeWidth: 3));
+            if (!_initialized) return const Center(child: CircularProgressIndicator(color: _c, strokeWidth: 3));
             return SizedBox(width: w, height: h, child: Stack(children: [
               _monthNav(w, h),
               _calendarBlock(w, h),
-              _upcomingBlock(w, h),
+              CalendarUpcomingEvents(
+                width: w,
+                height: h,
+                onEdit: _editSchedule,
+                onDelete: _deleteSchedule,
+              ),
               _addBtn(w, h),
             ]));
            },
@@ -137,12 +153,12 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
     final months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     return Positioned(left: w * 0.03, top: h * 0.005, width: w * 0.94, height: h * 0.05,
       child: Row(children: [
-        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.chevron_left, color: _c, size: 26))),
+        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)); }, child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.chevron_left, color: _c, size: 26))),
         Expanded(child: Center(child: Text('${months[_focusedDay.month - 1]} ${_focusedDay.year}', style: GoogleFonts.bangers(color: _c, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1)))),
-        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime.now()); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.center_focus_strong, color: _c, size: 22))),
-        TapTile(onTap: _openDayEvents, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.view_day, color: _c, size: 22))),
-        TapTile(onTap: _openClasses, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.school, color: _c, size: 22))),
-        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)); }, child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.chevron_right, color: _c, size: 26))),
+        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime.now()); }, child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.center_focus_strong, color: _c, size: 22))),
+        TapTile(onTap: _openDayEvents, child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.view_day, color: _c, size: 22))),
+        TapTile(onTap: _openClasses, child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.school, color: _c, size: 22))),
+        TapTile(onTap: () { HapticFeedback.lightImpact(); setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)); }, child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.chevron_right, color: _c, size: 26))),
       ]),
     );
   }
@@ -174,8 +190,6 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
 
   Widget _daysGrid(int firstWeekday, int totalCells, double w) {
     final weeks = totalCells ~/ 7;
-    // Grilla fija: cada semana ocupa 1/N de la altura disponible. Así el mes
-    // completo (incluso con 6 semanas) se ve SIEMPRE entero, sin recortar abajo.
     return Column(
       children: List.generate(weeks, (wi) {
         return Expanded(
@@ -196,11 +210,10 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
       if (dayNum < 1) {
         final prevMonthDay =
             DateTime(_focusedDay.year, _focusedDay.month, 0).day + dayNum;
-        return _dayCell(prevMonthDay, _cDeep, isOutside: true, num: prevMonthDay);
+        return CalendarDayCell(day: prevMonthDay, isOutside: true);
       }
-      return _dayCell(0, Colors.transparent, isOutside: true, num: 0);
+      return const CalendarDayCell(day: 0, isOutside: true);
     }
-    final color = const Color(0xFF122433);
     final events =
         _getEventsForDay(DateTime(_focusedDay.year, _focusedDay.month, dayNum));
     final isToday = dayNum == DateTime.now().day &&
@@ -210,154 +223,20 @@ class _CalendarHomeScreenState extends State<CalendarHomeScreen> {
         dayNum == _selectedDay!.day &&
         _focusedDay.month == _selectedDay!.month &&
         _focusedDay.year == _selectedDay!.year;
-    return _dayCell(dayNum, color,
-        events: events, isToday: isToday, isSelected: isSelected);
+
+    return CalendarDayCell(
+      day: dayNum,
+      events: events,
+      isToday: isToday,
+      isSelected: isSelected,
+      onTap: () {
+        setState(() => _selectedDay = DateTime(_focusedDay.year, _focusedDay.month, dayNum));
+      },
+    );
   }
 
   int get _daysInSelectedMonth =>
       DateTime(_focusedDay.year, _focusedDay.month + 1, 0).day;
-
-  Widget _dayCell(int day, Color bg, {List<Schedule>? events, bool isToday = false, bool isSelected = false, bool isOutside = false, int num = 0}) {
-    if (day == 0) return const SizedBox.shrink();
-    final hasEvents = events != null && events.isNotEmpty;
-
-    // Minimalista: celda neutra; hoy = borde acento; seleccionado = acento lleno.
-    final Color cellBg;
-    if (isOutside) {
-      cellBg = const Color(0xFF0B1620);
-    } else if (isSelected) {
-      cellBg = _c;
-    } else if (isToday) {
-      cellBg = const Color(0xFF0E2A38);
-    } else {
-      cellBg = const Color(0xFF122433);
-    }
-
-    final Color textColor;
-    if (isSelected) {
-      textColor = _dark;
-    } else if (isToday) {
-      textColor = _c;
-    } else if (isOutside) {
-      textColor = _white.withValues(alpha: 0.25);
-    } else {
-      textColor = _white.withValues(alpha: 0.75);
-    }
-
-    return GestureDetector(
-      onTap: () {
-        if (!isOutside) {
-          HapticFeedback.selectionClick();
-          setState(() => _selectedDay = DateTime(_focusedDay.year, _focusedDay.month, day));
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: cellBg,
-          borderRadius: BorderRadius.circular(10),
-          border: isSelected
-              ? Border.all(color: _c, width: 2)
-              : (isToday ? Border.all(color: _c, width: 1.6) : null),
-        ),
-        child: Stack(children: [
-          Center(child: Text('$day', style: GoogleFonts.bangers(color: textColor, fontSize: 13))),
-          if (hasEvents)
-            Positioned(
-              bottom: 3,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Class events: use each class's color
-                  ...events
-                      .where((e) => e.type == 'Clase')
-                      .take(3)
-                      .map((e) => Container(
-                            width: 4,
-                            height: 4,
-                            margin: const EdgeInsets.symmetric(horizontal: 1),
-                            decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle),
-                          )),
-                  // Non‑class events: keep existing behavior
-                  ...events
-                      .where((e) => e.type != 'Clase')
-                      .take(3)
-                      .map((e) => Container(
-                            width: 4,
-                            height: 4,
-                            margin: const EdgeInsets.symmetric(horizontal: 1),
-                            decoration: BoxDecoration(color: Color(e.color), shape: BoxShape.circle),
-                          )),
-                ],
-              ),
-            ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _upcomingBlock(double w, double h) {
-    final upcoming = context.watch<ScheduleProvider>().schedules
-        .where((s) => s.type != 'Clase' && s.date.isAfter(DateTime.now().subtract(const Duration(days: 1))))
-        .toList()..sort((a, b) => a.date.compareTo(b.date));
-
-    return Positioned(
-      left: w * 0.03, top: h * 0.54, width: w * 0.94, height: h * 0.40,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(' Proximos', style: GoogleFonts.bangers(color: _c, fontSize: 14)),
-        const SizedBox(height: 4),
-        Expanded(
-          child: upcoming.isEmpty
-              ? Center(child: Text('Sin eventos', style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.3), fontSize: 12)))
-              : ListView.builder(
-                  itemCount: upcoming.length,
-                  itemBuilder: (context, i) {
-                    final e = upcoming[i];
-                    final dateStr = '${e.date.day}/${e.date.month}';
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 5),
-                      child: GestureDetector(
-                        onTap: () => _editSchedule(e),
-                        onLongPress: () => _deleteSchedule(e),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: _cDeep,
-                            border: Border.all(color: _cDeep, width: 2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(color: Color(e.color), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(e.color), width: 2)),
-                              child: Text(dateStr, style: GoogleFonts.bangers(color: _dark, fontWeight: FontWeight.bold, fontSize: 10)),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(e.title, style: GoogleFonts.bangers(color: _white, fontSize: 11, fontWeight: FontWeight.bold)),
-                              Text('${e.startTime}-${e.endTime} ${e.location}', style: GoogleFonts.bangers(color: _white.withValues(alpha: 0.4), fontSize: 8)),
-                            ])),
-                            Icon(Icons.chevron_right, color: _white.withValues(alpha: 0.3), size: 16),
-                          ]),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ]),
-    );
-  }
-
-  void _deleteSchedule(Schedule s) async {
-    if (s.id == null) return;
-    HapticFeedback.heavyImpact();
-    await context.read<ScheduleProvider>().deleteSchedule(s.id!);
-    _loadData();
-  }
 
   Widget _addBtn(double w, double h) {
     return Positioned(

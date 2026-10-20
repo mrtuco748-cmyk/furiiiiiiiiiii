@@ -321,3 +321,54 @@ entregaba; el bloqueo era del JID destino, no de las claves de cifrado.
 
 Los logs de fondo mostraban errores `failed to decrypt message` (inofensivos,
 mensajes de estado) — no eran la causa.
+
+
+## mini-furi-bot (Servicio en Render)
+
+- **Repositorio**: `mrtuco748-cmyk/mini-furi-bot`
+- **Cuenta Render**: `derrame_company@yahoo.com` (Workspace: `My Workspace` / Proyecto `FURI`)
+- **Servicio ID**: `srv-dbbrd8nf3r2c739pc8n0`
+- **URL activa**: `https://mini-furi-bot-rsl6.onrender.com`
+- **Runtime**: Node.js v22 (v22.23.3) — Requerido para compatibilidad con `@supabase/supabase-js` WebSocket nativo.
+- **Endpoints**:
+  - `GET /` -> Health check (responde `mini-furi-bot online`, status 200)
+  - `GET /estado` -> Diagnóstico JSON (estado de socket WhatsApp, sesión de Supabase, LIDs, ticks)
+  - `POST /tick` -> Ejecuta el ciclo de comprobación de recordatorios (requiere header `x-tick-secret: $TICK_SECRET`)
+- **Variables de Entorno configuradas**:
+  - `BOT_ID`: `mini-furi`
+  - `BOT_NUMERO`: `5493786499129`
+  - `FACU_NUMERO`: `5493786614189`
+  - `ROCIO_NUMERO`: `5493786513637`
+  - `SUPABASE_URL`: `https://nruyjpvoplkilcxqnees.supabase.co`
+  - `SUPABASE_KEY`: `[CONFIGURADO_EN_RENDER]`
+  - `GROQ_API_KEY`: `[CONFIGURADO_EN_RENDER]`
+  - `GEMINI_API_KEY`: `[CONFIGURADO_EN_RENDER]`
+  - `SPOONACULAR_API_KEY`: `[CONFIGURADO_EN_RENDER]`
+  - `TICK_MODE`: `http`
+  - `TICK_SECRET`: `[CONFIGURADO_EN_RENDER]`
+  - `NODE_VERSION`: `22`
+
+
+## furi-notification-bot (Despachador Push FCM en Render)
+
+- **Repositorio**: `mrtuco748-cmyk/furi-notification-bot`
+- **Cuenta Render**: `derrame_company@yahoo.com` (Workspace: `My Workspace` / Proyecto `FURI`)
+- **Servicio ID**: `srv-dbbs81g473hc73cbqkf0`
+- **Función**: Despachador en la nube de notificaciones push de alta prioridad vía **Firebase Cloud Messaging (FCM v1)** para celulares Android.
+- **Modo de Operación**: 
+  - Escucha en tiempo real cambios en la tabla `messages` vía Supabase Realtime para notificar al destinatario inmediatamente.
+  - Expone `POST /api/send-push` para envíos directos desde clientes o Edge Functions.
+  - WhatsApp desactivado en este servicio (`ENABLE_WHATSAPP=false`) para evitar conflictos de sesión con `mini-furi-bot`.
+- **Endpoints**:
+  - `GET /` -> Estado general del despachador
+  - `GET /ping` -> Health check y Keep-Alive (responde `pong: true`)
+  - `POST /api/send-push` -> Despacho manual de push notification con payload `{ user_id, title, body, data }`
+  - `POST /api/mark-delivered` -> Confirmación de entrega
+  - `GET /estado` -> Diagnóstico del servicio y memoria
+- **Variables de Entorno**:
+  - `NODE_VERSION`: `22`
+  - `PORT`: `10000`
+  - `SUPABASE_URL`: `https://nruyjpvoplkilcxqnees.supabase.co`
+  - `SUPABASE_KEY`: `[CONFIGURADO_EN_RENDER]`
+  - `FIREBASE_SERVICE_ACCOUNT`: Credenciales completas del Service Account de Firebase (`furi-7cf63`)
+  - `ENABLE_WHATSAPP`: `false`

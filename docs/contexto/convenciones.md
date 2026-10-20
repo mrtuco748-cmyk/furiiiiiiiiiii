@@ -43,7 +43,7 @@
 > **NO QUIERO BORDES EN NINGÚN LADO. CADA COSA DEBE TENER UN SOLO COLOR Y TONO. NADA DE RELLENOS Y BORDES DE DISTINTO COLOR. UN SOLO COLOR Y SIN BORDES: BLOQUES DE LITERALMENTE UN SOLO COLOR Y TONALIDAD CADA UNO, EXACTAMENTE COMO SE VE EN EL INICIO.**
 
 ```dart
-// Referencia: skill_visual .md
+// Referencia: docs/skill_visual.md
 // Colores base
 Color fondoBase = const Color(0xFF141414);
 Color textoPrincipal = const Color(0xFFFFFFFF);

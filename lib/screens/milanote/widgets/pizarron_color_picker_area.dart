@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/note_style_config.dart';
+import '../painters/saturation_value_painter.dart';
+import 'pizarron_hue_bar.dart';
 
 /// Selector de color completo para el Pizarrón:
 /// 1. Cuadrado 2D de Saturación y Brillo (permite cualquier color con cualquier saturación).
@@ -65,13 +67,6 @@ class _PizarronColorPickerAreaState extends State<PizarronColorPickerArea> {
     _notifyColor();
   }
 
-  void _updateHueFromOffset(Offset local, double width) {
-    setState(() {
-      _hue = ((local.dx / width) * 360.0).clamp(0.0, 360.0);
-    });
-    _notifyColor();
-  }
-
   void _selectHex(String hex) {
     setState(() {
       _syncFromHex(hex);
@@ -113,13 +108,11 @@ class _PizarronColorPickerAreaState extends State<PizarronColorPickerArea> {
                   height: boxHeight,
                   child: Stack(
                     children: [
-                      // Fondo del cuadrado HSV
                       Positioned.fill(
                         child: CustomPaint(
-                          painter: _SaturationValuePainter(hue: _hue),
+                          painter: SaturationValuePainter(hue: _hue),
                         ),
                       ),
-                      // Indicador circular de la saturación/brillo actual
                       Positioned(
                         left: thumbX - 9,
                         top: thumbY - 9,
@@ -153,106 +146,16 @@ class _PizarronColorPickerAreaState extends State<PizarronColorPickerArea> {
         const SizedBox(height: 10),
 
         // 2. Barra de Tono (Hue) + Botón de Cuentagotas
-        Row(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final sliderWidth = constraints.maxWidth;
-                    const sliderHeight = 22.0;
-                    final thumbX =
-                        ((_hue / 360.0) * sliderWidth).clamp(7.0, sliderWidth - 7.0);
-
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onPanDown: (d) =>
-                          _updateHueFromOffset(d.localPosition, sliderWidth),
-                      onPanUpdate: (d) =>
-                          _updateHueFromOffset(d.localPosition, sliderWidth),
-                      child: SizedBox(
-                        width: sliderWidth,
-                        height: sliderHeight,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Color(0xFFFF0000),
-                                      Color(0xFFFFFF00),
-                                      Color(0xFF00FF00),
-                                      Color(0xFF00FFFF),
-                                      Color(0xFF0000FF),
-                                      Color(0xFFFF00FF),
-                                      Color(0xFFFF0000),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            // Indicador del tono actual
-                            Positioned(
-                              left: thumbX - 7,
-                              top: 2,
-                              child: IgnorePointer(
-                                child: Container(
-                                  width: 14,
-                                  height: 18,
-                                  decoration: BoxDecoration(
-                                    color: HSVColor.fromAHSV(1.0, _hue, 1.0, 1.0)
-                                        .toColor(),
-                                    borderRadius: BorderRadius.circular(5),
-                                    border: Border.all(
-                                        color: Colors.white, width: 2.0),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x66000000),
-                                        blurRadius: 3,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Botón Cuentagotas
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _eyedropperOpen = !_eyedropperOpen;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: _eyedropperOpen
-                      ? const Color(0xFF2EE50F)
-                      : const Color(0xFF252C40),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.colorize_rounded,
-                  size: 18,
-                  color: _eyedropperOpen
-                      ? const Color(0xFF141820)
-                      : Colors.white,
-                ),
-              ),
-            ),
-          ],
+        PizarronHueBar(
+          hue: _hue,
+          onHueChanged: (newHue) {
+            setState(() => _hue = newHue);
+            _notifyColor();
+          },
+          eyedropperOpen: _eyedropperOpen,
+          onToggleEyedropper: () {
+            setState(() => _eyedropperOpen = !_eyedropperOpen);
+          },
         ),
 
         // Cuentagotas desplegado: Muestrario de colores presentes en la nota y tablero
@@ -338,39 +241,4 @@ class _PizarronColorPickerAreaState extends State<PizarronColorPickerArea> {
       ],
     );
   }
-}
-
-class _SaturationValuePainter extends CustomPainter {
-  final double hue;
-
-  _SaturationValuePainter({required this.hue});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final baseColor = HSVColor.fromAHSV(1.0, hue, 1.0, 1.0).toColor();
-
-    // 1. Color base según el tono
-    canvas.drawRect(rect, Paint()..color = baseColor);
-
-    // 2. Gradiente horizontal blanco a transparente (Saturación)
-    final whiteShader = const LinearGradient(
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
-      colors: [Colors.white, Color(0x00FFFFFF)],
-    ).createShader(rect);
-    canvas.drawRect(rect, Paint()..shader = whiteShader);
-
-    // 3. Gradiente vertical transparente a negro (Brillo/Valor)
-    final blackShader = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [Color(0x00000000), Colors.black],
-    ).createShader(rect);
-    canvas.drawRect(rect, Paint()..shader = blackShader);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SaturationValuePainter oldDelegate) =>
-      oldDelegate.hue != hue;
 }

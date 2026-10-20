@@ -4,31 +4,32 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../app_state.dart';
-import '../../models/workout_challenge.dart';
 import '../../models/workout_log.dart';
 import '../../models/workout_routine.dart';
-import '../../models/workout_stats.dart';
-import '../../providers/workout_provider.dart';
 import '../../providers/rewards_provider.dart';
+import '../../providers/workout_provider.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/brutal_style.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../../widgets/tap_tile.dart';
-import '../../widgets/brutal_style.dart';
-import '../../theme/app_theme.dart';
 import 'ejercicios_style.dart';
-import 'widgets/common.dart';
-import 'widgets/hoy_tab.dart';
+import 'widgets/challenge_detail_sheet.dart';
+import 'widgets/challenge_form_dialogs.dart';
+import 'widgets/ejercicios_header.dart';
 import 'widgets/ejercicios_tab.dart';
-import 'widgets/retos_tab.dart';
-import 'widgets/stats_tab.dart';
-import 'widgets/improvement_block.dart';
-import 'widgets/comments_block.dart';
 import 'widgets/exercise_sheet.dart';
-import '../../models/exercise_catalog.dart';
+import 'widgets/hoy_tab.dart';
+import 'widgets/log_detail_sheet.dart';
+import 'widgets/new_routine_dialog.dart';
+import 'widgets/retos_tab.dart';
+import 'widgets/routine_detail_sheet.dart';
+import 'widgets/stats_tab.dart';
 
 class EjerciciosScreen extends StatefulWidget {
   final AppMode mode;
   final int initialTab;
   final bool isPopup;
+
   const EjerciciosScreen({
     super.key,
     required this.mode,
@@ -50,6 +51,43 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<WorkoutProvider>().load();
     });
+  }
+
+  Future<void> _toggleDay(DateTime day) async {
+    HapticFeedback.lightImpact();
+    final pv = context.read<WorkoutProvider>();
+    final rewards = context.read<RewardsProvider>();
+    final wasDone = pv.completedByUser(day, pv.myId);
+    await pv.toggleCompletion(userId: pv.myId, date: day);
+    if (!wasDone) {
+      final ds =
+          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      rewards.awardOnce(pv.myId, 'workout-$ds', 2);
+    }
+  }
+
+  Future<void> _dialogNewLog({RoutineItem? prefill, WorkoutLog? existing, DateTime? day}) async {
+    final pv = context.read<WorkoutProvider>();
+    await ExerciseSheet.show(
+      context,
+      existing: existing,
+      prefillName: prefill?.exerciseName,
+      prefillSeries: prefill?.series,
+      prefillReps: prefill?.reps,
+      prefillWeight: prefill?.weight,
+      prefillRest: prefill?.restSeconds,
+      day: day,
+      onSave: (log) async {
+        if (existing != null && existing.id != null) {
+          await pv.updateLog(log);
+        } else {
+          await pv.addLog(log);
+        }
+      },
+      onDelete: (existing != null && existing.id != null)
+          ? () => pv.deleteLog(existing.id!)
+          : null,
+    );
   }
 
   @override
@@ -77,8 +115,20 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                      _header(w, h),
-                      if (!widget.isPopup) _tabs(w, h),
+                      EjerciciosHeader(
+                        w: w,
+                        h: h,
+                        tab: _tab,
+                        isPopup: widget.isPopup,
+                        onPop: () => Navigator.of(context).maybePop(),
+                      ),
+                      if (!widget.isPopup)
+                        EjerciciosTabsBar(
+                          w: w,
+                          h: h,
+                          currentTab: _tab,
+                          onTabSelected: (idx) => setState(() => _tab = idx),
+                        ),
                       Expanded(child: _body(w, h)),
                     ],
                   ),
@@ -92,139 +142,6 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     );
   }
 
-  // ─── HEADER Y TABS ───────────────────────────────────────────
-
-  Widget _header(double w, double h) {
-    final Color headerColor;
-    final IconData headerIcon;
-    final String headerTitle;
-    if (widget.isPopup) {
-      switch (_tab) {
-        case 0:
-          headerColor = EjerciciosStyle.lime;
-          headerIcon = Icons.today;
-          headerTitle = 'HOY';
-          break;
-        case 1:
-          headerColor = EjerciciosStyle.cyan;
-          headerIcon = Icons.fitness_center;
-          headerTitle = 'EJERCICIOS';
-          break;
-        case 2:
-          headerColor = EjerciciosStyle.yellow;
-          headerIcon = Icons.emoji_events;
-          headerTitle = 'RETOS';
-          break;
-        default:
-          headerColor = EjerciciosStyle.pink;
-          headerIcon = Icons.bar_chart;
-          headerTitle = 'ESTADÍSTICAS';
-          break;
-      }
-    } else {
-      headerColor = EjerciciosStyle.lime;
-      headerIcon = Icons.fitness_center;
-      headerTitle = 'EJERCICIOS';
-    }
-
-    return Container(
-      height: h * 0.075,
-      margin: EdgeInsets.all(w * 0.02),
-      decoration: EjerciciosStyle.panelDeco(
-        color: headerColor,
-        radius: 18,
-        bw: 3,
-      ),
-      child: Row(
-        children: [
-          TapTile(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Icon(
-                widget.isPopup ? Icons.close : Icons.arrow_back,
-                color: EjerciciosStyle.darkText,
-                size: 26,
-              ),
-            ),
-          ),
-          Icon(headerIcon, color: EjerciciosStyle.darkText, size: 24),
-          const SizedBox(width: 8),
-          Text(
-            headerTitle,
-            style: GoogleFonts.bangers(
-              color: EjerciciosStyle.darkText,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const Spacer(),
-          const SizedBox(width: 10),
-        ],
-      ),
-    );
-  }
-
-  Widget _tabs(double w, double h) {
-    final tabs = [
-      (Icons.today, 'HOY'),
-      (Icons.fitness_center, 'EJERCICIOS'),
-      (Icons.flag, 'RETOS'),
-      (Icons.bar_chart, 'STATS'),
-    ];
-    return Container(
-      height: h * 0.055,
-      margin: EdgeInsets.symmetric(horizontal: w * 0.02),
-      child: Row(
-        children: [
-          for (var i = 0; i < tabs.length; i++) ...[
-            Expanded(child: _tabBtn(tabs[i].$1, tabs[i].$2, i)),
-            if (i < tabs.length - 1) SizedBox(width: w * 0.012),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _tabBtn(IconData icon, String label, int index) {
-    final selected = _tab == index;
-    return TapTile(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() => _tab = index);
-      },
-      child: Container(
-        decoration: EjerciciosStyle.panelDeco(
-          color: selected ? EjerciciosStyle.lime : EjerciciosStyle.panel,
-          radius: 12,
-          bw: 2,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                color: selected ? EjerciciosStyle.darkText : EjerciciosStyle.white,
-                size: 16),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.bangers(
-                  color: selected ? EjerciciosStyle.darkText : EjerciciosStyle.white,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─── BODY ────────────────────────────────────────────────────
-
   Widget _body(double w, double h) {
     final pv = context.watch<WorkoutProvider>();
     if (pv.loading) {
@@ -235,13 +152,57 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     }
     switch (_tab) {
       case 0:
-        return _hoyTab(w, h, pv);
+        return HoyTab(
+          w: w,
+          h: h,
+          pv: pv,
+          myStreak: pv.myStreak,
+          partnerStreak: pv.partnerStreak,
+          partnerName: AppState.identity == 'Facu' ? 'Rocio' : 'Facu',
+          onAssignRoutine: (dow) => dialogNewRoutine(context, pv, dayOfWeek: dow),
+          onEditRoutine: (routine) => showRoutineDetailSheet(
+            context: context,
+            routine: routine,
+            pv: pv,
+            onPromptItem: () => promptRoutineItem(context, pv),
+          ),
+          onToggleDay: _toggleDay,
+          onLogPrefill: (item, day) => _dialogNewLog(prefill: item, day: day),
+        );
       case 1:
-        return _ejerciciosTab(w, h, pv);
+        return EjerciciosTab(
+          w: w,
+          h: h,
+          pv: pv,
+          onLogTap: (log) => showLogDetailSheet(
+            context: context,
+            log: log,
+            pv: pv,
+            onPrefill: (prefill) => _dialogNewLog(prefill: prefill),
+            onEdit: (existing) => _dialogNewLog(existing: existing),
+          ),
+          onLogLongPress: (log) => sheetReactions(
+            context,
+            (key) => pv.toggleLogReaction(log.id!, key),
+          ),
+        );
       case 2:
-        return _retosTab(w, h, pv);
+        return RetosTab(
+          w: w,
+          h: h,
+          pv: pv,
+          onChallengeTap: (c) => showChallengeDetailSheet(
+            context: context,
+            challenge: c,
+            pv: pv,
+          ),
+          onChallengeLongPress: (c) => sheetReactions(
+            context,
+            (key) => pv.toggleChallengeReaction(c.id!, key),
+          ),
+        );
       default:
-        return _statsTab(w, h, pv);
+        return StatsTab(w: w, h: h, pv: pv);
     }
   }
 
@@ -282,65 +243,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
     );
   }
 
-  // ─── TABS ────────────────────────────────────────────────────
-
-  Widget _hoyTab(double w, double h, WorkoutProvider pv) {
-    return HoyTab(
-      w: w,
-      h: h,
-      pv: pv,
-      myStreak: pv.myStreak,
-      partnerStreak: pv.partnerStreak,
-      partnerName: AppState.identity == 'Facu' ? 'Rocio' : 'Facu',
-      onAssignRoutine: (dow) => _dialogNewRoutine(dayOfWeek: dow),
-      onEditRoutine: _sheetEditRoutine,
-      onToggleDay: _toggleDay,
-      onLogPrefill: (item, day) => _dialogNewLog(prefill: item, day: day),
-    );
-  }
-
-  Future<void> _toggleDay(DateTime day) async {
-    HapticFeedback.lightImpact();
-    final pv = context.read<WorkoutProvider>();
-    final rewards = context.read<RewardsProvider>();
-    final wasDone = pv.completedByUser(day, pv.myId);
-    await pv.toggleCompletion(userId: pv.myId, date: day);
-    if (!wasDone) {
-      final ds =
-          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-      rewards.awardOnce(pv.myId, 'workout-$ds', 2);
-    }
-  }
-
-  Widget _ejerciciosTab(double w, double h, WorkoutProvider pv) {
-    return EjerciciosTab(
-      w: w,
-      h: h,
-      pv: pv,
-      onLogTap: (log) => _sheetLogDetail(log, pv),
-      onLogLongPress: (log) =>
-          _sheetReactions((key) => pv.toggleLogReaction(log.id!, key)),
-    );
-  }
-
-  Widget _retosTab(double w, double h, WorkoutProvider pv) {
-    return RetosTab(
-      w: w,
-      h: h,
-      pv: pv,
-      onChallengeTap: (c) => _sheetChallengeDetail(c, pv),
-      onChallengeLongPress: (c) =>
-          _sheetReactions((key) => pv.toggleChallengeReaction(c.id!, key)),
-    );
-  }
-
-  Widget _statsTab(double w, double h, WorkoutProvider pv) {
-    return StatsTab(w: w, h: h, pv: pv);
-  }
-
-  // ─── FAB ─────────────────────────────────────────────────────
-
   Widget _fab(double w, double h) {
+    final pv = context.read<WorkoutProvider>();
     return Positioned(
       right: w * 0.05,
       bottom: h * 0.04,
@@ -348,11 +252,11 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
         onTap: () {
           HapticFeedback.lightImpact();
           if (_tab == 0) {
-            _dialogNewRoutine();
+            dialogNewRoutine(context, pv);
           } else if (_tab == 1) {
             _dialogNewLog();
           } else {
-            _dialogNewChallenge();
+            dialogNewChallenge(context, pv);
           }
         },
         child: Container(
@@ -368,1023 +272,4 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
       ),
     );
   }
-
-  // ─── DIALOGS ─────────────────────────────────────────────────
-
-  Future<void> _dialogNewLog({RoutineItem? prefill, WorkoutLog? existing, DateTime? day}) async {
-    final pv = context.read<WorkoutProvider>();
-    await ExerciseSheet.show(
-      context,
-      existing: existing,
-      prefillName: prefill?.exerciseName,
-      prefillSeries: prefill?.series,
-      prefillReps: prefill?.reps,
-      prefillWeight: prefill?.weight,
-      prefillRest: prefill?.restSeconds,
-      day: day,
-      onSave: (log) async {
-        if (existing != null && existing.id != null) {
-          await pv.updateLog(log);
-        } else {
-          await pv.addLog(log);
-        }
-      },
-      onDelete: (existing != null && existing.id != null)
-          ? () => pv.deleteLog(existing.id!)
-          : null,
-    );
-  }
-
-  /// Chips de la biblioteca de ejercicios (catalogados + registrados).
-  Widget _libraryChips(WorkoutProvider pv, TextEditingController ctrl) {
-    final names = {
-      ...WorkoutStats.distinctExerciseNames(pv.logs),
-      for (final g in ExerciseCatalog.groups) ...ExerciseCatalog.exercisesFor(g),
-    }.toList();
-    if (names.isEmpty) return const SizedBox.shrink();
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: names.take(18).map((n) {
-        final active = ctrl.text.trim() == n;
-        return TapTile(
-          onTap: () { HapticFeedback.selectionClick(); ctrl.text = n; },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: EjerciciosStyle.panelDeco(
-              color: active ? EjerciciosStyle.lime : EjerciciosStyle.field,
-              radius: 10,
-              bw: 1.5,
-            ),
-            child: Text(
-              n,
-              style: GoogleFonts.bangers(
-                color: active ? EjerciciosStyle.darkText : EjerciciosStyle.white,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Future<void> _dialogNewRoutine({int? dayOfWeek}) async {
-    final pv = context.read<WorkoutProvider>();
-    final nameCtrl = TextEditingController();
-    final items = <RoutineItem>[];
-    final result = await showDialog<({String name, List<RoutineItem> items})>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          RoutineItem fromLibrary(String n) {
-            WorkoutLog? last;
-            for (final l in pv.logs) {
-              if (l.exerciseName != n) continue;
-              if (last == null || l.loggedOn.isAfter(last.loggedOn)) last = l;
-            }
-            return RoutineItem(
-              exerciseName: n,
-              series: last?.series,
-              reps: last?.reps,
-              weight: last?.weight,
-              restSeconds: last?.restSeconds,
-            );
-          }
-
-          final names = WorkoutStats.distinctExerciseNames(pv.logs);
-          return AlertDialog(
-            backgroundColor: EjerciciosStyle.panel,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            title: const Icon(Icons.fitness_center, color: EjerciciosStyle.cyan, size: 30),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _field(nameCtrl,
-                      dayOfWeek != null
-                          ? 'Rutina del ${EjerciciosStyle.dayNames[dayOfWeek - 1]} *'
-                          : 'Nombre de la rutina *',
-                      autofocus: true),
-                  if (names.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text('Biblioteca (toca para agregar)',
-                        style: GoogleFonts.bangers(
-                            color: EjerciciosStyle.white.withValues(alpha: 0.6), fontSize: 11)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: names.take(12).map((n) => TapTile(
-                            onTap: () => setLocal(() => items.add(fromLibrary(n))),
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: EjerciciosStyle.panelLight,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(n,
-                                  style: GoogleFonts.bangers(
-                                      color: EjerciciosStyle.white, fontSize: 11)),
-                            ),
-                          )).toList(),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  for (final it in items)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: EjerciciosStyle.panelLight,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(children: [
-                          Expanded(
-                            child: Text(it.exerciseName,
-                                style: GoogleFonts.bangers(
-                                    color: EjerciciosStyle.white, fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
-                          ),
-                          Text(_itemSummary(it),
-                              style: GoogleFonts.bangers(
-                                  color: EjerciciosStyle.cyan, fontSize: 11)),
-                          TapTile(
-                            onTap: () => setLocal(() => items.remove(it)),
-                            child: const Padding(
-                              padding: EdgeInsets.only(left: 6),
-                              child: Icon(Icons.close, color: EjerciciosStyle.red, size: 16),
-                            ),
-                          ),
-                        ]),
-                      ),
-                    ),
-                  const SizedBox(height: 4),
-                  TapTile(
-                    onTap: () async {
-                      final item = await _promptItem();
-                      if (item != null && mounted) {
-                        setLocal(() => items.add(item));
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: EjerciciosStyle.panelLight,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Center(
-                          child: Icon(Icons.add, color: EjerciciosStyle.cyan, size: 20)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TapTile(
-                onTap: () => Navigator.pop(ctx),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: EjerciciosStyle.panelLight,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
-                ),
-              ),
-              TapTile(
-                onTap: () {
-                  if (nameCtrl.text.trim().isEmpty) return;
-                  Navigator.pop(
-                      ctx,
-                      (name: nameCtrl.text.trim(),
-                          items: List<RoutineItem>.of(items)));
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: EjerciciosStyle.cyan,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.check, color: EjerciciosStyle.darkText, size: 20),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    if (result == null) return;
-    if (!mounted) return;
-    await pv.addRoutine(WorkoutRoutine(
-      name: result.name,
-      dayOfWeek: dayOfWeek,
-      items: result.items,
-    ));
-  }
-
-  String _itemSummary(RoutineItem it) {
-    final seriesTxt =
-        it.series != null && it.reps != null ? '${it.series}x${it.reps}' : '';
-    final w = it.weight;
-    final weightTxt = w == null
-        ? ''
-        : (w == w.roundToDouble() ? '${w.round()}kg' : '${w}kg');
-    return [seriesTxt, weightTxt].where((s) => s.isNotEmpty).join(' @ ');
-  }
-
-  Future<void> _dialogNewChallenge() async {
-    final titleCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => _formDialog(
-        title: 'Nuevo reto',
-        fields: [
-          _field(titleCtrl, 'Título *', autofocus: true),
-          _field(descCtrl, 'Descripción'),
-        ],
-        onOk: () => titleCtrl.text.trim().isNotEmpty,
-      ),
-    );
-    if (saved != true) return;
-    if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
-    await pv.addChallenge(WorkoutChallenge(
-      title: titleCtrl.text.trim(),
-      description: _orNull(descCtrl.text.trim()),
-    ));
-  }
-
-  Widget _formDialog({
-    required String title,
-    required List<Widget> fields,
-    required bool Function() onOk,
-  }) {
-    return AlertDialog(
-      backgroundColor: EjerciciosStyle.panel,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      title: Row(
-        children: [
-          const Icon(Icons.fitness_center, color: EjerciciosStyle.cyan, size: 22),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: GoogleFonts.bangers(
-              color: EjerciciosStyle.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: fields,
-        ),
-      ),
-      actions: [
-        TapTile(
-          onTap: () => Navigator.pop(context, false),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: EjerciciosStyle.panelLight,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
-          ),
-        ),
-        TapTile(
-          onTap: () {
-            if (onOk()) {
-              Navigator.pop(context, true);
-            } else {
-              HapticFeedback.heavyImpact();
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: EjerciciosStyle.cyan,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.check, color: EjerciciosStyle.darkText, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _field(TextEditingController ctrl, String hint,
-      {bool autofocus = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
-        controller: ctrl,
-        autofocus: autofocus,
-        style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-        decoration: EjerciciosStyle.inputDeco(hint),
-      ),
-    );
-  }
-
-  Widget _numField(TextEditingController ctrl, String hint) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
-        controller: ctrl,
-        keyboardType: TextInputType.number,
-        style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-        decoration: EjerciciosStyle.inputDeco(hint),
-      ),
-    );
-  }
-
-  Widget _decimalField(TextEditingController ctrl, String hint) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
-        controller: ctrl,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-        decoration: EjerciciosStyle.inputDeco(hint),
-      ),
-    );
-  }
-
-  // ─── SHEET: EDITAR RUTINA ────────────────────────────────────
-
-  void _sheetEditRoutine(WorkoutRoutine routine) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EjerciciosStyle.panel,
-      barrierColor: Colors.black26,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final pv = ctx.read<WorkoutProvider>();
-            final live = pv.routines.firstWhere(
-              (r) => r.id == routine.id,
-              orElse: () => routine,
-            );
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        live.name,
-                        style: GoogleFonts.bangers(
-                          color: EjerciciosStyle.cyan,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Spacer(),
-                      TapTile(
-                        onTap: () => Navigator.pop(ctx),
-                        child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 22),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        for (var i = 0; i < live.items.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    live.items[i].exerciseName,
-                                    style: GoogleFonts.bangers(
-                                      color: EjerciciosStyle.white,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                                TapTile(
-                                  onTap: () async {
-                                    final removed = live.removeItem(i);
-                                    await pv.updateRoutine(removed);
-                                    setSheetState(() {});
-                                  },
-                                  child: const Icon(Icons.close,
-                                      color: EjerciciosStyle.red, size: 18),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TapTile(
-                    onTap: () =>
-                        _dialogRoutineItem(routine, () => setSheetState(() {})),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: EjerciciosStyle.cyan,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.add, color: EjerciciosStyle.darkText, size: 22),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TapTile(
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _confirmDeleteRoutine(routine);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: EjerciciosStyle.red,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.delete_outline,
-                          color: EjerciciosStyle.white, size: 22),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<RoutineItem?> _promptItem() async {
-    final pv = context.read<WorkoutProvider>();
-    final nameCtrl = TextEditingController();
-    final seriesCtrl = TextEditingController();
-    final repsCtrl = TextEditingController();
-    final weightCtrl = TextEditingController();
-    final restCtrl = TextEditingController();
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => _formDialog(
-        title: 'Agregar ejercicio',
-        fields: [
-          _libraryChips(pv, nameCtrl),
-          const SizedBox(height: 6),
-          _field(nameCtrl, 'Nombre *', autofocus: true),
-          _numField(seriesCtrl, 'Series'),
-          _numField(repsCtrl, 'Reps'),
-          _decimalField(weightCtrl, 'Peso (kg)'),
-          _numField(restCtrl, 'Descanso (seg)'),
-        ],
-        onOk: () => nameCtrl.text.trim().isNotEmpty,
-      ),
-    );
-    if (saved != true) return null;
-    if (!mounted) return null;
-    final name = nameCtrl.text.trim();
-    if (name.isEmpty) return null;
-    return RoutineItem(
-      exerciseName: name,
-      series: _parseInt(seriesCtrl.text),
-      reps: _parseInt(repsCtrl.text),
-      weight: _parseDouble(weightCtrl.text),
-      restSeconds: _parseInt(restCtrl.text),
-    );
-  }
-
-  Future<void> _dialogRoutineItem(
-      WorkoutRoutine routine, void Function() refresh) async {
-    final item = await _promptItem();
-    if (item == null) return;
-    if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
-    final live = pv.routines.firstWhere(
-      (r) => r.id == routine.id,
-      orElse: () => routine,
-    );
-    await pv.updateRoutine(live.addItem(item));
-    refresh();
-  }
-
-  Future<void> _confirmDeleteRoutine(WorkoutRoutine routine) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: EjerciciosStyle.panel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        title: const Icon(Icons.delete_forever, color: EjerciciosStyle.red, size: 36),
-        content: Text(
-          '¿Eliminar la rutina "${routine.name}"?',
-          style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-        ),
-        actions: [
-          TapTile(
-            onTap: () => Navigator.pop(ctx, false),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: EjerciciosStyle.panelLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
-            ),
-          ),
-          TapTile(
-            onTap: () => Navigator.pop(ctx, true),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: EjerciciosStyle.red,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.check, color: EjerciciosStyle.white, size: 20),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
-    if (routine.id != null) await pv.deleteRoutine(routine.id!);
-  }
-
-  // ─── SHEET: DETALLE DE LOG ───────────────────────────────────
-
-  void _sheetLogDetail(WorkoutLog log, WorkoutProvider pv) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EjerciciosStyle.panel,
-      barrierColor: Colors.black26,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final live = pv.logs.firstWhere(
-              (l) => l.id == log.id,
-              orElse: () => log,
-            );
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          live.exerciseName,
-                          style: GoogleFonts.bangers(
-                            color: EjerciciosStyle.cyan,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      TapTile(
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _dialogNewLog(
-                            prefill: RoutineItem(
-                              exerciseName: live.exerciseName,
-                              series: live.series,
-                              reps: live.reps,
-                              weight: live.weight,
-                              restSeconds: live.restSeconds,
-                              notes: live.notes,
-                            ),
-                          );
-                        },
-                        child: const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.trending_up, color: EjerciciosStyle.cyan, size: 20),
-                        ),
-                      ),
-                      if (live.id != null) ...[
-                        const SizedBox(width: 8),
-                        TapTile(
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            _dialogNewLog(existing: live);
-                          },
-                          child: const Icon(Icons.edit,
-                              color: Color(0xFF00D4FF), size: 20),
-                        ),
-                        const SizedBox(width: 8),
-                        TapTile(
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            _confirmDeleteLog(live);
-                          },
-                          child: const Icon(Icons.delete_outline,
-                              color: EjerciciosStyle.red, size: 20),
-                        ),
-                      ],
-                      const SizedBox(width: 8),
-                      TapTile(
-                        onTap: () => Navigator.pop(ctx),
-                        child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 22),
-                      ),
-                    ],
-                  ),
-                  if (live.summary.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        live.summary,
-                        style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 13),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  ReactionBar(
-                    live.social.reactions,
-                    (key) async {
-                      if (live.id == null) return;
-                      final ok = await pv.toggleLogReaction(live.id!, key);
-                      setSheetState(() {});
-                      if (!ok) {
-                        HapticFeedback.heavyImpact();
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ImprovementBlock(live: live, pv: pv),
-                          const SizedBox(height: 12),
-                          CommentsBlock(
-                            live.social.comments,
-                            (text) {
-                              if (live.id != null) {
-                                pv.addLogComment(live.id!, text);
-                              }
-                            },
-                            (commentId) {
-                              if (live.id != null) {
-                                pv.deleteLogComment(live.id!, commentId);
-                              }
-                            },
-                            () => setSheetState(() {}),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _confirmDeleteLog(WorkoutLog log) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: EjerciciosStyle.panel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        title: const Icon(Icons.delete_forever, color: EjerciciosStyle.red, size: 36),
-        content: Text(
-          '¿Eliminar "${log.exerciseName}"?',
-          style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-        ),
-        actions: [
-          TapTile(
-            onTap: () => Navigator.pop(ctx, false),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: EjerciciosStyle.panelLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
-            ),
-          ),
-          TapTile(
-            onTap: () => Navigator.pop(ctx, true),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: EjerciciosStyle.red,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.check, color: EjerciciosStyle.white, size: 20),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
-    if (log.id != null) await pv.deleteLog(log.id!);
-  }
-
-  // ─── SHEET: REACCIONES ───────────────────────────────────────
-
-  void _sheetReactions(Future<void> Function(String key) onReact) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EjerciciosStyle.panel,
-      barrierColor: Colors.black26,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Wrap(
-                    spacing: 10,
-                    children: [
-                      for (final emoji in EjerciciosStyle.defaultReactions)
-                        TapTile(
-                          onTap: () async {
-                            HapticFeedback.lightImpact();
-                            await onReact(emoji);
-                            setSheetState(() {});
-                          },
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 26),
-                          ),
-                        ),
-                      TapTile(
-                        onTap: () =>
-                            _customReactionDialog((key) async => onReact(key)),
-                        child: const Icon(Icons.add_reaction,
-                            color: EjerciciosStyle.cyan, size: 26),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _customReactionDialog(
-      Future<void> Function(String key) onReact) async {
-    final ctrl = TextEditingController();
-    final key = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: EjerciciosStyle.panel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLength: 10,
-          style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-          decoration: EjerciciosStyle.inputDeco('Reacción custom (max 10)'),
-        ),
-        actions: [
-          TapTile(
-            onTap: () => Navigator.pop(ctx),
-            child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
-          ),
-          TapTile(
-            onTap: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Icon(Icons.check, color: EjerciciosStyle.cyan, size: 20),
-          ),
-        ],
-      ),
-    );
-    if (key != null && key.isNotEmpty) await onReact(key);
-  }
-
-  // ─── SHEET: DETALLE DE RETO ──────────────────────────────────
-
-  void _sheetChallengeDetail(WorkoutChallenge c, WorkoutProvider pv) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EjerciciosStyle.panel,
-      barrierColor: Colors.black26,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final live = pv.challenges.firstWhere(
-              (ch) => ch.id == c.id,
-              orElse: () => c,
-            );
-            final mine = live.createdBy == pv.myId;
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          live.title,
-                          style: GoogleFonts.bangers(
-                            color: EjerciciosStyle.cyan,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (mine && live.id != null)
-                        TapTile(
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            _confirmDeleteChallenge(live);
-                          },
-                          child: const Icon(Icons.delete_outline,
-                              color: EjerciciosStyle.red, size: 20),
-                        ),
-                      const SizedBox(width: 8),
-                      TapTile(
-                        onTap: () => Navigator.pop(ctx),
-                        child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 22),
-                      ),
-                    ],
-                  ),
-                  if (live.description != null) ...[
-                    const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        live.description!,
-                        style: GoogleFonts.bangers(
-                          color: EjerciciosStyle.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ActionButton(
-                          live.approvedByUser(pv.myId)
-                              ? Icons.undo
-                              : Icons.how_to_reg,
-                          live.approvedByUser(pv.myId)
-                              ? EjerciciosStyle.cyan
-                              : EjerciciosStyle.panelLight,
-                          EjerciciosStyle.white,
-                          () async {
-                            if (live.id == null) return;
-                            await pv.toggleChallengeApproval(live.id!);
-                            setSheetState(() {});
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ActionButton(
-                          live.completedByUser(pv.myId)
-                              ? Icons.undo
-                              : Icons.emoji_events,
-                          live.completedByUser(pv.myId)
-                              ? EjerciciosStyle.cyan
-                              : EjerciciosStyle.panelLight,
-                          live.completedByUser(pv.myId)
-                              ? EjerciciosStyle.darkText
-                              : EjerciciosStyle.white,
-                          () async {
-                            if (live.id == null) return;
-                            await pv.toggleChallengeCompletion(live.id!);
-                            setSheetState(() {});
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  ReactionBar(
-                    live.social.reactions,
-                    (key) async {
-                      if (live.id == null) return;
-                      final ok = await pv.toggleChallengeReaction(live.id!, key);
-                      setSheetState(() {});
-                      if (!ok) HapticFeedback.heavyImpact();
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: CommentsBlock(
-                        live.social.comments,
-                        (text) {
-                          if (live.id != null) {
-                            pv.addChallengeComment(live.id!, text);
-                          }
-                        },
-                        (commentId) {
-                          if (live.id != null) {
-                            pv.deleteChallengeComment(live.id!, commentId);
-                          }
-                        },
-                        () => setSheetState(() {}),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _confirmDeleteChallenge(WorkoutChallenge c) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: EjerciciosStyle.panel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        title: const Icon(Icons.delete_forever, color: EjerciciosStyle.red, size: 36),
-        content: Text(
-          '¿Eliminar el reto "${c.title}"?',
-          style: GoogleFonts.bangers(color: EjerciciosStyle.white, fontSize: 14),
-        ),
-        actions: [
-          TapTile(
-            onTap: () => Navigator.pop(ctx, false),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: EjerciciosStyle.panelLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.close, color: EjerciciosStyle.white, size: 20),
-            ),
-          ),
-          TapTile(
-            onTap: () => Navigator.pop(ctx, true),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: EjerciciosStyle.red,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.check, color: EjerciciosStyle.white, size: 20),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    if (!mounted) return;
-    final pv = context.read<WorkoutProvider>();
-    if (c.id != null) await pv.deleteChallenge(c.id!);
-  }
-
-  // ─── HELPERS ─────────────────────────────────────────────────
-
-  static String? _orNull(String s) => s.isEmpty ? null : s;
-
-  static int? _parseInt(String s) => int.tryParse(s.trim());
-
-  static double? _parseDouble(String s) => double.tryParse(s.trim());
 }

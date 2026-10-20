@@ -2,97 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../supabase_config.dart';
 import '../app_state.dart';
+import '../models/gallery_item.dart';
 import '../services/local_cache.dart';
+import '../supabase_config.dart';
+import 'helpers/gallery_comments_service.dart';
+import 'helpers/gallery_reactions_helper.dart';
 
-class GalleryComment {
-  final int? id;
-  final int? galleryId;
-  final String? userId;
-  final String content;
-  final DateTime createdAt;
-
-  GalleryComment({
-    this.id, this.galleryId, this.userId, required this.content, DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
-
-  factory GalleryComment.fromMap(Map<String, dynamic> m) => GalleryComment(
-    id: m['id'] as int?, galleryId: m['gallery_id'] as int?,
-    userId: m['user_id'] as String?, content: m['content'] as String? ?? '',
-    createdAt: m['created_at'] != null ? DateTime.tryParse(m['created_at'] as String) : DateTime.now(),
-  );
-}
-
-class GalleryItem {
-  final int? id;
-  final String? userId;
-  final String url;
-  final String? thumbnail;
-  final String type;
-  final String? album;
-  final String? label;
-  final String? description;
-  final Map<String, List<String>> reactions;
-  final double rotation;
-  final double size;
-  final DateTime createdAt;
-
-  GalleryItem({
-    this.id, required this.url, this.thumbnail, this.type = 'photo',
-    this.album, this.label, this.description, this.rotation = 0, this.size = 1.0,
-    this.userId, Map<String, List<String>>? reactions, DateTime? createdAt,
-  }) : reactions = reactions ?? const {},
-       createdAt = createdAt ?? DateTime.now();
-
-  Map<String, dynamic> toMap() => {
-    if (id != null) 'id': id, 'url': url, 'thumbnail': thumbnail, 'type': type,
-    'album': album, 'label': label, 'description': description,
-    'reactions': reactions, 'rotation': rotation, 'size': size,
-    'user_id': AppState.myId ?? '', 'created_at': createdAt.toIso8601String(),
-  };
-
-  factory GalleryItem.fromMap(Map<String, dynamic> m) => GalleryItem(
-    id: m['id'] as int?, url: m['url'] as String? ?? '', thumbnail: m['thumbnail'] as String?,
-    type: m['type'] as String? ?? 'photo', album: m['album'] as String?,
-    label: m['label'] as String?, description: m['description'] as String?,
-    reactions: parseReactions(m['reactions']),
-    rotation: (m['rotation'] as num?)?.toDouble() ?? 0,
-    size: (m['size'] as num?)?.toDouble() ?? 1.0,
-    userId: m['user_id'] as String?,
-    createdAt: m['created_at'] != null ? DateTime.parse(m['created_at'] as String) : DateTime.now(),
-  );
-
-  GalleryItem copyWith({
-    String? url,
-    String? thumbnail,
-    String? description,
-    Map<String, List<String>>? reactions,
-  }) => GalleryItem(
-    id: id,
-    userId: userId,
-    url: url ?? this.url,
-    thumbnail: thumbnail ?? this.thumbnail,
-    type: type,
-    album: album,
-    label: label,
-    description: description ?? this.description,
-    reactions: reactions ?? this.reactions,
-    rotation: rotation,
-    size: size,
-    createdAt: createdAt,
-  );
-
-  static Map<String, List<String>> parseReactions(dynamic raw) {
-    if (raw == null || raw is! Map) return {};
-    final out = <String, List<String>>{};
-    raw.forEach((k, v) {
-      final key = k.toString();
-      if (v is List) out[key] = v.map((e) => e.toString()).toList();
-    });
-    return out;
-  }
-}
+export '../models/gallery_item.dart';
 
 class GalleryProvider extends ChangeNotifier {
   List<GalleryItem> _items = [];
@@ -101,8 +18,6 @@ class GalleryProvider extends ChangeNotifier {
   String? _error;
   RealtimeChannel? _channel;
 
-  /// Ids de galería cuyos comentarios ya se cargaron (para saber a quién
-  /// refrescar cuando llega un comentario por realtime).
   final Set<int> _commentsLoaded = {};
 
   List<GalleryItem> get items => _items;
@@ -111,63 +26,77 @@ class GalleryProvider extends ChangeNotifier {
   String? get error => _error;
   bool get hasError => _error != null;
 
-  void clearError() { _error = null; notifyListeners(); }
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
 
   List<GalleryComment> commentsFor(int? galleryId) =>
       _comments.where((c) => c.galleryId == galleryId).toList();
 
-  List<String> get albums => _items.map((i) => i.album ?? '✨').toSet().toList();
-  List<GalleryItem> byAlbum(String album) => _items.where((i) => (i.album ?? '✨') == album).toList();
+  List<String> get albums =>
+      _items.map((i) => i.album ?? '✨').toSet().toList();
+  List<GalleryItem> byAlbum(String album) =>
+      _items.where((i) => (i.album ?? '✨') == album).toList();
 
   void _subscribeRealtime() {
     _channel?.unsubscribe();
-    _channel = SupabaseConfig.client.channel('gallery_changes').onPostgresChanges(
-      event: PostgresChangeEvent.all, schema: 'public', table: 'gallery',
-      callback: (payload) {
-        if (payload.eventType == PostgresChangeEvent.delete) {
-          final deletedId = payload.oldRecord['id'] as int?;
-          _items.removeWhere((i) => i.id == deletedId);
-          notifyListeners();
-          return;
-        }
-        final row = payload.newRecord;
-        if (row.isEmpty) return;
-        final remote = GalleryItem.fromMap(Map<String, dynamic>.from(row));
-        final idx = _items.indexWhere((i) => i.id == remote.id);
-        if (idx < 0) {
-          _items.insert(0, remote);
-        } else {
-          // Si el payload de Realtime no trajo url (por ejemplo TOAST / payload limit de base64),
-          // preservamos la url y thumbnail locales existentes para no romper la imagen.
-          final existing = _items[idx];
-          final effectiveUrl = remote.url.isNotEmpty ? remote.url : existing.url;
-          final effectiveThumb = (remote.thumbnail != null && remote.thumbnail!.isNotEmpty)
-              ? remote.thumbnail
-              : existing.thumbnail;
-          _items[idx] = remote.copyWith(
-              url: effectiveUrl,
-              thumbnail: effectiveThumb,
-              reactions: _mergeReactions(existing.reactions, remote.reactions));
-        }
-        notifyListeners();
-      },
-    ).onPostgresChanges(
-      // Comentarios en vivo: si la pareja comenta una foto que ya tengo
-      // abierta/cargada, refrescar solo esos comentarios (antes no llegaban
-      // hasta cerrar y reabrir la foto).
-      event: PostgresChangeEvent.all, schema: 'public', table: 'gallery_comments',
-      callback: (payload) {
-        final row = payload.newRecord.isNotEmpty ? payload.newRecord : payload.oldRecord;
-        final gid = (row['gallery_id'] as num?)?.toInt();
-        if (gid == null || !_commentsLoaded.contains(gid)) return;
-        loadComments(gid);
-      },
-    ).subscribe();
+    _channel = SupabaseConfig.client
+        .channel('gallery_changes')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'gallery',
+          callback: (payload) {
+            if (payload.eventType == PostgresChangeEvent.delete) {
+              final deletedId = payload.oldRecord['id'] as int?;
+              _items.removeWhere((i) => i.id == deletedId);
+              notifyListeners();
+              return;
+            }
+            final row = payload.newRecord;
+            if (row.isEmpty) return;
+            final remote = GalleryItem.fromMap(Map<String, dynamic>.from(row));
+            final idx = _items.indexWhere((i) => i.id == remote.id);
+            if (idx < 0) {
+              _items.insert(0, remote);
+            } else {
+              final existing = _items[idx];
+              final effectiveUrl =
+                  remote.url.isNotEmpty ? remote.url : existing.url;
+              final effectiveThumb =
+                  (remote.thumbnail != null && remote.thumbnail!.isNotEmpty)
+                      ? remote.thumbnail
+                      : existing.thumbnail;
+              _items[idx] = remote.copyWith(
+                url: effectiveUrl,
+                thumbnail: effectiveThumb,
+                reactions: GalleryReactionsHelper.mergeReactions(
+                    existing.reactions, remote.reactions),
+              );
+            }
+            notifyListeners();
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'gallery_comments',
+          callback: (payload) {
+            final row = payload.newRecord.isNotEmpty
+                ? payload.newRecord
+                : payload.oldRecord;
+            final gid = (row['gallery_id'] as num?)?.toInt();
+            if (gid == null || !_commentsLoaded.contains(gid)) return;
+            loadComments(gid);
+          },
+        )
+        .subscribe();
   }
+
   Future<void> load() async {
     _loading = true;
     _error = null;
-    // Cache local (offline-first): mostramos lo último conocido de inmediato.
     final cached = await LocalCache.getList('cache_gallery');
     if (cached.isNotEmpty) {
       _items = cached.map((m) => GalleryItem.fromMap(m)).toList();
@@ -175,9 +104,14 @@ class GalleryProvider extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      final res = await SupabaseConfig.client.from('gallery').select()
-          .order('created_at', ascending: false).timeout(const Duration(seconds: 10));
-      _items = (res as List).map((e) => GalleryItem.fromMap(e as Map<String, dynamic>)).toList();
+      final res = await SupabaseConfig.client
+          .from('gallery')
+          .select()
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+      _items = (res as List)
+          .map((e) => GalleryItem.fromMap(e as Map<String, dynamic>))
+          .toList();
       await LocalCache.setList(
           'cache_gallery', _items.map((i) => i.toMap()).toList());
       if (_channel == null) _subscribeRealtime();
@@ -185,9 +119,12 @@ class GalleryProvider extends ChangeNotifier {
       if (_items.isEmpty) _error = 'No se pudieron cargar las fotos';
       debugPrint('GalleryProvider.load error: $e');
     }
-    _loading = false; notifyListeners();
+    _loading = false;
+    notifyListeners();
   }
-  Future<void> uploadAndAdd(String filePath, {String? album, String? label}) async {
+
+  Future<void> uploadAndAdd(String filePath,
+      {String? album, String? label}) async {
     _error = null;
     try {
       final file = File(filePath);
@@ -204,7 +141,7 @@ class GalleryProvider extends ChangeNotifier {
       }
       final b64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
       debugPrint('Gallery: storing base64 image (${bytes.length} bytes)');
-      
+
       await SupabaseConfig.client.from('gallery').insert({
         'user_id': AppState.myId ?? '',
         'url': b64,
@@ -225,9 +162,14 @@ class GalleryProvider extends ChangeNotifier {
   }
 
   Future<void> delete(int id) async {
-    _items.removeWhere((i) => i.id == id); notifyListeners();
+    _items.removeWhere((i) => i.id == id);
+    notifyListeners();
     try {
-      await SupabaseConfig.client.from('gallery').delete().eq('id', id).timeout(const Duration(seconds: 10));
+      await SupabaseConfig.client
+          .from('gallery')
+          .delete()
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       _error = 'No se pudo eliminar la foto';
       debugPrint('GalleryProvider.delete error: $e');
@@ -243,8 +185,10 @@ class GalleryProvider extends ChangeNotifier {
     _items[idx] = next;
     notifyListeners();
     try {
-      await SupabaseConfig.client.from('gallery')
-          .update({'description': description}).eq('id', id)
+      await SupabaseConfig.client
+          .from('gallery')
+          .update({'description': description})
+          .eq('id', id)
           .timeout(const Duration(seconds: 10));
     } catch (e) {
       debugPrint('GalleryProvider.updateDescription error: $e');
@@ -255,23 +199,15 @@ class GalleryProvider extends ChangeNotifier {
     final idx = _items.indexWhere((i) => i.id == id);
     if (idx < 0) return;
     final current = _items[idx];
-    final reactions = <String, List<String>>{};
-    current.reactions.forEach((k, v) => reactions[k] = List<String>.from(v));
-    final already = reactions[key]?.contains(AppState.myId) ?? false;
-    final toRemove = <String>[];
-    reactions.forEach((k, list) {
-      list.remove(AppState.myId);
-      if (list.isEmpty) toRemove.add(k);
-    });
-    for (final k in toRemove) { reactions.remove(k); }
-    if (!already) {
-      reactions.putIfAbsent(key, () => <String>[]).add(AppState.myId ?? '');
-    }
+    final reactions = GalleryReactionsHelper.toggleUserReaction(
+      currentReactions: current.reactions,
+      key: key,
+      userId: AppState.myId ?? '',
+    );
     final next = current.copyWith(reactions: reactions);
     _items[idx] = next;
     notifyListeners();
     try {
-      // Merge atómico en el servidor (RPC toggle_reaction).
       final res = await SupabaseConfig.client
           .rpc('toggle_reaction', params: {
             'target_table': 'gallery',
@@ -284,12 +220,13 @@ class GalleryProvider extends ChangeNotifier {
       if (res != null) {
         final li = _items.indexWhere((i) => i.id == id);
         if (li >= 0) {
-          _items[li] = _items[li].copyWith(reactions: GalleryItem.parseReactions(res));
+          _items[li] = _items[li]
+              .copyWith(reactions: GalleryItem.parseReactions(res));
           notifyListeners();
         }
       }
     } catch (e) {
-      debugPrint('GalleryProvider.toggleReaction RPC error: $e, intentando fallback directo');
+      debugPrint('GalleryProvider.toggleReaction RPC error: $e');
       try {
         await SupabaseConfig.client
             .from('gallery')
@@ -298,30 +235,10 @@ class GalleryProvider extends ChangeNotifier {
             .timeout(const Duration(seconds: 5));
       } catch (fallbackErr) {
         _items[idx] = current;
-        debugPrint('GalleryProvider.toggleReaction fallback error: $fallbackErr');
+        debugPrint('GalleryProvider.toggleReaction fallback: $fallbackErr');
         notifyListeners();
       }
     }
-  }
-
-  /// Une dos mapas de reacciones `{key: [userIds]}` preservando todas las
-  /// entradas de `local` (mi estado optimista) con el server (`remote`).
-  Map<String, List<String>> _mergeReactions(
-    Map<String, List<String>> local,
-    Map<String, List<String>> remote,
-  ) {
-    final out = <String, List<String>>{};
-    for (final e in remote.entries) {
-      out[e.key] = List<String>.from(e.value);
-    }
-    local.forEach((k, v) {
-      final existing = out[k] ?? <String>[];
-      for (final uid in v) {
-        if (!existing.contains(uid)) existing.add(uid);
-      }
-      out[k] = existing;
-    });
-    return out;
   }
 
   Future<void> addComment(int galleryId, String content) async {
@@ -337,51 +254,41 @@ class GalleryProvider extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
 
-    // Inserción optimista inmediata para que aparezca en pantalla al instante
     _comments.add(optimisticComment);
     notifyListeners();
 
-    try {
-      final row = await SupabaseConfig.client.from('gallery_comments')
-          .insert({
-            'gallery_id': galleryId,
-            'user_id': AppState.myId ?? '',
-            'content': text,
-          }).select().single().timeout(const Duration(seconds: 10));
-      final realComment = GalleryComment.fromMap(Map<String, dynamic>.from(row as Map));
+    final realComment = await GalleryCommentsService.addComment(
+      galleryId: galleryId,
+      userId: AppState.myId ?? '',
+      content: text,
+    );
+
+    if (realComment != null) {
       final idx = _comments.indexWhere((c) => c.id == tempId);
-      if (idx != -1) {
-        _comments[idx] = realComment;
-      }
+      if (idx != -1) _comments[idx] = realComment;
       notifyListeners();
-    } catch (e) {
-      debugPrint('GalleryProvider.addComment error: $e');
-      // Mantenemos el comentario optimista en memoria para que no desaparezca del chat
     }
   }
 
   Future<void> deleteComment(int id) async {
-    _comments.removeWhere((c) => c.id == id); notifyListeners();
-    try {
-      await SupabaseConfig.client.from('gallery_comments').delete().eq('id', id).timeout(const Duration(seconds: 10));
-    } catch (e) { debugPrint('GalleryProvider.deleteComment error: $e'); }
+    _comments.removeWhere((c) => c.id == id);
+    notifyListeners();
+    await GalleryCommentsService.deleteComment(id);
   }
 
   Future<void> loadComments(int galleryId) async {
-    try {
-      final res = await SupabaseConfig.client.from('gallery_comments')
-          .select().eq('gallery_id', galleryId)
-          .order('created_at', ascending: true).timeout(const Duration(seconds: 10));
-      final existing = _comments.where((c) => c.galleryId != galleryId).toList();
-      existing.addAll((res as List).map((e) => GalleryComment.fromMap(e as Map<String, dynamic>)));
-      _comments = existing;
-      _commentsLoaded.add(galleryId);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('GalleryProvider.loadComments error: $e');
-    }
+    final comments = await GalleryCommentsService.loadComments(galleryId);
+    final existing =
+        _comments.where((c) => c.galleryId != galleryId).toList();
+    existing.addAll(comments);
+    _comments = existing;
+    _commentsLoaded.add(galleryId);
+    notifyListeners();
   }
 
   @override
-  void dispose() { _channel?.unsubscribe(); super.dispose(); }
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
+  }
 }

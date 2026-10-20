@@ -13,6 +13,7 @@ import '../../widgets/responsive_wrapper.dart';
 import '../../widgets/tap_tile.dart';
 import 'day_agenda.dart';
 import 'event_sheet.dart';
+import 'widgets/calendar_agenda_view.dart';
 
 /// Calendario unificado: UNA pantalla, UN botón de agregar.
 /// - Arriba: mes (◀ nombre ▶; tocar el nombre = volver a hoy).
@@ -110,7 +111,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: _monthGrid(schedules, classes),
               ),
               SizedBox(height: gap),
-              Expanded(child: _agenda(schedules, classes)),
+              Expanded(
+                child: CalendarAgendaView(
+                  selectedDay: _selected,
+                  schedules: schedules,
+                  classes: classes,
+                  error: _error,
+                  onRetry: _load,
+                  onAdd: _add,
+                ),
+              ),
             ],
           ),
         );
@@ -169,7 +179,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _monthGrid(List<Schedule> schedules, List<ClassSchedule> classes) {
     final first = DateTime(_month.year, _month.month, 1);
     final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
-    final lead = first.weekday - 1; // lunes = 0
+    final lead = first.weekday - 1;
     final weeks = ((lead + daysInMonth) / 7).ceil();
     final today = DateTime.now();
 
@@ -261,114 +271,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _agenda(List<Schedule> schedules, List<ClassSchedule> classes) {
-    final items =
-        DayAgenda.forDay(schedules: schedules, classes: classes, day: _selected);
-    final title =
-        '${_dayNames[_selected.weekday - 1]} ${_selected.day}/${_selected.month}';
-
-    Widget body;
-    if (_error != null && items.isEmpty) {
-      body = Center(
-        child: TapTile(
-          onTap: _load,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.cloud_off, color: Color(0xFFFF5757), size: 48),
-            const SizedBox(height: 6),
-            Text(_error!,
-                style: GoogleFonts.bangers(color: calWhite, fontSize: 18)),
-            const Icon(Icons.refresh, color: calCyan, size: 30),
-          ]),
-        ),
-      );
-    } else if (items.isEmpty) {
-      body = Center(
-        child: TapTile(
-          onTap: _add,
-          child: const Icon(Icons.event_available, color: calField, size: 72),
-        ),
-      );
-    } else {
-      body = ListView.separated(
-        padding: const EdgeInsets.only(bottom: 80),
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (_, i) => _agendaTile(items[i]),
-      );
-    }
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.only(left: 4, bottom: 6),
-        child: Text(title,
-            style: GoogleFonts.bangers(color: calCyan, fontSize: 22)),
-      ),
-      Expanded(child: body),
-    ]);
-  }
-
-  Widget _agendaTile(AgendaItem it) {
-    final c = Color(it.color);
-    final time = it.startTime.isEmpty
-        ? ''
-        : (it.endTime.isEmpty ? it.startTime : '${it.startTime}-${it.endTime}');
-    final initial = it.userId.isEmpty ? '' : it.userId[0].toUpperCase();
-    return TapTile(
-      onTap: () => showEventSheet(
-        context,
-        day: _selected,
-        schedule: it.schedule,
-        legacyClass: it.legacyClass,
-      ),
-      child: GestureDetector(
-        onLongPress: () async {
-          if (await confirmDelete(context) && mounted) {
-            await deleteAgendaEntry(
-              context,
-              schedule: it.schedule,
-              legacyClass: it.legacyClass,
-            );
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: calBox(calPanel, r: 16),
-          child: Row(children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: calBox(c, r: 12),
-              child: Text(initial,
-                  style: GoogleFonts.bangers(color: calInk, fontSize: 22)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(it.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.bangers(color: calWhite, fontSize: 19)),
-                  if (time.isNotEmpty || it.location.isNotEmpty)
-                    Text(
-                      [time, it.location].where((e) => e.isNotEmpty).join('  ·  '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.bangers(color: calMuted, fontSize: 15),
-                    ),
-                ],
-              ),
-            ),
-            if (it.recurring)
-              const Icon(Icons.autorenew, color: calCyan, size: 22),
-          ]),
         ),
       ),
     );

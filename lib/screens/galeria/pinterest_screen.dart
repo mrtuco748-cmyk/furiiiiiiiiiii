@@ -10,6 +10,7 @@ import '../../services/notification_service.dart';
 import 'widgets/pinterest_top_bar.dart';
 import 'widgets/pinterest_credentials_banner.dart';
 import 'widgets/pinterest_desktop_fallback.dart';
+import 'widgets/pinterest_cleaner.dart';
 
 /// Pantalla integrada de Pinterest sin barras de navegador
 /// para que se sienta 100% nativa dentro de F.U.R.I.
@@ -178,44 +179,7 @@ class _PinterestScreenState extends State<PinterestScreen> {
   }
 
   Future<void> _injectCleanerCss() async {
-    final ctrl = _controller;
-    if (ctrl == null) return;
-    try {
-      await ctrl.runJavaScript('''
-        (() => {
-          try {
-            const styleId = 'furi-pinterest-cleaner';
-            if (!document.getElementById(styleId) && document.head) {
-              const style = document.createElement('style');
-              style.id = styleId;
-              style.textContent = `
-                div[data-test-id="app-upsell-banner"],
-                div[data-test-id="full-page-signup-barrier"],
-                div[data-test-id="smart-banner"],
-                .appUpsell,
-                .AppUpsellBanner,
-                div[aria-label="Smart App Banner"],
-                iframe[src*="smartbanner"] {
-                  display: none !important;
-                  visibility: hidden !important;
-                  pointer-events: none !important;
-                  height: 0 !important;
-                  max-height: 0 !important;
-                  overflow: hidden !important;
-                }
-                html, body {
-                  overflow-y: auto !important;
-                  -webkit-overflow-scrolling: touch !important;
-                }
-              `;
-              document.head.appendChild(style);
-            }
-          } catch (_) {}
-        })();
-      ''');
-    } catch (e) {
-      debugPrint('Error al inyectar CSS en Pinterest: $e');
-    }
+    await PinterestCleaner.injectCleanerCss(_controller);
   }
 
   Future<bool> _handleBack() async {

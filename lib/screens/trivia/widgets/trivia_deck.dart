@@ -6,6 +6,8 @@ import '../../../models/trivia.dart';
 import '../../../providers/trivia_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/tap_tile.dart';
+import 'trivia_deck_nav.dart';
+import 'trivia_option_tile.dart';
 
 /// Vista de mazo de trivia: limpia, moderna, sin bordes ni degradados toscos.
 class TriviaDeck extends StatefulWidget {
@@ -107,63 +109,10 @@ class _TriviaDeckState extends State<TriviaDeck> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Navegación entre preguntas
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TapTile(
-                  onTap: _index > 0 ? () => _changeQuestion(_index - 1) : () {},
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: _index > 0 ? const Color(0xFF222222) : const Color(0xFF141414),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.chevron_left,
-                      color: _index > 0 ? Colors.white : Colors.white24,
-                      size: 24,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF181818),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${_index + 1} de ${widget.questions.length}',
-                    style: GoogleFonts.bangers(
-                      fontSize: 14,
-                      color: Colors.white70,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
-                TapTile(
-                  onTap: _index < widget.questions.length - 1 ? () => _changeQuestion(_index + 1) : () {},
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: _index < widget.questions.length - 1
-                          ? const Color(0xFF222222)
-                          : const Color(0xFF141414),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.chevron_right,
-                      color: _index < widget.questions.length - 1 ? Colors.white : Colors.white24,
-                      size: 24,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          TriviaDeckNav(
+            currentIndex: _index,
+            totalQuestions: widget.questions.length,
+            onIndexChanged: _changeQuestion,
           ),
 
           // Tarjeta principal interactiva
@@ -185,7 +134,6 @@ class _TriviaDeckState extends State<TriviaDeck> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Pregunta
                   Text(
                     q.question,
                     textAlign: TextAlign.center,
@@ -275,7 +223,7 @@ class _TriviaDeckState extends State<TriviaDeck> {
 
                   // Lista de opciones para la pestaña activa
                   for (final option in q.options) ...[
-                    _buildOptionTile(
+                    TriviaOptionTile(
                       option: option,
                       isSelected: _activeTab == 0 ? _answer == option : _guess == option,
                       selectedColor: _activeTab == 0 ? t.a : const Color(0xFF00D4FF),
@@ -331,46 +279,6 @@ class _TriviaDeckState extends State<TriviaDeck> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildOptionTile({
-    required String option,
-    required bool isSelected,
-    required Color selectedColor,
-    required Color textColor,
-    required VoidCallback onTap,
-  }) {
-    return TapTile(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? selectedColor : const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                option,
-                style: GoogleFonts.bangers(
-                  fontSize: 15,
-                  color: isSelected ? textColor : Colors.white,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            if (isSelected)
-              Icon(
-                Icons.check_rounded,
-                color: textColor,
-                size: 20,
-              ),
-          ],
-        ),
       ),
     );
   }

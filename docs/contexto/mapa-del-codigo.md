@@ -16,7 +16,7 @@
    - Cada pantalla/módulo funcional vive en su propia subcarpeta dentro de `lib/screens/<feature>/`.
    - **Offline-First**: La interfaz consume y actualiza primero SQLite local (`DatabaseHelper`), y sincroniza en segundo plano de forma bidireccional con **Supabase** (`PostgreSQL + Realtime`).
 
-3. **Estilo Visual (Brutalista Modificado - `skill_visual .md`)**:
+3. **Estilo Visual (Brutalista Modificado - `docs/skill_visual.md`)**:
    - **Sin bordes**: `border: null` o sin borde perimetral.
    - **Color sólido y uniforme**: Fondo y acento en bloques de color pleno, sin gradientes difusos ni negro puro (`#141414` o `#181818` para fondos oscuros).
    - **Esquinas redondeadas**: `BorderRadius.circular(10)` a `circular(18)`.
@@ -61,9 +61,19 @@ lib/
 ### 3.2. Pantallas Principales (`lib/screens/`)
 
 #### 🏠 Inicio (`lib/screens/home_screen.dart`)
-- **Responsabilidad**: Vista de inicio tipo bento-grid con acceso a todas las secciones, clima, racha y accesos rápidos.
-- **Subcarpetas/Widgets**: Barra superior de usuario, tarjetas de estado de ánimo, accesos rápidos.
-- **Providers vinculados**: `CoupleAchievementsProvider`, `ChatProvider`, `WorkoutProvider`.
+- **Responsabilidad**: Vista de inicio tipo bento-grid con acceso a todas las secciones, clima, racha y accesos rápidos (<= 300 líneas).
+- **Subcarpeta `lib/screens/home/`**:
+  - `widgets/home_main_grid.dart`: Grilla responsiva principal con bloques brutales.
+  - `widgets/home_grid_overlays.dart`: Drawers laterales y overlays de mazo/matches.
+  - `widgets/home_grid_tiles.dart`: Tiles auxiliares, íconos y confeti.
+  - `widgets/home_notification_panel.dart`: Panel deslizable de notificaciones.
+  - `widgets/home_shortcut_panel.dart`: Barra y cuadrícula de atajos rápidos.
+  - `widgets/home_shortcut_config_dialog.dart`: Diálogo de selección y personalización de atajos.
+  - `widgets/home_sliding_drawer.dart`: Contenedores animados con soporte de drag horizontal.
+  - `helpers/home_drawer_drag_handler.dart`: Manejador de gestos de arrastre para los paneles.
+  - `helpers/home_shortcut_handler.dart`: Ejecución de rutas y actualización de GPS.
+  - `models/home_shortcut_models.dart`: Catálogo y modelos de atajos.
+- **Providers vinculados**: `CoupleAchievementsProvider`, `CoupleProvider`, `DeckProvider`, `LocationProvider`.
 
 #### 🖼️ Galería & Pinterest (`lib/screens/galeria/`)
 - [`galeria_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/galeria/galeria_screen.dart): Galería de fotos compartidas en grilla asimétrica infinita con visor de comentarios y reacciones.
@@ -76,7 +86,19 @@ lib/
   - `pinterest_credentials_banner.dart`: Barra con chips de copia de correo y contraseña.
 
 #### 🎵 Música Compartida (`lib/screens/music/`)
-- [`music_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/music/music_screen.dart): Reproductor estilo Spotify/YouTube Music, búsqueda, playlists y visor de comentarios por canción.
+- [`music_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/music/music_screen.dart): Reproductor estilo Spotify/YouTube Music, búsqueda, playlists y visor de comentarios por canción (<= 300 líneas).
+- **Subcarpetas `widgets/`, `modals/`, `helpers/`**:
+  - `widgets/music_header_tabs.dart`: Encabezado, barra de pestañas y barra de progreso de descargas.
+  - `widgets/music_library_tab.dart`: Pestaña de biblioteca de temas y filtrado por playlist.
+  - `widgets/music_track_card.dart`: Tarjeta individual de tema con opciones de offline, comentarios y playlists.
+  - `widgets/music_playlists_tab.dart`: Cuadrícula y lista de playlists compartidas.
+  - `widgets/music_search_tab.dart`: Buscador de YouTube con estado de encolado/descarga en 1-tap.
+  - `widgets/music_bottom_player.dart`: Barra inferior de reproducción con seek bar y controles de transporte.
+  - `modals/music_download_queue_modal.dart`: Hoja modal con la cola de descargas activas, fallidas y completadas.
+  - `modals/music_comments_sheet.dart`: Hoja de comentarios y notas de amor por canción.
+  - `modals/music_playlist_sheets.dart`: Modales de creación y agregado a playlists.
+  - `modals/music_track_options_sheet.dart`: Opciones de tema y gestión de almacenamiento offline.
+  - `helpers/music_ui_helpers.dart`: Carátula por defecto y formateadores de duración.
 - **Provider**: [`MusicPlayerProvider`](file:///d:/projetcs/proyectos/F.U.R.I/lib/providers/music_player_provider.dart).
 - **Servicio Nativo Android**: [`FuriMusicService.kt`](file:///d:/projetcs/proyectos/F.U.R.I/android/app/src/main/kotlin/com/furiapp/furi_app/FuriMusicService.kt) (`MediaSession` con seek bar y controles en shade).
 
@@ -96,11 +118,20 @@ lib/
 - **Provider**: [`WorkoutProvider`](file:///d:/projetcs/proyectos/F.U.R.I/lib/providers/workout_provider.dart).
 
 #### 📝 Milanote / Pizarrón (`lib/screens/milanote/`)
-- [`milanote_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/milanote/milanote_screen.dart): Lienzo bidimensional infinito con notas adhesivas, fotos, listas y conectores.
+- [`milanote_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/milanote/milanote_screen.dart): Lienzo bidimensional infinito con notas adhesivas, fotos, listas y conectores (<300 líneas).
 - **Subcarpetas**:
   - `models/note_style_config.dart`: Configuración de patrones, formas y gradientes.
-  - `widgets/pizarron_note_widget.dart`: Renderizado visual de notas y tarjetas.
-  - `widgets/pizarron_sidebar_overlay.dart`: Barra lateral de herramientas y creación.
+  - `models/active_text_target.dart`: Objetivo enfocado durante la edición (título vs párrafo).
+  - `widgets/pizarron_note_widget.dart`: Renderizado visual de notas y tarjetas (<300 líneas).
+  - `widgets/unbounded_hit_test_stack.dart`: Stack con hit-testing ilimitado en coordenadas de mundo.
+  - `widgets/pizarron_title_block.dart`: Bloque y TextField del título con tap directo.
+  - `widgets/pizarron_body_interior.dart`: Lista de párrafos y TextField con tap directo en todo el cuerpo.
+  - `widgets/pizarron_checklist_interior.dart`: Tareas pendientes y checkboxes.
+  - `widgets/pizarron_card_frame.dart`: Marco visual multicapa recortado a cada forma geométrica.
+  - `widgets/pizarron_bottom_cluster.dart`: Cluster flotante del botón único `+` y selector de tiza/fondo.
+  - `widgets/pizarron_gesture_coordinator.dart`: Coordinador de gestos multitáctiles, arrastres 1:1 y pinch zoom.
+  - `widgets/pizarron_camera_controller.dart`: Controlador de animación de zoom y pan suave hacia la nota.
+  - `widgets/pizarron_sidebar_overlay.dart`: Barra lateral de herramientas y estilos.
   - `painters/note_card_painter.dart`: Dibujo vectorial de formas y siluetas.
 - **Provider**: [`BoardDataProvider`](file:///d:/projetcs/proyectos/F.U.R.I/lib/providers/board_data_provider.dart).
 
@@ -147,7 +178,7 @@ lib/
 | **Pizarrón / Milanote / Formas de notas** | `lib/screens/milanote/` (`milanote_screen.dart`, `models/`, `widgets/`, `painters/`) |
 | **Entrenamiento, rutinas o ejercicios** | `lib/screens/ejercicios/`, `lib/providers/workout_provider.dart` |
 | **Calendario, eventos o clases** | `lib/screens/calendar/`, `lib/providers/schedule_provider.dart` |
-| **Estilos visuales o colores de la app** | `skill_visual .md`, `lib/widgets/theme_color_customizer_sheet.dart` |
+| **Estilos visuales o colores de la app** | `docs/skill_visual.md`, `lib/widgets/theme_color_customizer_sheet.dart` |
 
 ---
 
