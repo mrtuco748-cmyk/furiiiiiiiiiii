@@ -11,6 +11,7 @@ import '../../providers/board_data_provider.dart';
 import 'models/note_style_config.dart';
 import 'painters/board_chalk_painter.dart';
 import 'painters/note_shape_utils.dart';
+import 'widgets/pizarron_color_picker_area.dart';
 import 'widgets/pizarron_note_widget.dart';
 import 'widgets/pizarron_sidebar_overlay.dart';
 
@@ -892,67 +893,22 @@ class _MilanoteScreenState extends State<MilanoteScreen>
                 const SizedBox(height: 12),
 
                 if (!_chalkMode) ...[
-                  // Colores sólidos para el fondo del pizarrón
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final hex in PizarronPalette.boardColors)
-                        GestureDetector(
-                          onTap: () =>
-                              provider.setBoardBackgroundColor(_boardId, hex),
-                          child: Container(
-                            width: 34,
-                            height: 34,
-                            decoration: BoxDecoration(
-                              color: PizarronPalette.parseHex(hex),
-                              shape: BoxShape.circle,
-                            ),
-                            child: currentBoardBgHex.toUpperCase() ==
-                                    hex.toUpperCase()
-                                ? Icon(
-                                    Icons.check_rounded,
-                                    size: 18,
-                                    color: PizarronPalette.parseHex(hex)
-                                                .computeLuminance() >
-                                            0.5
-                                        ? const Color(0xFF141820)
-                                        : _vibrantGreen,
-                                  )
-                                : null,
-                          ),
-                        ),
-                    ],
+                  // Selector con cuadrado de saturación, cuentagotas y recientes para el fondo
+                  PizarronColorPickerArea(
+                    currentColorHex: currentBoardBgHex,
+                    sampledColors: PizarronPalette.boardColors,
+                    onColorChanged: (hex) =>
+                        provider.setBoardBackgroundColor(_boardId, hex),
                   ),
                 ] else ...[
-                  // Colores de Tiza y grosor de Tiza
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final hex in PizarronPalette.chalkColors)
-                        GestureDetector(
-                          onTap: () => setState(() => _chalkColorHex = hex),
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: PizarronPalette.parseHex(hex),
-                              shape: BoxShape.circle,
-                            ),
-                            child: _chalkColorHex.toUpperCase() ==
-                                    hex.toUpperCase()
-                                ? const Icon(
-                                    Icons.check_rounded,
-                                    size: 17,
-                                    color: Color(0xFF141820),
-                                  )
-                                : null,
-                          ),
-                        ),
-                    ],
+                  // Selector con cuadrado de saturación, cuentagotas y recientes para la tiza
+                  PizarronColorPickerArea(
+                    currentColorHex: _chalkColorHex,
+                    sampledColors: PizarronPalette.chalkColors,
+                    onColorChanged: (hex) =>
+                        setState(() => _chalkColorHex = hex),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       const Icon(

@@ -7,6 +7,35 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+### ~~CRÍTICA - Salida automática / crash al entrar a Pinterest en Galería (`onHideCustomWidget` hacía `Navigator.pop()`, `onRenderProcessGone` no capturado y `removeChild` en React 18)~~ ✅ RESUELTO 2026-10-20
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `lib/screens/galeria/galeria_screen.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
+- **Qué pasaba**: Al abrir Pinterest desde la Galería en Android, la página cargaba unos instantes y luego salía sola o cerraba la app de golpe.
+- **Causa raíz**:
+  1. **`Navigator.of(context).pop()` por defecto en `webview_flutter_android`**: En `webview_flutter_android-4.14.1` (`android_webview_controller.dart`), si no se registra `setCustomWidgetCallbacks`, el callback por defecto `onHideCustomWidget` ejecuta `Navigator.of(context).pop()`. Cuando Pinterest inicializaba o cerraba capas de video/fullscreen (`WebChromeClient.onHideCustomView`), se disparaba `Navigator.of(context).pop()` cerrando `PinterestScreen` inmediatamente después de cargar.
+  2. **`onRenderProcessGone` sin manejar en `WebViewClientImpl`**: `webview_flutter_android` no sobreescribe `WebViewClient.onRenderProcessGone`. En Android, si el proceso renderer de Chromium sufre presión de memoria/GPU y `onRenderProcessGone` no devuelve `true`, el sistema operativo mata todo el proceso de la app (`AwContents: Render process crash was not handled by all associated webviews, triggering application crash`).
+  3. **Conflicto de `MutationObserver` con React 18**: El script inyectado ejecutaba `elements[i].remove()` sobre nodos del DOM gestionados por React 18 de Pinterest, disparando `NotFoundError: Failed to execute 'removeChild' on 'Node'` durante la reconciliación.
+  4. **Cancelación de redirecciones por `onNavigationRequest` en Android**: Activar `onNavigationRequest` en `webview_flutter_android` fuerza `returnValueForShouldOverrideUrlLoading = true`, cancelando cada navegación/redirección nativa y re-ejecutando `loadUrl` desde Dart.
+  5. **Conflicto entre `EnableImpeller=false` (Skia) y `displayWithHybridComposition: true`**: Forzar Hybrid Composition con Impeller desactivado hace que Flutter convierta la superficie principal a `FlutterImageView` (`ImageReader`), sumado a recrear `WebViewWidget` en cada `setState` de `onProgress`.
+- **Fix**:
+  1. Se configuró `androidController.setCustomWidgetCallbacks` con no-op en `onHideCustomWidget` para que jamás invoque `Navigator.of(context).pop()`.
+  2. En `MainActivity.kt` se implementó `SafeFuriWebViewClient` envolviendo el `WebViewClient` para sobreescribir `onRenderProcessGone` devolviendo `true` (evitando el cierre de la app y recreando el WebView si ocurre), desactivar `setSupportMultipleWindows(false)` y filtrar `intent://` / `play.google.com` de forma nativa en `shouldOverrideUrlLoading`.
+  3. Se reemplazó `MutationObserver` (`.remove()`) por ocultamiento CSS puro (`display: none !important; pointer-events: none !important;`), preservando el árbol DOM de React.
+  4. Se cacheó la instancia de `WebViewWidget` dentro de un `Stack` estable con `displayWithHybridComposition: false` (Texture Layer) y limpieza previa de caché de imágenes (`imageCache.clear()`).
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-20
+
+### ~~CRÍTICA - Notificación de música en Android no aparecía ni mostraba barra de tiempo interactiva (falta de `MediaSession` + `ForegroundService` `mediaPlayback` y condición de carrera en `play()`)~~ ✅ RESUELTO 2026-10-20
+- **Dónde**: `android/app/src/main/kotlin/com/furiapp/furi_app/FuriMusicService.kt`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`, `android/app/src/main/AndroidManifest.xml`, `lib/services/notification_service.dart`, `lib/providers/music_player_provider.dart`
+- **Qué pasaba**: Al reproducir música en Android, la notificación multimedia con controles (Anterior, Play/Pausa, Siguiente) y barra de tiempo para adelantar/retroceder nunca aparecía en el panel superior de Android, incluso otorgando permisos de notificaciones.
+- **Causa raíz**:
+  1. **Ausencia de `MediaSession` y `ForegroundService` nativos**: En Android 10–14+, la tarjeta estática de reproducción multimedia en Quick Settings con barra de tiempo interactiva (`ACTION_SEEK_TO` + `METADATA_KEY_DURATION`) requiere obligatoriamente un `android.media.session.MediaSession` activo vinculado a `Notification.MediaStyle().setMediaSession(token)` ejecutándose en un `Service` con `startForeground(..., FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)`. `flutter_local_notifications` no crea ni vincula un `MediaSession` real.
+  2. **Canal cacheado con importancia baja**: El canal `'furi_music_channel'` había sido creado originalmente con `Importance.low`; Android bloquea subir la importancia de un canal existente con el mismo ID.
+  3. **Condición de carrera en `MusicPlayerProvider.play()`**: `play()` llamaba a `updateMusicNotification(isPlaying: true)` y acto seguido ejecutaba `await _player.stop()` antes de `await _player.play(source)`. El evento `PlayerState.stopped` disparado por `stop()` sobreescribía inmediatamente la notificación como detenida/pausada.
+- **Fix**:
+  1. Se creó el servicio nativo `FuriMusicService.kt` registrado en `AndroidManifest.xml` con `android:foregroundServiceType="mediaPlayback"`, `MediaSession` activa, `MediaMetadata` (título, artista, portada descargada asíncronamente con fallback del ícono de zorrito y `METADATA_KEY_DURATION`), `PlaybackState` (`STATE_PLAYING`/`STATE_PAUSED`, posición, velocidad y `ACTION_SEEK_TO | ACTION_PLAY | ACTION_PAUSE | ACTION_SKIP_TO_PREVIOUS | ACTION_SKIP_TO_NEXT`), y `Notification.MediaStyle`.
+  2. Se conectó `MainActivity.kt` con `NotificationService` y `MusicPlayerProvider` mediante `MethodChannel('com.furiapp.furi_app/music_service')` para sincronizar estado, duración, posición y eventos de controles/barra de tiempo (`onSeekTo` -> `seek()`).
+  3. En `MusicPlayerProvider.play()` se añadió la guarda `_isSwitchingTrack` para ignorar el `PlayerState.stopped` transitorio durante el cambio de pista.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-20
+
 ### ~~CRÍTICA - Congelamiento y crash de la app al hacer scroll en Pinterest embebido (SurfaceTexture deadlock, OOM heap y reproducción automática de videos)~~ ✅ RESUELTO 2026-10-20
 - **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `android/app/src/main/AndroidManifest.xml`, `pubspec.yaml`
 - **Qué pasaba**: Al ingresar a Pinterest dentro de la aplicación, el usuario podía scrollear un momento, pero a los pocos segundos la aplicación se pausaba/congelaba completamente y se cerraba de golpe (crash / salida forzada al launcher de Android).

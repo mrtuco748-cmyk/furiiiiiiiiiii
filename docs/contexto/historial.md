@@ -1,5 +1,38 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-20] - RELEASE v1.0.11 - MediaSession Nativa con Barra Interactiva, Arreglo de Salida/Crash en Pinterest y Modularizacion
+
+**Resumen**:
+- **Notificacion multimedia nativa en Android con barra de tiempo interactiva (ACTION_SEEK_TO)**:
+  - Implementacion de FuriMusicService.kt con MediaSessionCompat activa, PlaybackStateCompat con acciones completas (ACTION_SEEK_TO, play, pause, skip to next, skip to previous) y NotificationCompat.MediaStyle.
+  - Envio continuo y sincronizado de METADATA_KEY_DURATION y posicion exacta desde MusicPlayerProvider a traves de MethodChannel('com.furiapp.furi_app/music_service').
+  - Notificacion persistente con canal prioritario furi_music_channel e icono multimedia nativo, permitiendo arrastrar la barra de progreso desde la cortina de Android / pantalla de bloqueo sin cierres ni perdidas de foco.
+- **Arreglo integral de caida/salida en Galeria Pinterest**:
+  - Eliminacion de la llamada automatica destructiva a Navigator.pop() en onHideCustomWidget.
+  - Creacion de SafeFuriWebViewClient nativo con onRenderProcessGone devolviendo true para absorber la terminacion del proceso de Chromium en segundo plano sin cerrar la app Flutter.
+  - Reemplazo de manipulacion DOM destructiva de React 18 por insercion CSS de alta prioridad.
+  - Mantenimiento del WebViewWidget en memoria estable en el Stack para evitar recreaciones.
+- **Modularizacion bajo la regla de <300 lineas y mapa de arquitectura**:
+  - Descomposicion modular de lib/screens/galeria/: galeria_screen.dart (reducido a 217 lineas) y pinterest_screen.dart (reducido a 295 lineas) con 10 componentes atomicos extraidos en widgets/.
+  - Creacion de docs/contexto/mapa-del-codigo.md como guia integral para agentes y desarrolladores.
+- **Verificacion**:
+  - 322 de 322 pruebas unitarias y de widgets aprobadas al 100%.
+  - Compilacion Kotlin nativa de Android exitosa.
+
+**Archivos impactados**:
+- android/app/src/main/kotlin/com/furiapp/furi_app/FuriMusicService.kt
+- android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt
+- android/app/src/main/AndroidManifest.xml
+- lib/services/notification_service.dart
+- lib/providers/music_player_provider.dart
+- lib/screens/galeria/galeria_screen.dart
+- lib/screens/galeria/pinterest_screen.dart
+- lib/screens/galeria/widgets/*
+- docs/contexto/mapa-del-codigo.md
+- pubspec.yaml
+
+---
+
 ## [2026-10-20] - BUGFIX / STABILITY - Correccion de Congelamiento y Crash al Scrollear en Pinterest Embebido (Hybrid Composition, Heap Ampliado y Control de Videos)
 
 **Resumen**:
@@ -1308,9 +1341,11 @@ A requerimiento del usuario ("agrega opcion de descargar y tambien opcion de com
 
 **Resumen**: Se consolidaron absolutamente todos los scripts SQL y migraciones del proyecto en un único archivo maestro llamado UNIVERSAL.sql:
 1. **Buckets de Supabase Storage e idempotencia**: Se automatiza la creación de los buckets music, chat-media, gallery, vatars con public = true y políticas permisivas en storage.objects para inserción y lectura desde la app sin rechazos 403.
-2. **Todas las tablas, índices y columnas**: Más de 30 entidades integradas (music_tracks, oard_elements, schedules con ecurrence, avorites, workout_*, etc.).
+2. **Todas las tablas, índices y columnas**: Más de 30 entidades integradas (music_tracks, oard_elements, schedules con 
+ecurrence, avorites, workout_*, etc.).
 3. **RLS y Políticas Globales**: Habilitación de RLS con políticas permisivas para non y uthenticated, y GRANT ALL en tablas, secuencias y rutinas.
-4. **RPCs y Realtime unificado**: 	oggle_reaction, eact_deck_card, comentarios atómicos de workout y publicación automática en supabase_realtime con delimitadores $ balanceados y manejo seguro de duplicados (duplicate_object).
+4. **RPCs y Realtime unificado**: 	oggle_reaction, 
+eact_deck_card, comentarios atómicos de workout y publicación automática en supabase_realtime con delimitadores $ balanceados y manejo seguro de duplicados (duplicate_object).
 5. **Diagnóstico en la App**: En lib/providers/music_player_provider.dart y lib/screens/music/music_screen.dart, ahora se captura y muestra el error detallado del servidor si una operación no puede completarse, permitiendo visibilidad total.
 
 **Archivos impactados**: UNIVERSAL.sql, lib/providers/music_player_provider.dart, lib/screens/music/music_screen.dart, docs/contexto/historial.md.
@@ -1346,11 +1381,13 @@ otifications y chat_typing (líneas 147-159), las ramas EXCEPTION WHEN duplicate
 ## [2026-10-14] - BUGFIX - Música: Bypass de rate limit de YouTube y guardado offline-first garantizado en SQLite
 
 **Resumen**: Al intentar descargar música en la app, las canciones no aparecían en la biblioteca. Diagnóstico técnico en profundidad:
-1. youtube_explode_dart usaba por defecto la extracción de watch page web (equireWatchPage: true), lo que activaba el mecanismo anti-bot de YouTube (RequestLimitExceededException) antes de poder descargar el archivo.
+1. youtube_explode_dart usaba por defecto la extracción de watch page web (
+equireWatchPage: true), lo que activaba el mecanismo anti-bot de YouTube (RequestLimitExceededException) antes de poder descargar el archivo.
 2. La persistencia en la base de datos local SQLite dependía de que la subida a Supabase Storage finalizara primero; ante cualquier demora o fallo de red en la nube, la canción no se guardaba localmente.
 
 **Solución aplicada**:
-- lib/services/music_download_service.dart: configuración de ytClients: [YoutubeApiClient.ios] y equireWatchPage: false (con fallback dinámico a android/tv). Esto extrae directamente los streams AAC/MP4 a 128 kbps sin bloqueos de rate limit.
+- lib/services/music_download_service.dart: configuración de ytClients: [YoutubeApiClient.ios] y 
+equireWatchPage: false (con fallback dinámico a android/tv). Esto extrae directamente los streams AAC/MP4 a 128 kbps sin bloqueos de rate limit.
 - Flujo **Offline-First garantizado**: El audio se descarga y se guarda **inmediatamente en SQLite local** (localPath), garantizando que la canción esté disponible en la biblioteca de inmediato. Luego se sincroniza en segundo plano con Supabase Storage y la tabla music_tracks.
 - lib/providers/music_player_provider.dart: wait _reloadFromLocal() tras completar la descarga para refrescar la lista de canciones en memoria instantáneamente.
 - lib/screens/music/music_screen.dart: cambio automático a la pestaña de Biblioteca al completar la descarga y mensajes claros de progreso y error.
@@ -1362,7 +1399,10 @@ otifications y chat_typing (líneas 147-159), las ramas EXCEPTION WHEN duplicate
 
 ## [2026-10-14] - FIX - Empaquetado de Release Windows: Inclusión automática de DLLs y data bundle
 
-**Resumen**: Al compilar para Windows con flutter build windows --release, el ejecutable en unner\Release\ requería las DLLs del motor Flutter (flutter_windows.dll), los plugins C++ (udioplayers_windows_plugin.dll, ecord_windows_plugin.dll, sqlite3.dll, etc.) y la carpeta data/. Se sincronizó el bundle completo desde install\ a unner\Release\ y se automatizó en scripts/build-windows.ps1.
+**Resumen**: Al compilar para Windows con flutter build windows --release, el ejecutable en 
+unner\Release\ requería las DLLs del motor Flutter (flutter_windows.dll), los plugins C++ (udioplayers_windows_plugin.dll, 
+ecord_windows_plugin.dll, sqlite3.dll, etc.) y la carpeta data/. Se sincronizó el bundle completo desde install\ a 
+unner\Release\ y se automatizó en scripts/build-windows.ps1.
 
 **Archivos impactados**: scripts/build-windows.ps1, uild\windows\x64\runner\Release\.
 
@@ -4532,16 +4572,20 @@ Ahora viven en `globalThis` y sobreviven las reconexiones.
 **Resumen**: Rediseño completo del calendario eliminando la fragmentación de 5 pantallas a una sola pantalla (CalendarScreen), con mes arriba y agenda del día abajo. Unificación de eventos únicos y repetidos (semanal, cada N días, mensual, anual) en un solo formulario (EventSheet) y sin asistente inicial intrusivo.
 **Cambios realizados**:
 - Modelo puro de recurrencia lib/models/recurrence.dart con soporte serializable a texto (weekly:1,3,5, every:N, monthly, yearly).
-- Columna ecurrence agregada a Schedule (SQLite v13 + migración Supabase supabase/migration_calendar_recurrence.sql).
+- Columna 
+ecurrence agregada a Schedule (SQLite v13 + migración Supabase supabase/migration_calendar_recurrence.sql).
 - Lógica de agenda lib/screens/calendar/day_agenda.dart: mezcla eventos fechados y clases legacy en un único listado cronológico por hora.
 - Formulario modal lib/screens/calendar/event_sheet.dart: selector de repetición con 5 botones compactos, colores por usuario (Facu/Rocío), validaciones y confirmación de borrado compartida.
 - Pantalla integrada lib/screens/calendar/calendar_screen.dart: navegación mensual simple (? mes ?), selección de día, indicadores de eventos y FAB brutalista.
 - Actualización de EventNotificationService: reprograma la próxima ocurrencia de eventos repetidos.
-- Rutas centralizadas en outer.dart: navegación directa al calendario desde Home y atajos rápidos.
+- Rutas centralizadas en 
+outer.dart: navegación directa al calendario desde Home y atajos rápidos.
 - Eliminación de 5 archivos legacy sin uso (calendar_home_screen.dart, daily_events_screen.dart, class_board_screen.dart, class_setup_wizard.dart, schedule_form_screen.dart).
-- Suite de tests con 33 pruebas verdes (ecurrence_test.dart, day_agenda_test.dart, event_notification_recurrence_test.dart, schedule_test.dart, schedule_sync_test.dart).
+- Suite de tests con 33 pruebas verdes (
+ecurrence_test.dart, day_agenda_test.dart, event_notification_recurrence_test.dart, schedule_test.dart, schedule_sync_test.dart).
 **Lecciones**:
-- Consolidar entidades en una sola tabla (schedules con ecurrence) evita pantallas paralelas para clases vs eventos y facilita la sincronización bidireccional de pareja sin duplicar lógica de realtime.
+- Consolidar entidades en una sola tabla (schedules con 
+ecurrence) evita pantallas paralelas para clases vs eventos y facilita la sincronización bidireccional de pareja sin duplicar lógica de realtime.
 - Unificar la UI en un solo Scaffold con bottom sheet contextual reduce la fatiga de navegación y elimina advertencias de contexto asíncrono.
 **Impacto**: lib/screens/calendar/*, lib/models/schedule.dart, lib/models/recurrence.dart, lib/router.dart, lib/database/database_helper.dart, lib/services/event_notification_service.dart.
 **Relacionado con**: decisiones.md (D-17), arquitectura.md, glosario.md.

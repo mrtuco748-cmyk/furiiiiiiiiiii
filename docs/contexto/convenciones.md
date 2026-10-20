@@ -20,6 +20,17 @@
 - Preferir `final` sobre `var`
 - Usar `withValues(alpha:)` de Flutter 3.27+ para colores
 
+## Límite de Tamaño de Archivos y Modularización (OBLIGATORIO)
+
+- **Límite máximo por archivo**: Ningún archivo .dart debe superar las **300 líneas de código**. Si un archivo supera 300 líneas, es **obligatorio** dividirlo en submódulos.
+- **Tamaño ideal**: 50 a 150 líneas por archivo con Principio de Responsabilidad Única (SRP).
+- **Estructura en subcarpetas por feature**:
+  - widgets/: Componentes atómicos (cards, barras de acción, modales, dialogs).
+  - models/: Entidades de datos y serialización.
+  - services/: Operaciones de red, audio, cache, plugins nativos.
+  - controllers/ o providers/: Gestión del estado reactivo.
+- **Referencia de mapa**: Consultar docs/contexto/mapa-del-codigo.md para navegar rápidamente sin saturar el contexto del agente.
+
 ## Imports
 
 - Orden: 1) Flutter/Dart SDK, 2) Paquetes externos, 3) Internos

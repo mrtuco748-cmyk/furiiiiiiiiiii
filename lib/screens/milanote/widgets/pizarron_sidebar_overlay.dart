@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/note_style_config.dart';
 import '../painters/note_shape_utils.dart';
+import 'pizarron_color_picker_area.dart';
 import 'pizarron_note_widget.dart';
 
 /// Categorías del panel lateral derecho de edición.
@@ -48,7 +49,7 @@ class PizarronSidebarOverlay extends StatefulWidget {
 }
 
 class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
-  SidebarSection _activeSection = SidebarSection.baseLayer;
+  SidebarSection? _activeSection;
   int _gradientStopIndex = 0; // 0 = inicial, 1 = medio, 2 = final
   late TextEditingController _emojiPatternController;
 
@@ -78,6 +79,26 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
     super.dispose();
   }
 
+  List<String> _getSampledColors() {
+    final cfg = widget.config;
+    final set = <String>{};
+    if (cfg.solidColor.isNotEmpty) set.add(cfg.solidColor);
+    if (cfg.gradientStartColor.isNotEmpty) set.add(cfg.gradientStartColor);
+    if (cfg.gradientMidColor.isNotEmpty) set.add(cfg.gradientMidColor);
+    if (cfg.gradientEndColor.isNotEmpty) set.add(cfg.gradientEndColor);
+    if (cfg.patternColor1.isNotEmpty) set.add(cfg.patternColor1);
+    if (cfg.patternColor2.isNotEmpty) set.add(cfg.patternColor2);
+    if (cfg.borderColor.isNotEmpty) set.add(cfg.borderColor);
+    if (cfg.titleColor.isNotEmpty) set.add(cfg.titleColor);
+    if (cfg.bodyColor.isNotEmpty) set.add(cfg.bodyColor);
+    set.add('#4FC3F7');
+    set.add('#CE93D8');
+    set.add('#2EE50F');
+    set.add('#FFFFFF');
+    set.add('#141820');
+    return set.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -87,24 +108,25 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Subpanel contextual de la herramienta activa
-            Container(
-              width: 224,
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.84,
+            // Subpanel contextual de la herramienta activa (se pliega cuando no hay sección activa)
+            if (_activeSection != null) ...[
+              Container(
+                width: 224,
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.84,
+                ),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _panelBg,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: _buildActiveSubpanel(_activeSection!),
+                ),
               ),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _panelBg,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: _buildActiveSubpanel(),
-              ),
-            ),
-
-            const SizedBox(width: 8),
+              const SizedBox(width: 8),
+            ],
 
             // Riel principal vertical derecho de íconos
             Container(
@@ -182,7 +204,15 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
   }) {
     final selected = _activeSection == section;
     return GestureDetector(
-      onTap: () => setState(() => _activeSection = section),
+      onTap: () {
+        setState(() {
+          if (_activeSection == section) {
+            _activeSection = null; // Cierra si se vuelve a tocar
+          } else {
+            _activeSection = section; // Abre la sección seleccionada
+          }
+        });
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         width: 42,
@@ -224,8 +254,8 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
     );
   }
 
-  Widget _buildActiveSubpanel() {
-    switch (_activeSection) {
+  Widget _buildActiveSubpanel(SidebarSection section) {
+    switch (section) {
       case SidebarSection.baseLayer:
         return _buildBaseLayerPanel();
       case SidebarSection.patternLayer:
@@ -288,9 +318,10 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
         const SizedBox(height: 14),
 
         if (cfg.baseMode == 'solid') ...[
-          _buildColorGrid(
-            selectedHex: cfg.solidColor,
-            onSelect: (hex) =>
+          PizarronColorPickerArea(
+            currentColorHex: cfg.solidColor,
+            sampledColors: _getSampledColors(),
+            onColorChanged: (hex) =>
                 widget.onConfigChanged(cfg.copyWith(solidColor: hex)),
           ),
         ] else if (cfg.baseMode == 'gradient') ...[
@@ -329,13 +360,14 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
             ],
           ),
           const SizedBox(height: 12),
-          _buildColorGrid(
-            selectedHex: _gradientStopIndex == 0
+          PizarronColorPickerArea(
+            currentColorHex: _gradientStopIndex == 0
                 ? cfg.gradientStartColor
                 : (_gradientStopIndex == 1
                     ? cfg.gradientMidColor
                     : cfg.gradientEndColor),
-            onSelect: (hex) {
+            sampledColors: _getSampledColors(),
+            onColorChanged: (hex) {
               if (_gradientStopIndex == 0) {
                 widget.onConfigChanged(cfg.copyWith(gradientStartColor: hex));
               } else if (_gradientStopIndex == 1) {
@@ -623,16 +655,18 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
           ),
 
           const SizedBox(height: 8),
-          _buildColorGrid(
-            selectedHex: cfg.patternColor1,
-            onSelect: (hex) =>
+          PizarronColorPickerArea(
+            currentColorHex: cfg.patternColor1,
+            sampledColors: _getSampledColors(),
+            onColorChanged: (hex) =>
                 widget.onConfigChanged(cfg.copyWith(patternColor1: hex)),
           ),
           if (cfg.patternUseGradient) ...[
-            const SizedBox(height: 8),
-            _buildColorGrid(
-              selectedHex: cfg.patternColor2,
-              onSelect: (hex) =>
+            const SizedBox(height: 10),
+            PizarronColorPickerArea(
+              currentColorHex: cfg.patternColor2,
+              sampledColors: _getSampledColors(),
+              onColorChanged: (hex) =>
                   widget.onConfigChanged(cfg.copyWith(patternColor2: hex)),
             ),
           ],
@@ -784,9 +818,10 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
                   widget.onConfigChanged(cfg.copyWith(borderSpacing: v)),
             ),
           const SizedBox(height: 8),
-          _buildColorGrid(
-            selectedHex: cfg.borderColor,
-            onSelect: (hex) =>
+          PizarronColorPickerArea(
+            currentColorHex: cfg.borderColor,
+            sampledColors: _getSampledColors(),
+            onColorChanged: (hex) =>
                 widget.onConfigChanged(cfg.copyWith(borderColor: hex)),
           ),
         ],
@@ -932,9 +967,10 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
         const SizedBox(height: 10),
 
         // Color del texto del bloque activo
-        _buildColorGrid(
-          selectedHex: currentColor,
-          onSelect: (hex) => _applyTypographyChange(colorHex: hex),
+        PizarronColorPickerArea(
+          currentColorHex: currentColor,
+          sampledColors: _getSampledColors(),
+          onColorChanged: (hex) => _applyTypographyChange(colorHex: hex),
         ),
       ],
     );
@@ -1115,40 +1151,6 @@ class _PizarronSidebarOverlayState extends State<PizarronSidebarOverlay> {
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildColorGrid({
-    required String selectedHex,
-    required ValueChanged<String> onSelect,
-  }) {
-    return Wrap(
-      spacing: 7,
-      runSpacing: 7,
-      children: [
-        for (final hex in PizarronPalette.noteColors)
-          GestureDetector(
-            onTap: () => onSelect(hex),
-            child: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: PizarronPalette.parseHex(hex),
-                shape: BoxShape.circle,
-              ),
-              child: selectedHex.toUpperCase() == hex.toUpperCase()
-                  ? Icon(
-                      Icons.check_rounded,
-                      size: 16,
-                      color:
-                          PizarronPalette.parseHex(hex).computeLuminance() > 0.5
-                              ? const Color(0xFF141820)
-                              : Colors.white,
-                    )
-                  : null,
-            ),
-          ),
       ],
     );
   }

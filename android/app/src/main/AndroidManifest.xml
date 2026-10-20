@@ -63,6 +63,12 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/notification_fox_color" />
+        <!-- Servicio nativo en primer plano con MediaSession para reproductor de música y barra de tiempo -->
+        <service
+            android:name=".FuriMusicService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
         <!-- Receivers requeridos por flutter_local_notifications para botonera de música y alarmas -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"

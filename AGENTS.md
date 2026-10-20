@@ -45,7 +45,8 @@ Toda la documentación del proyecto vive en:
 - `docs/contexto/forma-de-trabajo-con-el-usuario.md` — Cómo interactuar con el usuario
 - `docs/contexto/flujo-de-trabajo.md` — Flujo de trabajo del proyecto
 - `docs/contexto/glosario.md` — Términos y definiciones del proyecto
-- `docs/contexto/historial.md` — Historial de cambios
+- docs/contexto/historial.md — Historial de cambios
+- docs/contexto/mapa-del-codigo.md — Mapa completo de archivos, carpetas y guía para agentes
 - `docs/contexto/bot-whatsapp.md` — Documentación del bot de WhatsApp
 - `skill_visual .md` — Reglas visuales: fondo=borde mismo color, sólido, redondo, sin negro puro
 
@@ -68,6 +69,8 @@ flutter test           # Ejecutar tests
 ## Reglas adicionales
 
 - NUNCA hagas commit sin que el usuario lo pida explícitamente
+- NINGÚN archivo de código debe superar las 300 líneas. Si supera 300 líneas, debes dividirlo en submódulos (widgets/, etc.)
+- Consulta docs/contexto/mapa-del-codigo.md para entender el árbol de archivos antes de tocar nada
 - Antes de tocar UI, lee `skill_visual .md` — las reglas de estilo son obligatorias
 - Si hay ambigüedad, pregunta antes de actuar
 - Mantén la documentación sincronizada con el código

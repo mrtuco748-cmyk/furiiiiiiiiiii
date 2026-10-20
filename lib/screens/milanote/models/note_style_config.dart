@@ -715,4 +715,31 @@ class PizarronPalette {
     }
     return fallback;
   }
+
+  static String toHex(Color color) {
+    final r = (color.r * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    final g = (color.g * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    final b = (color.b * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    return '#$r$g$b'.toUpperCase();
+  }
+
+  static final List<String> recentColors = [
+    '#FF2A85',
+    '#7B2CBF',
+    '#3A86FF',
+    '#2EE50F',
+    '#FFB703',
+    '#1E2436',
+    '#FFFFFF',
+  ];
+
+  static void addRecentColor(String hex) {
+    final clean = hex.trim().toUpperCase();
+    if (clean.isEmpty) return;
+    recentColors.remove(clean);
+    recentColors.insert(0, clean);
+    if (recentColors.length > 10) {
+      recentColors.removeLast();
+    }
+  }
 }

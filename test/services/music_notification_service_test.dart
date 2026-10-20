@@ -75,5 +75,26 @@ void main() {
         expect(a.icon, isA<DrawableResourceAndroidBitmap>());
       }
     });
+
+    test('onMusicSeek and onWebViewRendererGone callbacks can be registered and invoked', () {
+      Duration? seekedTo;
+      bool rendererGoneTriggered = false;
+
+      NotificationService.onMusicSeek = (pos) {
+        seekedTo = pos;
+      };
+      NotificationService.onWebViewRendererGone = () {
+        rendererGoneTriggered = true;
+      };
+
+      NotificationService.onMusicSeek?.call(const Duration(seconds: 42));
+      NotificationService.onWebViewRendererGone?.call();
+
+      expect(seekedTo, equals(const Duration(seconds: 42)));
+      expect(rendererGoneTriggered, isTrue);
+
+      NotificationService.onMusicSeek = null;
+      NotificationService.onWebViewRendererGone = null;
+    });
   });
 }

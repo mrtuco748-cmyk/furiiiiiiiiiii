@@ -2,11 +2,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+
+import '../../services/notification_service.dart';
+import 'widgets/pinterest_top_bar.dart';
+import 'widgets/pinterest_credentials_banner.dart';
+import 'widgets/pinterest_desktop_fallback.dart';
 
 /// Pantalla integrada de Pinterest sin barras de navegador
 /// para que se sienta 100% nativa dentro de F.U.R.I.
@@ -19,10 +22,12 @@ class PinterestScreen extends StatefulWidget {
 
 class _PinterestScreenState extends State<PinterestScreen> {
   WebViewController? _controller;
+  Widget? _webViewWidget;
   bool _loading = true;
   double _progress = 0.0;
   bool _isMobile = false;
   bool _showCredentialsBar = true;
+  String _lastUrl = 'https://www.pinterest.com/';
 
   static const String _accountEmail = 'derrame_company@yahoo.com';
   static const String _accountPass = 'Zapallo1234*';
@@ -32,134 +37,180 @@ class _PinterestScreenState extends State<PinterestScreen> {
     super.initState();
     _isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
     if (_isMobile) {
+      try {
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+      } catch (_) {}
+
+      NotificationService.onWebViewRendererGone = _handleRendererGone;
       _initWebView();
     }
   }
 
   @override
   void dispose() {
+    if (NotificationService.onWebViewRendererGone == _handleRendererGone) {
+      NotificationService.onWebViewRendererGone = null;
+    }
+    _webViewWidget = null;
     _controller = null;
     super.dispose();
   }
 
-  void _initWebView() {
+  void _handleRendererGone() {
+    if (!mounted) return;
+    debugPrint('Pinterest WebView renderer process gone: recreando WebView de forma segura');
+    setState(() {
+      _loading = true;
+      _progress = 0.0;
+      _webViewWidget = null;
+      _controller = null;
+    });
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) {
+        _initWebView(initialUrl: _lastUrl);
+      }
+    });
+  }
+
+  void _initWebView({String initialUrl = 'https://www.pinterest.com/'}) {
+    final delegate = NavigationDelegate(
+      onProgress: (int progress) {
+        if (!mounted) return;
+        final newProgress = progress / 100.0;
+        final newLoading = progress < 100;
+        if (newLoading != _loading || (newProgress - _progress).abs() >= 0.15) {
+          setState(() {
+            _progress = newProgress;
+            _loading = newLoading;
+          });
+        }
+      },
+      onPageStarted: (String url) {
+        if (url.startsWith('http')) {
+          _lastUrl = url;
+        }
+        NotificationService.protectAndroidWebViews();
+        if (mounted && !_loading) {
+          setState(() => _loading = true);
+        }
+      },
+      onPageFinished: (String url) {
+        if (url.startsWith('http')) {
+          _lastUrl = url;
+        }
+        NotificationService.protectAndroidWebViews();
+        if (mounted && _loading) {
+          setState(() => _loading = false);
+        }
+        _injectCleanerCss();
+      },
+      onWebResourceError: (WebResourceError error) {
+        debugPrint('Pinterest WebView Error: ${error.description}');
+      },
+      onNavigationRequest: (!kIsWeb && Platform.isAndroid)
+          ? null
+          : (NavigationRequest request) {
+              final uri = Uri.tryParse(request.url);
+              if (uri == null) return NavigationDecision.prevent;
+
+              final scheme = uri.scheme.toLowerCase();
+              if (scheme != 'http' && scheme != 'https') {
+                return NavigationDecision.prevent;
+              }
+
+              final host = uri.host.toLowerCase();
+              if (host.contains('play.google.com') ||
+                  host.contains('apps.apple.com')) {
+                return NavigationDecision.prevent;
+              }
+
+              return NavigationDecision.navigate;
+            },
+    );
+
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF141414))
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            if (mounted) {
-              setState(() {
-                _progress = progress / 100.0;
-                _loading = progress < 100;
-              });
-            }
-          },
-          onPageStarted: (String url) {
-            if (mounted) setState(() => _loading = true);
-          },
-          onPageFinished: (String url) {
-            if (mounted) setState(() => _loading = false);
-            // Inyectar limpieza y optimización continua de scroll
-            _injectCleanerCss();
-          },
-          onWebResourceError: (WebResourceError error) {
-            debugPrint('Pinterest WebView Error: ${error.description}');
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            final uri = Uri.tryParse(request.url);
-            if (uri == null) return NavigationDecision.prevent;
-
-            final scheme = uri.scheme.toLowerCase();
-            // Bloquear cualquier esquema que no sea web (intent://, pinterest://, market://, etc.)
-            if (scheme != 'http' && scheme != 'https') {
-              debugPrint('Pinterest external scheme prevented: ${request.url}');
-              return NavigationDecision.prevent;
-            }
-
-            final host = uri.host.toLowerCase();
-            // Evitar redirecciones automáticas a tiendas de aplicaciones
-            if (host.contains('play.google.com') ||
-                host.contains('apps.apple.com')) {
-              debugPrint('Pinterest app store redirect prevented: ${request.url}');
-              return NavigationDecision.prevent;
-            }
-
-            return NavigationDecision.navigate;
-          },
-        ),
-      )
+      ..setNavigationDelegate(delegate)
       ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
       );
 
-    // Optimizaciones nativas en Android:
     if (controller.platform is AndroidWebViewController) {
       final androidController = controller.platform as AndroidWebViewController;
-      // Requerir gesto de usuario para reproducir videos (evita agotar MediaCodec/GPU decoders al scrollear feeds)
       androidController.setMediaPlaybackRequiresUserGesture(true);
+
+      androidController.setCustomWidgetCallbacks(
+        onShowCustomWidget: (widget, onCustomWidgetHidden) {
+          onCustomWidgetHidden();
+        },
+        onHideCustomWidget: () {
+          // No-op: nunca hacer pop() de la ruta de Flutter
+        },
+      );
     }
 
-    controller.loadRequest(Uri.parse('https://www.pinterest.com/'));
+    PlatformWebViewWidgetCreationParams params =
+        PlatformWebViewWidgetCreationParams(
+      controller: controller.platform,
+      layoutDirection: TextDirection.ltr,
+      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
+        Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+      },
+    );
+
+    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
+      params = AndroidWebViewWidgetCreationParams
+          .fromPlatformWebViewWidgetCreationParams(
+        params,
+        displayWithHybridComposition: false,
+      );
+    }
+
     _controller = controller;
+    _webViewWidget = WebViewWidget.fromPlatformCreationParams(params: params);
+
+    controller.loadRequest(Uri.parse(initialUrl));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.protectAndroidWebViews();
+    });
   }
 
   Future<void> _injectCleanerCss() async {
-    if (_controller == null) return;
+    final ctrl = _controller;
+    if (ctrl == null) return;
     try {
-      await _controller!.runJavaScript('''
+      await ctrl.runJavaScript('''
         (() => {
-          const styleId = 'furi-pinterest-cleaner';
-          if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.innerHTML = `
-              div[data-test-id="app-upsell-banner"],
-              div[data-test-id="full-page-signup-barrier"],
-              div[data-test-id="smart-banner"],
-              div[data-test-id="mobile-bottom-nav"],
-              .appUpsell,
-              .AppUpsellBanner,
-              div[aria-label="banner"],
-              div[aria-label="Smart App Banner"],
-              iframe[src*="smartbanner"],
-              div[data-test-id="toast"] {
-                display: none !important;
-                visibility: hidden !important;
-                pointer-events: none !important;
-              }
-              html, body {
-                overflow-y: auto !important;
-                -webkit-overflow-scrolling: touch !important;
-                overscroll-behavior-y: contain !important;
-              }
-            `;
-            document.head.appendChild(style);
-          }
-
-          // Observador continuo para suprimir banners y trampas modales creadas dinámicamente al scrollear
-          if (!window._furiObserverAttached) {
-            window._furiObserverAttached = true;
-            const observer = new MutationObserver(() => {
-              const elements = document.querySelectorAll(
-                'div[data-test-id="app-upsell-banner"], div[data-test-id="full-page-signup-barrier"], .appUpsell, .AppUpsellBanner, div[aria-label="Smart App Banner"]'
-              );
-              for (let i = 0; i < elements.length; i++) {
-                elements[i].remove();
-              }
-              if (document.body && document.body.style.overflow === 'hidden') {
-                document.body.style.overflow = 'auto';
-              }
-              if (document.documentElement && document.documentElement.style.overflow === 'hidden') {
-                document.documentElement.style.overflow = 'auto';
-              }
-            });
-            observer.observe(document.body || document.documentElement, {
-              childList: true,
-              subtree: true,
-            });
-          }
+          try {
+            const styleId = 'furi-pinterest-cleaner';
+            if (!document.getElementById(styleId) && document.head) {
+              const style = document.createElement('style');
+              style.id = styleId;
+              style.textContent = `
+                div[data-test-id="app-upsell-banner"],
+                div[data-test-id="full-page-signup-barrier"],
+                div[data-test-id="smart-banner"],
+                .appUpsell,
+                .AppUpsellBanner,
+                div[aria-label="Smart App Banner"],
+                iframe[src*="smartbanner"] {
+                  display: none !important;
+                  visibility: hidden !important;
+                  pointer-events: none !important;
+                  height: 0 !important;
+                  max-height: 0 !important;
+                  overflow: hidden !important;
+                }
+                html, body {
+                  overflow-y: auto !important;
+                  -webkit-overflow-scrolling: touch !important;
+                }
+              `;
+              document.head.appendChild(style);
+            }
+          } catch (_) {}
         })();
       ''');
     } catch (e) {
@@ -167,41 +218,30 @@ class _PinterestScreenState extends State<PinterestScreen> {
     }
   }
 
-  Widget _buildWebViewWidget() {
-    PlatformWebViewWidgetCreationParams params =
-        PlatformWebViewWidgetCreationParams(
-      controller: _controller!.platform,
-      layoutDirection: TextDirection.ltr,
-      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
-        Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
-      },
-    );
-
-    // En Android se utiliza Hybrid Composition para evitar cuellos de botella
-    // y bloqueos en SurfaceTexture al scrollear listas infinitas con muchas imágenes.
-    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
-      params = AndroidWebViewWidgetCreationParams
-          .fromPlatformWebViewWidgetCreationParams(
-        params,
-        displayWithHybridComposition: true,
-      );
-    }
-
-    return WebViewWidget.fromPlatformCreationParams(params: params);
-  }
-
   Future<bool> _handleBack() async {
-    if (_controller != null && await _controller!.canGoBack()) {
-      await _controller!.goBack();
-      return false;
-    }
+    try {
+      if (_controller != null && await _controller!.canGoBack()) {
+        await _controller!.goBack();
+        return false;
+      }
+    } catch (_) {}
     return true;
   }
 
   Future<void> _openExternal() async {
-    final uri = Uri.parse('https://www.pinterest.com');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final uri = Uri.parse(_lastUrl.isNotEmpty ? _lastUrl : 'https://www.pinterest.com');
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.inAppBrowserView,
+      );
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
     }
   }
 
@@ -218,376 +258,60 @@ class _PinterestScreenState extends State<PinterestScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF141414), // Fondo sólido sin negro puro
+        backgroundColor: const Color(0xFF141414),
         body: SafeArea(
           child: Column(
             children: [
-              // Cabecera superior nativa F.U.R.I
-              _buildTopBar(),
-
-              // Barra rápida de credenciales (1-tap para copiar y pegar sin ser detectado como bot)
-              if (_showCredentialsBar) _buildCredentialsBanner(),
-
-              // Barra de progreso delgada si está cargando
-              if (_loading && _isMobile)
-                LinearProgressIndicator(
-                  value: _progress > 0 ? _progress : null,
-                  backgroundColor: const Color(0xFF222222),
-                  color: const Color(0xFFE60023), // Rojo Pinterest sólido
-                  minHeight: 2.5,
+              PinterestTopBar(
+                isMobile: _isMobile,
+                hasController: _controller != null,
+                showCredentialsBar: _showCredentialsBar,
+                onBack: () async {
+                  final nav = Navigator.of(context);
+                  final shouldPop = await _handleBack();
+                  if (shouldPop && mounted) nav.pop();
+                },
+                onToggleCredentials: () {
+                  setState(() => _showCredentialsBar = !_showCredentialsBar);
+                },
+                onReload: () {
+                  _controller?.loadRequest(Uri.parse('https://www.pinterest.com/'));
+                },
+                onClose: () => Navigator.of(context).pop(),
+              ),
+              if (_showCredentialsBar)
+                PinterestCredentialsBanner(
+                  accountEmail: _accountEmail,
+                  accountPass: _accountPass,
+                  onClose: () => setState(() => _showCredentialsBar = false),
                 ),
-
-              // Contenido webview nativo (móvil) con Hybrid Composition o lanzador (desktop)
               Expanded(
-                child: _isMobile && _controller != null
-                    ? _buildWebViewWidget()
-                    : _buildDesktopFallback(),
+                child: _isMobile && _webViewWidget != null
+                    ? Stack(
+                        children: [
+                          Positioned.fill(child: _webViewWidget!),
+                          if (_loading)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: LinearProgressIndicator(
+                                value: _progress > 0 ? _progress : null,
+                                backgroundColor: const Color(0xFF222222),
+                                color: const Color(0xFFE60023),
+                                minHeight: 2.5,
+                              ),
+                            ),
+                        ],
+                      )
+                    : PinterestDesktopFallback(
+                        accountEmail: _accountEmail,
+                        accountPass: _accountPass,
+                        onOpenExternal: _openExternal,
+                      ),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      color: const Color(0xFF181818),
-      child: Row(
-        children: [
-          // Botón Atrás
-          GestureDetector(
-            onTap: () async {
-              HapticFeedback.lightImpact();
-              final nav = Navigator.of(context);
-              final shouldPop = await _handleBack();
-              if (shouldPop && mounted) {
-                nav.pop();
-              }
-            },
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: const BoxDecoration(
-                color: Color(0xFF242424),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Badge icónico P
-          Container(
-            width: 26,
-            height: 26,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE60023),
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.push_pin_rounded,
-                color: Colors.white,
-                size: 15,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Título Pinterest
-          Text(
-            'PINTEREST',
-            style: GoogleFonts.bangers(
-              fontSize: 20,
-              color: Colors.white,
-              letterSpacing: 0.8,
-            ),
-          ),
-
-          const Spacer(),
-
-          // Botón para mostrar / ocultar credenciales
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              setState(() {
-                _showCredentialsBar = !_showCredentialsBar;
-              });
-            },
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: _showCredentialsBar
-                    ? const Color(0xFFE60023)
-                    : const Color(0xFF242424),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.vpn_key_rounded,
-                color: _showCredentialsBar ? Colors.white : const Color(0xFFE60023),
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Botón de Inicio / Recargar Pinterest
-          if (_isMobile && _controller != null)
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _controller!.loadRequest(Uri.parse('https://www.pinterest.com/'));
-              },
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF242424),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.home_rounded,
-                  color: Colors.white70,
-                  size: 20,
-                ),
-              ),
-            ),
-          const SizedBox(width: 8),
-
-          // Botón Cerrar directo y volver a Galería
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              Navigator.of(context).pop();
-            },
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: const BoxDecoration(
-                color: Color(0xFF2A2020),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCredentialsBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: const Color(0xFF1E1E1E),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            color: Colors.white70,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: [
-                  _buildCopyChip(
-                    label: 'Copiar Correo',
-                    icon: Icons.mail_outline_rounded,
-                    value: _accountEmail,
-                    snackMsg: 'Correo copiado: $_accountEmail',
-                  ),
-                  const SizedBox(width: 8),
-                  _buildCopyChip(
-                    label: 'Copiar Clave',
-                    icon: Icons.lock_outline_rounded,
-                    value: _accountPass,
-                    snackMsg: 'Contraseña copiada al portapapeles',
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _showCredentialsBar = false);
-            },
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Color(0xFF282828),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close_rounded,
-                size: 14,
-                color: Colors.white60,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCopyChip({
-    required String label,
-    required IconData icon,
-    required String value,
-    required String snackMsg,
-  }) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        Clipboard.setData(ClipboardData(text: value));
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              snackMsg,
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-            backgroundColor: const Color(0xFF242424),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFF282828),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: const Color(0xFFE60023)),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.copy_rounded, size: 12, color: Colors.white38),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDesktopFallback() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE60023),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.push_pin_rounded,
-                color: Colors.white,
-                size: 44,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Pinterest',
-              style: GoogleFonts.bangers(
-                fontSize: 28,
-                color: Colors.white,
-                letterSpacing: 1.0,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'En el celular se abre directamente en pantalla completa sin salir de la app.\nEn Windows puedes abrirlo con un toque aquí abajo:',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white70,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: [
-                _buildCopyChip(
-                  label: 'Copiar Correo',
-                  icon: Icons.mail_outline_rounded,
-                  value: _accountEmail,
-                  snackMsg: 'Correo copiado: $_accountEmail',
-                ),
-                _buildCopyChip(
-                  label: 'Copiar Clave',
-                  icon: Icons.lock_outline_rounded,
-                  value: _accountPass,
-                  snackMsg: 'Contraseña copiada al portapapeles',
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            GestureDetector(
-              onTap: _openExternal,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE60023),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.open_in_browser_rounded, color: Colors.white, size: 20),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Abrir Pinterest',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

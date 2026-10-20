@@ -45,6 +45,8 @@ class MusicPlayerProvider extends ChangeNotifier {
   PlayerState _playerState = PlayerState.stopped;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  bool _isSwitchingTrack = false;
+  DateTime _lastNotifProgressSync = DateTime.fromMillisecondsSinceEpoch(0);
 
   bool _loading = false;
   bool _isDownloading = false;
@@ -142,34 +144,59 @@ class MusicPlayerProvider extends ChangeNotifier {
         playPrevious();
       } else if (actionId == 'music_play_pause') {
         togglePlayPause();
+      } else if (actionId == 'music_play') {
+        if (_playerState != PlayerState.playing) {
+          togglePlayPause();
+        }
+      } else if (actionId == 'music_pause') {
+        if (_playerState == PlayerState.playing) {
+          pause();
+        }
       } else if (actionId == 'music_next') {
         playNext();
+      } else if (actionId == 'music_stop') {
+        stop();
       }
+    };
+
+    NotificationService.onMusicSeek = (pos) {
+      seek(pos);
     };
 
     _posSub = _player.onPositionChanged.listen((p) {
       _position = p;
       notifyListeners();
+      final now = DateTime.now();
+      if (_currentTrack != null &&
+          now.difference(_lastNotifProgressSync).inMilliseconds >= 1500) {
+        _lastNotifProgressSync = now;
+        _syncNotificationProgress();
+      }
     });
 
     _durSub = _player.onDurationChanged.listen((d) {
       _duration = d;
       notifyListeners();
+      if (_currentTrack != null && d.inMilliseconds > 0) {
+        _syncNotificationProgress();
+      }
     });
 
     _stateSub = _player.onPlayerStateChanged.listen((s) {
+      if (_isSwitchingTrack &&
+          (s == PlayerState.stopped || s == PlayerState.completed)) {
+        // Ignorar estado stopped transitorio al cambiar de pista
+        return;
+      }
       _playerState = s;
-      SoundService.isMusicPlaying = (s == PlayerState.playing || s == PlayerState.paused);
+      SoundService.isMusicPlaying =
+          (s == PlayerState.playing || s == PlayerState.paused);
       if (s == PlayerState.playing) {
         SoundService().stopBackgroundMusic();
       }
       notifyListeners();
       if (_currentTrack != null) {
-        NotificationService.updateMusicNotification(
-          title: _currentTrack!.title,
-          artist: _currentTrack!.artist,
-          isPlaying: s == PlayerState.playing,
-        );
+        _syncFullNotification(isPlaying: s == PlayerState.playing);
       } else {
         NotificationService.cancelMusicNotification();
       }
@@ -178,6 +205,35 @@ class MusicPlayerProvider extends ChangeNotifier {
     _completeSub = _player.onPlayerComplete.listen((_) {
       playNext();
     });
+  }
+
+  int _effectiveDurationMs(MusicTrack track) {
+    if (_duration.inMilliseconds > 0) return _duration.inMilliseconds;
+    if (track.durationSeconds > 0) return track.durationSeconds * 1000;
+    return 0;
+  }
+
+  void _syncFullNotification({required bool isPlaying}) {
+    final track = _currentTrack;
+    if (track == null) return;
+    NotificationService.updateMusicNotification(
+      title: track.title,
+      artist: track.artist,
+      thumbnailUrl: track.thumbnailUrl,
+      isPlaying: isPlaying,
+      positionMs: _position.inMilliseconds,
+      durationMs: _effectiveDurationMs(track),
+    );
+  }
+
+  void _syncNotificationProgress() {
+    final track = _currentTrack;
+    if (track == null) return;
+    NotificationService.updateMusicProgress(
+      isPlaying: _playerState == PlayerState.playing || _isSwitchingTrack,
+      positionMs: _position.inMilliseconds,
+      durationMs: _effectiveDurationMs(track),
+    );
   }
 
   Future<void> load() async {
@@ -464,14 +520,16 @@ class MusicPlayerProvider extends ChangeNotifier {
   // --- REPRODUCCIÓN ---
 
   Future<void> play(MusicTrack track) async {
+    _isSwitchingTrack = true;
     _currentTrack = track;
+    _position = Duration.zero;
+    _duration = track.durationSeconds > 0
+        ? Duration(seconds: track.durationSeconds)
+        : Duration.zero;
+    _playerState = PlayerState.playing;
     SoundService.isMusicPlaying = true;
     SoundService().stopBackgroundMusic();
-    NotificationService.updateMusicNotification(
-      title: track.title,
-      artist: track.artist,
-      isPlaying: true,
-    );
+    _syncFullNotification(isPlaying: true);
     notifyListeners();
 
     try {
@@ -490,11 +548,14 @@ class MusicPlayerProvider extends ChangeNotifier {
       await _player.play(source);
     } catch (e) {
       developer.log('MusicPlayerProvider.play error: $e');
+    } finally {
+      _isSwitchingTrack = false;
     }
   }
 
   Future<void> pause() async {
     await _player.pause();
+    _syncFullNotification(isPlaying: false);
   }
 
   Future<void> resume() async {
@@ -502,6 +563,7 @@ class MusicPlayerProvider extends ChangeNotifier {
     SoundService.isMusicPlaying = true;
     SoundService().stopBackgroundMusic();
     await _player.resume();
+    _syncFullNotification(isPlaying: true);
   }
 
   Future<void> togglePlayPause() async {
@@ -517,6 +579,7 @@ class MusicPlayerProvider extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    _isSwitchingTrack = false;
     await _player.stop();
     _currentTrack = null;
     _position = Duration.zero;
@@ -526,7 +589,10 @@ class MusicPlayerProvider extends ChangeNotifier {
   }
 
   Future<void> seek(Duration pos) async {
+    _position = pos;
+    notifyListeners();
     await _player.seek(pos);
+    _syncNotificationProgress();
   }
 
   void playNext() {

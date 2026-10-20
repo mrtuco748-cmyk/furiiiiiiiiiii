@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -82,9 +83,45 @@ class NotificationService {
 
   /// Callback para acciones de la botonera musical desde la ventana flotante del celular
   static void Function(String actionId)? onMusicAction;
+  static void Function(Duration position)? onMusicSeek;
+  static VoidCallback? onWebViewRendererGone;
   static const int musicNotificationId = 99999;
   static const String musicPortName = 'furi_music_isolate_port';
   static ReceivePort? _musicReceivePort;
+  static const MethodChannel _musicServiceChannel =
+      MethodChannel('com.furiapp.furi_app/music_service');
+  static bool _musicChannelInitialized = false;
+
+  static void _ensureMusicChannelInitialized() {
+    if (_musicChannelInitialized || kIsWeb || !Platform.isAndroid) return;
+    _musicChannelInitialized = true;
+    _musicServiceChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onMusicAction') {
+        final args = call.arguments;
+        if (args is Map) {
+          final actionId = args['actionId']?.toString();
+          final posRaw = args['positionMs'];
+          if (actionId == 'webview_renderer_gone') {
+            onWebViewRendererGone?.call();
+          } else if (actionId == 'music_seek' && posRaw is num) {
+            onMusicSeek?.call(Duration(milliseconds: posRaw.toInt()));
+          } else if (actionId != null && actionId.isNotEmpty) {
+            onMusicAction?.call(actionId);
+          }
+        }
+      }
+    });
+  }
+
+  static Future<void> protectAndroidWebViews() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    _ensureMusicChannelInitialized();
+    try {
+      await _musicServiceChannel.invokeMethod('protectWebViews');
+    } catch (e) {
+      debugPrint('NotificationService.protectAndroidWebViews error: $e');
+    }
+  }
 
   /// Firebase Messaging solo tiene plugin nativo en Android/iOS.
   /// En desktop (Windows, macOS) el MethodChannel no existe y lanza
@@ -97,6 +134,8 @@ class NotificationService {
   static Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
+
+    _ensureMusicChannelInitialized();
 
     // Configurar canal de comunicación entre background isolate y main isolate para controles de música
     try {
@@ -383,13 +422,34 @@ class NotificationService {
   }
 
   /// Muestra o actualiza la botonera de música en la ventana flotante / panel de notificaciones del celular
-  /// al estilo de YouTube Music o Spotify con controles interactivos (Anterior, Play/Pausa, Siguiente).
+  /// al estilo de YouTube Music o Spotify con controles interactivos (Anterior, Play/Pausa, Siguiente) y barra de tiempo.
   static Future<void> updateMusicNotification({
     required String title,
     required String artist,
     required bool isPlaying,
+    String thumbnailUrl = '',
+    int positionMs = 0,
+    int durationMs = 0,
   }) async {
-    if (!_initialized || !_supportsMessaging) return;
+    if (!_supportsMessaging) return;
+    if (Platform.isAndroid) {
+      _ensureMusicChannelInitialized();
+      try {
+        await _musicServiceChannel.invokeMethod('updateMediaState', {
+          'title': title,
+          'artist': artist.isNotEmpty ? artist : 'F.U.R.I Música',
+          'thumbnailUrl': thumbnailUrl,
+          'isPlaying': isPlaying,
+          'positionMs': positionMs,
+          'durationMs': durationMs,
+        });
+        return;
+      } catch (e) {
+        debugPrint('NotificationService native updateMediaState fallback: $e');
+      }
+    }
+
+    if (!_initialized) return;
     try {
       final actions = <AndroidNotificationAction>[
         const AndroidNotificationAction(
@@ -416,9 +476,9 @@ class NotificationService {
       ];
 
       final androidDetails = AndroidNotificationDetails(
-        'furi_music_channel',
-        'F.U.R.I Música',
-        channelDescription: 'Controles multimedia de música de F.U.R.I',
+        'furi_media_playback_v3',
+        'F.U.R.I Reproductor de Música',
+        channelDescription: 'Controles de reproducción y barra de progreso de música de F.U.R.I',
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
         ongoing: isPlaying,
@@ -445,9 +505,37 @@ class NotificationService {
     }
   }
 
+  /// Actualiza la posición y duración en la barra de tiempo de la MediaSession nativa en Android
+  static Future<void> updateMusicProgress({
+    required bool isPlaying,
+    required int positionMs,
+    required int durationMs,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    _ensureMusicChannelInitialized();
+    try {
+      await _musicServiceChannel.invokeMethod('updateMediaProgress', {
+        'isPlaying': isPlaying,
+        'positionMs': positionMs,
+        'durationMs': durationMs,
+      });
+    } catch (e) {
+      debugPrint('NotificationService.updateMusicProgress error: $e');
+    }
+  }
+
   /// Cancela la notificación de música cuando se detiene el reproductor
   static Future<void> cancelMusicNotification() async {
-    if (!_initialized || !_supportsMessaging) return;
+    if (!_supportsMessaging) return;
+    if (Platform.isAndroid) {
+      _ensureMusicChannelInitialized();
+      try {
+        await _musicServiceChannel.invokeMethod('stopMediaService');
+      } catch (e) {
+        debugPrint('NotificationService.stopMediaService error: $e');
+      }
+    }
+    if (!_initialized) return;
     try {
       await _localNotifications.cancel(musicNotificationId);
     } catch (e) {
