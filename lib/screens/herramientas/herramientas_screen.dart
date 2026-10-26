@@ -3,9 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../router.dart';
 import '../../theme/app_theme.dart';
+import 'widgets/herramienta_cards.dart';
 
-/// Pantalla de selección de herramientas de F.U.R.I.
-/// Incluye Dibujo (activo) y Comic (próximamente), con estética brutalista de bloques sólidos.
+/// Pantalla de selección de herramientas creativas de F.U.R.I.
+/// Disposición brutalista: Fila superior con 2 tarjetas cuadradas (Dibujo y Cómic),
+/// tarjeta de Animación debajo y espacio para futuras herramientas.
 class HerramientasScreen extends StatelessWidget {
   final AppMode mode;
 
@@ -50,76 +52,6 @@ class HerramientasScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildToolCard({
-    required BuildContext context,
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required Color textColor,
-    required String badgeText,
-    required Color badgeBg,
-    required Color badgeFg,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 36, color: textColor),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: badgeBg,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: GoogleFonts.bangers(
-                      color: badgeFg,
-                      fontSize: 12,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: GoogleFonts.bangers(
-                color: textColor,
-                fontSize: 26,
-                letterSpacing: 1.0,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: textColor.withValues(alpha: 0.85),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,49 +89,76 @@ class HerramientasScreen extends StatelessWidget {
                 ],
               ),
             ),
-            // Lista de herramientas
+            // Contenido en grilla y lista
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 children: [
-                  // Herramienta 1: Dibujo
-                  _buildToolCard(
-                    context: context,
-                    title: 'DIBUJO DIGITAL',
-                    subtitle: 'Lienzo multicapa, birome fluida, lápiz grafito texturado, gestos y exportación a PNG y galería.',
-                    icon: Icons.draw,
-                    color: const Color(0xFF00D4FF),
-                    textColor: const Color(0xFF111111),
-                    badgeText: 'DISPONIBLE',
-                    badgeBg: const Color(0xFF111111),
-                    badgeFg: const Color(0xFF00D4FF),
-                    onTap: () => context.push(RouterRoutes.dibujo),
+                  // Fila 1: 2 cuadrados idénticos (Dibujo y Cómic)
+                  Row(
+                    children: [
+                      HerramientaSquareCard(
+                        title: 'DIBUJO DIGITAL',
+                        subtitle: 'Lienzo multicapa, pinceles y trazo predictivo.',
+                        icon: Icons.draw,
+                        color: const Color(0xFF00D4FF),
+                        textColor: const Color(0xFF111111),
+                        badgeText: 'DISPONIBLE',
+                        badgeBg: const Color(0xFF111111),
+                        badgeFg: const Color(0xFF00D4FF),
+                        onTap: () => context.push(RouterRoutes.dibujo),
+                      ),
+                      const SizedBox(width: 14),
+                      HerramientaSquareCard(
+                        title: 'HISTORIETAS & COMIC',
+                        subtitle: 'Páginas, viñetas, globos manga y lector.',
+                        icon: Icons.auto_stories,
+                        color: const Color(0xFFFFDE59),
+                        textColor: const Color(0xFF111111),
+                        badgeText: 'DISPONIBLE',
+                        badgeBg: const Color(0xFF111111),
+                        badgeFg: const Color(0xFFFFDE59),
+                        onTap: () => context.push(RouterRoutes.comic),
+                      ),
+                    ],
                   ),
-                  // Herramienta 2: Comic
-                  _buildToolCard(
-                    context: context,
-                    title: 'HISTORIETAS & COMIC',
-                    subtitle: 'Páginas y viñetas a escala real, inserción de dibujos, globos de diálogo manga/FURI, SFX y lector.',
-                    icon: Icons.auto_stories,
-                    color: const Color(0xFFFFDE59),
-                    textColor: const Color(0xFF111111),
-                    badgeText: 'DISPONIBLE',
-                    badgeBg: const Color(0xFF111111),
-                    badgeFg: const Color(0xFFFFDE59),
-                    onTap: () => context.push(RouterRoutes.comic),
-                  ),
-                  // Herramienta 3: Animación
-                  _buildToolCard(
-                    context: context,
+                  const SizedBox(height: 16),
+
+                  // Fila 2: Animación Flipbook abajo
+                  HerramientaWideCard(
                     title: 'ANIMACIÓN FLIPBOOK',
-                    subtitle: 'Cuadros de animación cuadro por cuadro basados en tus capas de dibujo.',
+                    subtitle: 'Fotogramas basados en capas de dibujo para animación cuadro a cuadro.',
                     icon: Icons.movie_creation_outlined,
-                    color: const Color(0xFF242424),
-                    textColor: Colors.white70,
+                    color: const Color(0xFF222222),
+                    textColor: Colors.white,
                     badgeText: 'EN ESPERA',
                     badgeBg: const Color(0xFF141414),
                     badgeFg: Colors.white54,
                     onTap: () => _showFlipbookInfo(context),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Espacio preparado para futuras herramientas
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.add_circle_outline, color: Colors.white30, size: 24),
+                        const SizedBox(width: 12),
+                        Text(
+                          'MÁS HERRAMIENTAS CREATIVAS PRÓXIMAMENTE',
+                          style: GoogleFonts.bangers(
+                            color: Colors.white30,
+                            fontSize: 14,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

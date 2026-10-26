@@ -76,12 +76,26 @@ class PinterestCleaner {
         try {
           const origPlay = HTMLMediaElement.prototype.play;
           HTMLMediaElement.prototype.play = function() {
-            if (this.tagName === 'VIDEO' && this.autoplay && !this.dataset.userActive) {
+            if (this.tagName === 'VIDEO' && !this.dataset.userActive) {
               this.pause();
               return Promise.resolve();
             }
             return origPlay.apply(this, arguments);
           };
+
+          // Limitar precarga y desactivar autoplay en videos de feeds infinitos
+          const sanitizeMedia = () => {
+            const vids = document.getElementsByTagName('video');
+            for (let i = 0; i < vids.length; i++) {
+              const v = vids[i];
+              if (v.autoplay) v.autoplay = false;
+              if (v.preload !== 'none') v.preload = 'none';
+              if (!v.dataset.userActive && !v.paused) {
+                v.pause();
+              }
+            }
+          };
+          setInterval(sanitizeMedia, 2500);
         } catch (_) {}
 
         // 4. Inyección de reglas CSS para ocultamiento instantáneo sin alterar React 18

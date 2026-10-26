@@ -14,6 +14,7 @@ import 'drawing_lasso_operations.dart';
 import 'drawing_layer_operations.dart';
 import 'drawing_stroke_operations.dart';
 import 'drawing_stroke_stabilizer.dart';
+import '../helpers/drawing_flood_fill_helper.dart';
 
 /// Controlador central del taller de dibujo con soporte de simetría,
 /// formas geométricas, estabilización anti-temblores y trazo predictivo.
@@ -173,6 +174,10 @@ class DrawingController extends ChangeNotifier {
     CanvasBackgroundType.dark => CanvasBackgroundType.blank,
   });
   void setLayerOpacity(int i, double o) { _layers = DrawingLayerOperations.setOpacity(_layers, i, o); notifyListeners(); }
+  void reorderLayers(int oldI, int newI) { final res = DrawingLayerOperations.reorderLayers(_layers, _activeLayerIndex, oldI, newI); _layers = res.$1; _activeLayerIndex = res.$2; notifyListeners(); }
+  void mergeActiveLayerDown() { final res = DrawingLayerOperations.mergeDown(_layers, _activeLayerIndex); if (res != null) { _layers = res.$1; _activeLayerIndex = res.$2; notifyListeners(); } }
+  void toggleLayerLock(int i) { _layers = DrawingLayerOperations.toggleLock(_layers, i); notifyListeners(); }
+  void renameLayer(int i, String name) { _layers = DrawingLayerOperations.renameLayer(_layers, i, name); notifyListeners(); }
 
   void clearActiveLayer() {
     if (_layers.isEmpty || activeLayer.strokes.isEmpty) return;
@@ -192,7 +197,8 @@ class DrawingController extends ChangeNotifier {
 
   void floodFill(Offset p, Color c) {
     if (_layers.isEmpty || !activeLayer.isVisible || activeLayer.isLocked) return;
-    _addDirectStroke(DrawingStrokeOperations.createFloodFill(p, c, _strokeOpacity));
+    final stroke = DrawingFloodFillHelper.createFillStroke(seed: p, color: c, opacity: _strokeOpacity, existingStrokes: activeLayer.strokes, canvasSize: _canvasSize, selectionPolygon: _activeSelection?.polygonPoints);
+    _addDirectStroke(stroke);
   }
   void applyGradient(Offset s, Offset e, Color c) {
     if (_layers.isEmpty || !activeLayer.isVisible || activeLayer.isLocked) return;
@@ -201,6 +207,11 @@ class DrawingController extends ChangeNotifier {
 
   void startStroke(Offset localPosition, [double pressure = 1.0]) {
     if (_layers.isEmpty || !activeLayer.isVisible || activeLayer.isLocked) return;
+    if (_selectedTool == DrawingToolType.bucketFill) {
+      final fill = DrawingFloodFillHelper.createFillStroke(seed: localPosition, color: _selectedColor, opacity: _strokeOpacity, existingStrokes: activeLayer.strokes, canvasSize: _canvasSize, selectionPolygon: _activeSelection?.polygonPoints);
+      _addDirectStroke(fill);
+      return;
+    }
     final ts = DateTime.now().microsecondsSinceEpoch;
     _stabilizer.start(localPosition);
     _activeStroke = DrawingStroke(

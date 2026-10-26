@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../controllers/drawing_controller.dart';
 import '../models/canvas_background_type.dart';
+import 'drawing_layer_options_sheet.dart';
 
-/// Dock lateral vertical de capas estilo Infinite Painter (Screenshot 5):
-/// Botón +, lista de miniaturas de capas con ojo y porcentaje de opacidad, y selector de fondo inferior.
+/// Dock lateral vertical de capas estilo Infinite Painter:
+/// Botón +, lista reordenable de capas por arrastre, opciones completas de opacidad y fondo.
 class DrawingLayersDock extends StatelessWidget {
   final DrawingController controller;
   final VoidCallback onClose;
@@ -21,36 +22,6 @@ class DrawingLayersDock extends StatelessWidget {
     controller.setBackgroundType(values[nextIndex]);
   }
 
-  void _showLayerOptions(BuildContext context, int index) {
-    final layer = controller.layers[index];
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
-          color: Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(layer.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Color(0xFFFF453A)),
-              title: const Text('Eliminar Capa', style: TextStyle(color: Color(0xFFFF453A))),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                controller.removeLayer(index);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -60,7 +31,7 @@ class DrawingLayersDock extends StatelessWidget {
         final activeIndex = controller.activeLayerIndex;
 
         return Container(
-          width: 68,
+          width: 72,
           decoration: BoxDecoration(
             color: const Color(0xFF1E1E1E).withValues(alpha: 0.95),
             borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
@@ -107,31 +78,39 @@ class DrawingLayersDock extends StatelessWidget {
 
                 const Divider(color: Color(0xFF333333), height: 1),
 
-                // 2. Lista vertical de miniaturas de capa
+                // 2. Lista reordenable vertical de miniaturas de capa (arrastre con dedo)
                 Expanded(
-                  child: ListView.builder(
+                  child: ReorderableListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     itemCount: layers.length,
+                    buildDefaultDragHandles: true,
+                    // ignore: deprecated_member_use
+                    onReorder: (oldIndex, newIndex) {
+                      final dataOldIndex = layers.length - 1 - oldIndex;
+                      final dataNewIndex = layers.length - newIndex;
+                      controller.reorderLayers(dataOldIndex, dataNewIndex);
+                    },
                     itemBuilder: (context, index) {
-                      // Se muestran de arriba a abajo (las capas superiores primero)
                       final reverseIndex = layers.length - 1 - index;
                       final layer = layers[reverseIndex];
                       final isActive = activeIndex == reverseIndex;
                       final opacityPct = (layer.opacity * 100).round();
 
-                      return GestureDetector(
-                        onTap: () => controller.setActiveLayer(reverseIndex),
-                        onLongPress: () => _showLayerOptions(context, reverseIndex),
-                        child: Container(
-                          height: 56,
-                          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isActive ? const Color(0xFF00D4FF) : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      return Container(
+                        key: ValueKey(layer.id),
+                        height: 56,
+                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isActive ? const Color(0xFF00D4FF) : Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: GestureDetector(
+                          onTap: () => controller.setActiveLayer(reverseIndex),
+                          onDoubleTap: () => DrawingLayerOptionsSheet.show(context, controller, reverseIndex),
+                          onLongPress: () => DrawingLayerOptionsSheet.show(context, controller, reverseIndex),
                           child: Stack(
                             children: [
-                              // Miniatura / Icono de capa estilo papel blanco (Screenshot 5)
+                              // Miniatura / Icono de capa estilo papel
                               Center(
                                 child: Text(
                                   'C${reverseIndex + 1}',
@@ -142,6 +121,14 @@ class DrawingLayersDock extends StatelessWidget {
                                   ),
                                 ),
                               ),
+
+                              // Candado si está bloqueada
+                              if (layer.isLocked)
+                                const Positioned(
+                                  top: 3,
+                                  left: 3,
+                                  child: Icon(Icons.lock, size: 11, color: Colors.black45),
+                                ),
 
                               // Toggle visibilidad (Ojo en la esquina superior derecha)
                               Positioned(
@@ -157,16 +144,19 @@ class DrawingLayersDock extends StatelessWidget {
                                 ),
                               ),
 
-                              // Porcentaje de opacidad (Esquina inferior izquierda)
+                              // Porcentaje de opacidad (Esquina inferior izquierda - tap abre opciones)
                               Positioned(
                                 bottom: 2,
                                 left: 4,
-                                child: Text(
-                                  '$opacityPct%',
-                                  style: const TextStyle(
-                                    color: Colors.black54,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
+                                child: GestureDetector(
+                                  onTap: () => DrawingLayerOptionsSheet.show(context, controller, reverseIndex),
+                                  child: Text(
+                                    '$opacityPct%',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),

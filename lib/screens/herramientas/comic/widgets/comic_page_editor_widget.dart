@@ -22,6 +22,8 @@ class ComicPageEditorWidget extends StatefulWidget {
   final ValueChanged<ComicBubble>? onBubbleDoubleTap;
   final ValueChanged<ComicSticker>? onSfxDoubleTap;
   final VoidCallback? onDeselect;
+  final bool isImmersive;
+  final VoidCallback? onExitImmersive;
 
   const ComicPageEditorWidget({
     super.key,
@@ -32,6 +34,8 @@ class ComicPageEditorWidget extends StatefulWidget {
     this.onBubbleDoubleTap,
     this.onSfxDoubleTap,
     this.onDeselect,
+    this.isImmersive = false,
+    this.onExitImmersive,
   });
 
   @override
@@ -86,7 +90,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
       }
     }
 
-    // Prioridad de toques directos: Globos > SFX > Viñeta de fondo
+    // Prioridad de toques directos: Globos > SFX > Cuerpo de elemento seleccionado > Viñeta de fondo
     final b = ComicTransformResolver.findTappedBubble(widget.controller, localPos, pageSize);
     if (b != null) {
       widget.controller.selectBubble(b.id);
@@ -120,26 +124,17 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
   }
 
   void _handlePanStart(Offset localPos, Size pageSize) {
-    if (widget.controller.interactionMode == ComicInteractionMode.drawPanel) {
-      return setState(() { _drawStart = localPos; _drawCurrent = localPos; });
-    }
-    if (widget.controller.interactionMode == ComicInteractionMode.slicePanel) {
-      return setState(() { _sliceStart = localPos; _sliceCurrent = localPos; });
-    }
-    if (widget.controller.interactionMode == ComicInteractionMode.frameContent) {
+    final mode = widget.controller.interactionMode;
+    if (mode == ComicInteractionMode.drawPanel) return setState(() { _drawStart = _drawCurrent = localPos; });
+    if (mode == ComicInteractionMode.slicePanel) return setState(() { _sliceStart = _sliceCurrent = localPos; });
+    if (mode == ComicInteractionMode.frameContent) {
       _activeMode = ComicDragMode.frameContent;
       widget.controller.recordHistory();
       return;
     }
-    if (_activeMode != ComicDragMode.none) {
-      widget.controller.recordHistory();
-      return;
-    }
+    if (_activeMode != ComicDragMode.none) return widget.controller.recordHistory();
     _handlePanDown(localPos, pageSize);
-    if (_activeMode != ComicDragMode.none) {
-      widget.controller.recordHistory();
-      return;
-    }
+    if (_activeMode != ComicDragMode.none) return widget.controller.recordHistory();
     widget.controller.deselectAll();
     widget.onDeselect?.call();
   }
@@ -154,8 +149,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
       return;
     }
     if (_activeMode == ComicDragMode.frameContent) {
-      ComicEditorGestureHelper.applyFramePan(controller: widget.controller, details: details);
-      return;
+      return ComicEditorGestureHelper.applyFramePan(controller: widget.controller, details: details);
     }
 
     final c = widget.controller;
@@ -212,6 +206,10 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
   }
 
   void _handlePageTap(Offset localPos, Size pageSize) {
+    if (widget.isImmersive) {
+      widget.onExitImmersive?.call();
+      return;
+    }
     if (!_selectElementAt(localPos, pageSize)) { widget.controller.deselectAll(); widget.onDeselect?.call(); }
   }
 
@@ -236,20 +234,23 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
         final pageSize = Size(targetWidth, targetHeight);
         final activeTransform = _getActiveTransform(pageSize);
 
-        final foregroundPainter = switch (widget.controller.interactionMode) {
-          ComicInteractionMode.drawPanel when _drawStart != null && _drawCurrent != null =>
-            ComicDrawGuidePainter(drawRect: Rect.fromPoints(_drawStart!, _drawCurrent!)),
-          ComicInteractionMode.slicePanel when _sliceStart != null && _sliceCurrent != null =>
-            ComicDrawGuidePainter(sliceStart: _sliceStart, sliceEnd: _sliceCurrent),
-          ComicInteractionMode.frameContent => null,
-          _ => activeTransform != null
-              ? ComicSelectionBoxPainter(transform: activeTransform, guides: _activeGuides)
-              : null,
-        };
+        final foregroundPainter = widget.isImmersive
+            ? null
+            : switch (widget.controller.interactionMode) {
+                ComicInteractionMode.drawPanel when _drawStart != null && _drawCurrent != null =>
+                  ComicDrawGuidePainter(drawRect: Rect.fromPoints(_drawStart!, _drawCurrent!)),
+                ComicInteractionMode.slicePanel when _sliceStart != null && _sliceCurrent != null =>
+                  ComicDrawGuidePainter(sliceStart: _sliceStart, sliceEnd: _sliceCurrent),
+                ComicInteractionMode.frameContent => null,
+                _ => activeTransform != null
+                    ? ComicSelectionBoxPainter(transform: activeTransform, guides: _activeGuides)
+                    : null,
+              };
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
+            if (widget.isImmersive) return widget.onExitImmersive?.call();
             widget.controller.deselectAll();
             widget.onDeselect?.call();
           },

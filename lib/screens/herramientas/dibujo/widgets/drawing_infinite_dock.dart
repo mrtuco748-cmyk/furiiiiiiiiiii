@@ -23,7 +23,6 @@ class DrawingInfiniteDock extends StatefulWidget {
 
 class _DrawingInfiniteDockState extends State<DrawingInfiniteDock> {
   bool _isDraggingSize = false;
-  bool _isDraggingOpacity = false;
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +30,7 @@ class _DrawingInfiniteDockState extends State<DrawingInfiniteDock> {
       listenable: widget.controller,
       builder: (context, _) {
         final c = widget.controller;
-        final isBrush = !c.selectedTool.isEraser && !c.selectedTool.isSmudge;
-        final isSmudge = c.selectedTool.isSmudge;
+        final isBrush = !c.selectedTool.isEraser;
         final isEraser = c.selectedTool.isEraser;
 
         return Stack(
@@ -64,17 +62,9 @@ class _DrawingInfiniteDockState extends State<DrawingInfiniteDock> {
                     },
                     onLongPress: widget.onToggleBrushPopover,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
 
-                  // 2. Dedo / Difuminar
-                  _buildToolButton(
-                    icon: Icons.blur_on,
-                    isActive: isSmudge,
-                    onTap: () => c.toggleTool(DrawingToolType.smudge),
-                  ),
-                  const SizedBox(height: 6),
-
-                  // 3. Borrador
+                  // 2. Borrador
                   _buildToolButton(
                     customIcon: CreativeIcon(
                       'eraser',
@@ -86,18 +76,14 @@ class _DrawingInfiniteDockState extends State<DrawingInfiniteDock> {
                     tooltip: 'Borrador',
                     onTap: () => c.toggleTool(DrawingToolType.eraser),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
 
-                  // 4. Círculo Indicador de Grosor
+                  // 3. Círculo Indicador de Grosor
                   _buildSizeCircle(c),
                   const SizedBox(height: 8),
 
-                  // 5. Círculo Indicador de Color
+                  // 4. Círculo Indicador de Color
                   _buildColorCircle(c),
-                  const SizedBox(height: 8),
-
-                  // 6. Círculo Indicador de Opacidad
-                  _buildOpacityCircle(c),
                 ],
               ),
             ),
@@ -130,24 +116,6 @@ class _DrawingInfiniteDockState extends State<DrawingInfiniteDock> {
                         style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                       ),
                     ],
-                  ),
-                ),
-              ),
-
-            // Burbuja emergente de opacidad mientras se arrastra
-            if (_isDraggingOpacity)
-              Positioned(
-                left: 68,
-                bottom: 24,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF242424),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${(c.strokeOpacity * 100).round()}%',
-                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -235,31 +203,6 @@ class _DrawingInfiniteDockState extends State<DrawingInfiniteDock> {
           height: 26,
           decoration: BoxDecoration(
             color: c.selectedColor,
-            shape: BoxShape.circle,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOpacityCircle(DrawingController c) {
-    final pct = c.strokeOpacity;
-    return GestureDetector(
-      onVerticalDragStart: (_) => setState(() => _isDraggingOpacity = true),
-      onVerticalDragEnd: (_) => setState(() => _isDraggingOpacity = false),
-      onVerticalDragUpdate: (d) {
-        final newOpacity = (c.strokeOpacity - d.delta.dy * 0.01).clamp(0.05, 1.0);
-        c.setStrokeOpacity(newOpacity);
-      },
-      child: Container(
-        width: 36,
-        height: 36,
-        alignment: Alignment.center,
-        child: Container(
-          width: 26,
-          height: 26,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: pct),
             shape: BoxShape.circle,
           ),
         ),

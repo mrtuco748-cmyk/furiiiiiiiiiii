@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/comic_bubble.dart';
-import 'comic_bubble_color_tab.dart';
-import 'comic_bubble_tabs.dart';
 
-/// Barra flotante no invasiva para crear y modificar completamente globos de diálogo:
-/// Forma, texto, tamaño, rotación, dirección de cola, colores y fuentes.
+/// Barra de edición de globos de texto compacta, acoplada y no invasiva.
+/// En solo 2 filas limpias integra: texto en vivo, dirección de cola, forma y borrado.
 class ComicFloatingBubbleBar extends StatefulWidget {
   final ComicBubble? bubble;
   final ValueChanged<ComicBubble> onSave;
@@ -26,17 +24,10 @@ class ComicFloatingBubbleBar extends StatefulWidget {
 class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
   late final TextEditingController _textCtrl;
   late ComicBubbleType _type;
-  late String _fontFamily;
-  late double _fontSize;
-  late double _width;
-  late double _height;
-  late double _rotation;
   late ComicTailDirection _tailDirection;
   late Color _backgroundColor;
   late Color _borderColor;
   late Color _textColor;
-
-  int _currentTab = 0; // 0 = Texto & Forma, 1 = Tamaño & Giro, 2 = Colores & Fuente
 
   @override
   void initState() {
@@ -44,11 +35,6 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
     final b = widget.bubble;
     _textCtrl = TextEditingController(text: b?.text ?? '¡Hola!');
     _type = b?.type ?? ComicBubbleType.mangaOval;
-    _fontFamily = b?.fontFamily ?? 'Comic Neue';
-    _fontSize = b?.fontSize ?? 14.0;
-    _width = b?.width ?? 160.0;
-    _height = b?.height ?? 90.0;
-    _rotation = b?.rotation ?? 0.0;
     _tailDirection = b?.tailDirection ?? ComicTailDirection.bottom;
     _backgroundColor = b?.backgroundColor ?? const Color(0xFFFFFFFF);
     _borderColor = b?.borderColor ?? const Color(0xFF111111);
@@ -58,20 +44,10 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
   @override
   void didUpdateWidget(covariant ComicFloatingBubbleBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.bubble?.id != widget.bubble?.id ||
-        oldWidget.bubble?.width != widget.bubble?.width ||
-        oldWidget.bubble?.height != widget.bubble?.height ||
-        oldWidget.bubble?.rotation != widget.bubble?.rotation) {
+    if (oldWidget.bubble?.id != widget.bubble?.id) {
       final b = widget.bubble;
-      if (oldWidget.bubble?.id != widget.bubble?.id) {
-        _textCtrl.text = b?.text ?? '¡Hola!';
-      }
+      _textCtrl.text = b?.text ?? '¡Hola!';
       _type = b?.type ?? ComicBubbleType.mangaOval;
-      _fontFamily = b?.fontFamily ?? 'Comic Neue';
-      _fontSize = b?.fontSize ?? 14.0;
-      _width = b?.width ?? 160.0;
-      _height = b?.height ?? 90.0;
-      _rotation = b?.rotation ?? 0.0;
       _tailDirection = b?.tailDirection ?? ComicTailDirection.bottom;
       _backgroundColor = b?.backgroundColor ?? const Color(0xFFFFFFFF);
       _borderColor = b?.borderColor ?? const Color(0xFF111111);
@@ -87,7 +63,8 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
 
   void _applyLiveChanges() {
     final text = _textCtrl.text.trim();
-    final result = (widget.bubble ??
+    final b = widget.bubble;
+    final result = (b ??
             ComicBubble(
               id: 'bubble_${DateTime.now().microsecondsSinceEpoch}',
               type: _type,
@@ -96,11 +73,6 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
         .copyWith(
       text: text.isEmpty ? '...' : text,
       type: _type,
-      fontFamily: _fontFamily,
-      fontSize: _fontSize,
-      width: _width,
-      height: _height,
-      rotation: _rotation,
       tailDirection: _tailDirection,
       backgroundColor: _backgroundColor,
       borderColor: _borderColor,
@@ -109,141 +81,178 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
     widget.onSave(result);
   }
 
+  void _cycleTailDirection() {
+    const order = [
+      ComicTailDirection.bottom,
+      ComicTailDirection.left,
+      ComicTailDirection.top,
+      ComicTailDirection.right,
+      ComicTailDirection.none,
+    ];
+    final nextIdx = (order.indexOf(_tailDirection) + 1) % order.length;
+    setState(() => _tailDirection = order[nextIdx]);
+    _applyLiveChanges();
+  }
+
+  IconData _tailIcon(ComicTailDirection dir) {
+    switch (dir) {
+      case ComicTailDirection.bottom:
+        return Icons.south;
+      case ComicTailDirection.top:
+        return Icons.north;
+      case ComicTailDirection.left:
+        return Icons.west;
+      case ComicTailDirection.right:
+        return Icons.east;
+      case ComicTailDirection.none:
+        return Icons.do_not_disturb_alt;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 340,
-      padding: const EdgeInsets.all(10),
+      width: 330,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E).withValues(alpha: 0.96),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF333333), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Pestañas compactas
+          // Fila 1: Input de texto integrado + Botón cola + Eliminar + Cerrar
           Row(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildTabButton(0, 'Texto', Icons.edit_note),
-                      const SizedBox(width: 4),
-                      _buildTabButton(1, 'Ajuste', Icons.open_in_full),
-                      const SizedBox(width: 4),
-                      _buildTabButton(2, 'Color', Icons.palette_outlined),
-                    ],
+                child: Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF262626),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  alignment: Alignment.center,
+                  child: TextField(
+                    controller: _textCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      hintText: 'Escribe el diálogo...',
+                      hintStyle: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                    onChanged: (_) => _applyLiveChanges(),
                   ),
                 ),
               ),
               const SizedBox(width: 6),
+
+              // Botón rápido de orientación de cola
+              GestureDetector(
+                onTap: _cycleTailDirection,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF444444)),
+                  ),
+                  child: Icon(_tailIcon(_tailDirection), size: 16, color: const Color(0xFFFFDE59)),
+                ),
+              ),
+              const SizedBox(width: 6),
+
+              // Eliminar
               if (widget.bubble != null && widget.onDelete != null)
                 GestureDetector(
                   onTap: () => widget.onDelete!(widget.bubble!.id),
-                  behavior: HitTestBehavior.opaque,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Icon(Icons.delete_outline, color: Color(0xFFFF453A), size: 20),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E1A1A),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: Color(0xFFFF453A), size: 18),
                   ),
                 ),
+              const SizedBox(width: 6),
+
+              // Confirmar / Cerrar
               GestureDetector(
                 onTap: widget.onClose,
-                behavior: HitTestBehavior.opaque,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Icon(Icons.close, color: Colors.white54, size: 20),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF39FF14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.black, size: 20),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
-          if (_currentTab == 0)
-            ComicBubbleShapeAndTextTab(
-              selectedType: _type,
-              selectedTailDirection: _tailDirection,
-              textController: _textCtrl,
-              onTypeChanged: (t) {
-                setState(() => _type = t);
-                _applyLiveChanges();
-              },
-              onTailChanged: (dir) {
-                setState(() => _tailDirection = dir);
-                _applyLiveChanges();
-              },
-              onTextSubmitted: _applyLiveChanges,
+          // Fila 2: Selector horizontal rápido de forma de globo (Manga, Nube, Grito, Eléctrico, etc.)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildShapeChip('Óvalo', ComicBubbleType.mangaOval),
+                _buildShapeChip('Grito', ComicBubbleType.screamSpiky),
+                _buildShapeChip('Pensamiento', ComicBubbleType.thoughtCloud),
+                _buildShapeChip('Eléctrico', ComicBubbleType.electricShonen),
+                _buildShapeChip('Onda', ComicBubbleType.dizzyWavy),
+                _buildShapeChip('Narrador', ComicBubbleType.narratorBox),
+                _buildShapeChip('Chat', ComicBubbleType.furiChat),
+                _buildShapeChip('Explosión', ComicBubbleType.impactExplosion),
+              ],
             ),
-          if (_currentTab == 1)
-            ComicBubbleTransformTab(
-              width: _width,
-              height: _height,
-              rotation: _rotation,
-              onWidthChanged: (v) {
-                setState(() => _width = v);
-                _applyLiveChanges();
-              },
-              onHeightChanged: (v) {
-                setState(() => _height = v);
-                _applyLiveChanges();
-              },
-              onRotationChanged: (v) {
-                setState(() => _rotation = v);
-                _applyLiveChanges();
-              },
-            ),
-          if (_currentTab == 2)
-            ComicBubbleColorAndFontTab(
-              fontFamily: _fontFamily,
-              backgroundColor: _backgroundColor,
-              textColor: _textColor,
-              onFontChanged: (f) {
-                setState(() => _fontFamily = f);
-                _applyLiveChanges();
-              },
-              onBgChanged: (c) {
-                setState(() => _backgroundColor = c);
-                _applyLiveChanges();
-              },
-              onTextColorChanged: (c) {
-                setState(() {
-                  _textColor = c;
-                  _borderColor = c;
-                });
-                _applyLiveChanges();
-              },
-            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTabButton(int index, String label, IconData icon) {
-    final isSel = _currentTab == index;
+  Widget _buildShapeChip(String label, ComicBubbleType type) {
+    final isSelected = _type == type;
     return GestureDetector(
-      onTap: () => setState(() => _currentTab = index),
+      onTap: () {
+        setState(() => _type = type);
+        _applyLiveChanges();
+      },
       child: Container(
+        margin: const EdgeInsets.only(right: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isSel ? const Color(0xFF00D4FF) : const Color(0xFF282828),
+          color: isSelected ? const Color(0xFF00D4FF) : const Color(0xFF262626),
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF00D4FF) : const Color(0xFF3A3A3A),
+            width: 1.0,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: isSel ? Colors.black : Colors.white70),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSel ? Colors.black : Colors.white70,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white70,
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
       ),
     );

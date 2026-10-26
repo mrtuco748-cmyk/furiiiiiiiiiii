@@ -1,53 +1,47 @@
 import 'comic_panel.dart';
 import 'comic_template_layouts.dart';
 
-/// Tipos de plantillas y estructuras de viñetas dinámicas y divertidas para páginas de cómic.
+/// Las 12 plantillas clásicas y útiles de viñetas para historietas, cómic y manga.
 enum ComicTemplateType {
   singleFull,
   twoHorizontal,
   threeTiers,
   fourKoma,
   sixGrid,
-  shonenSlash,
+  nineGrid,
   comicHeroSplit,
-  webtoonScroll,
-  funnyGagChaos,
-  overlappingImpact,
-  cinematicWidescreen,
-  shoujoDream,
-  actionClimax5,
-  crossroadsMosaic;
+  shonenSlash,
+  actionManga5,
+  mangaClimax,
+  dailyStrip,
+  webtoonScroll;
 
   String get displayName {
     switch (this) {
       case ComicTemplateType.singleFull:
         return 'Página Completa / Splash';
       case ComicTemplateType.twoHorizontal:
-        return '2 Viñetas (Doble)';
+        return '2 Viñetas Dobles (1:1)';
       case ComicTemplateType.threeTiers:
         return '3 Tiras Clásicas';
       case ComicTemplateType.fourKoma:
         return '4-Koma Manga (Yonkoma)';
       case ComicTemplateType.sixGrid:
-        return '6 Viñetas (Grilla)';
-      case ComicTemplateType.shonenSlash:
-        return 'Shonen Diagonal (Impacto)';
+        return '6 Viñetas (Grilla 2x3)';
+      case ComicTemplateType.nineGrid:
+        return '9 Viñetas (Grilla 3x3)';
       case ComicTemplateType.comicHeroSplit:
-        return 'Marvel Heroico (Split)';
+        return 'Heroico Split (1 Grande + 3)';
+      case ComicTemplateType.shonenSlash:
+        return 'Shonen Diagonal (3 Viñetas)';
+      case ComicTemplateType.actionManga5:
+        return 'Manga Acción (5 Viñetas)';
+      case ComicTemplateType.mangaClimax:
+        return 'Clímax Manga (Tensión + Splash)';
+      case ComicTemplateType.dailyStrip:
+        return 'Tira Diaria (3 Cuadros)';
       case ComicTemplateType.webtoonScroll:
-        return 'Webtoon Vertical Suave';
-      case ComicTemplateType.funnyGagChaos:
-        return 'Caos Cómico Divertido';
-      case ComicTemplateType.overlappingImpact:
-        return 'Impacto Superpuesto';
-      case ComicTemplateType.cinematicWidescreen:
-        return 'Cine Anamórfico 21:9';
-      case ComicTemplateType.shoujoDream:
-        return 'Shojo Romántico';
-      case ComicTemplateType.actionClimax5:
-        return 'Clímax Acción 5 Viñetas';
-      case ComicTemplateType.crossroadsMosaic:
-        return 'Mosaico Suspenso';
+        return 'Webtoon Suave (3 Paneles)';
     }
   }
 
@@ -56,33 +50,29 @@ enum ComicTemplateType {
   String get description {
     switch (this) {
       case ComicTemplateType.singleFull:
-        return 'Impacto visual a página completa';
+        return 'Impacto total a página completa para portadas o momentos clave';
       case ComicTemplateType.twoHorizontal:
-        return 'Plano cinematográfico doble';
+        return 'Dos planos amplios para diálogo extenso o contraste';
       case ComicTemplateType.threeTiers:
-        return 'Narrativa clásica de tres actos';
+        return 'Narrativa clásica de tres actos (inicio, nudo, desenlace)';
       case ComicTemplateType.fourKoma:
-        return 'Tira cómica vertical tradicional';
+        return 'Tira cómica tradicional japonesa de cuatro paneles';
       case ComicTemplateType.sixGrid:
-        return 'Secuencia estándar de seis viñetas';
-      case ComicTemplateType.shonenSlash:
-        return 'Corte diagonal dinámico de acción shonen';
+        return 'Estructura estándar universal de cómic y novela gráfica';
+      case ComicTemplateType.nineGrid:
+        return 'Ritmo cinematográfico milimétrico estilo novela gráfica';
       case ComicTemplateType.comicHeroSplit:
-        return 'Layout clásico de superhéroes Marvel/DC';
+        return 'Gran panel protagónico con 3 viñetas de soporte lateral';
+      case ComicTemplateType.shonenSlash:
+        return 'Viñeta superior con corte diagonal dinámico de acción shonen';
+      case ComicTemplateType.actionManga5:
+        return 'Dos viñetas de ritmo, gran plano de impacto y resolución';
+      case ComicTemplateType.mangaClimax:
+        return 'Viñeta de tensión arriba y revelación gigante abajo';
+      case ComicTemplateType.dailyStrip:
+        return 'Tres viñetas horizontales para gag o tira de prensa';
       case ComicTemplateType.webtoonScroll:
-        return 'Paneles verticales redondeados estilo manhwa';
-      case ComicTemplateType.funnyGagChaos:
-        return 'Paneles desordenados y micro-reacción cómica';
-      case ComicTemplateType.overlappingImpact:
-        return 'Viñeta flotante sobre splash de fondo';
-      case ComicTemplateType.cinematicWidescreen:
-        return 'Planos panorámicos oscuros estilo película';
-      case ComicTemplateType.shoujoDream:
-        return 'Composición tierna y emotiva para momentos íntimos';
-      case ComicTemplateType.actionClimax5:
-        return 'Velocidad vertiginosa con 3 viñetas diagonales';
-      case ComicTemplateType.crossroadsMosaic:
-        return 'Mosaico asimétrico de misterio';
+        return 'Tres viñetas redondeadas con espacio para lectura vertical';
     }
   }
 

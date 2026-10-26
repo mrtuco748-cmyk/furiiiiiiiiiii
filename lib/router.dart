@@ -27,7 +27,10 @@ import 'screens/music/music_screen.dart';
 import 'screens/mosaico_wrappers.dart';
 import 'screens/herramientas/herramientas_screen.dart';
 import 'screens/herramientas/dibujo/dibujo_screen.dart';
+import 'screens/herramientas/dibujo/dibujo_proyectos_screen.dart';
+import 'screens/herramientas/dibujo/models/drawing_project.dart';
 import 'screens/herramientas/comic/comic_editor_screen.dart';
+import 'screens/herramientas/comic/comic_library_screen.dart';
 import 'screens/herramientas/comic/comic_reader_screen.dart';
 import 'screens/herramientas/comic/models/comic_project.dart';
 import 'router_routes.dart';
@@ -218,13 +221,20 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: RouterRoutes.dibujo,
-      builder: (_, _) => const DibujoScreen(),
+      builder: (_, state) {
+        if (state.extra is DrawingProject) {
+          final p = state.extra as DrawingProject;
+          return DibujoScreen(project: p, canvasSize: Size(p.canvasWidth, p.canvasHeight));
+        }
+        return const DibujoProyectosScreen();
+      },
     ),
     GoRoute(
       path: RouterRoutes.comic,
       builder: (_, state) {
         final project = state.extra is ComicProject ? state.extra as ComicProject : null;
-        return ComicEditorScreen(initialProject: project);
+        if (project != null) return ComicEditorScreen(initialProject: project);
+        return const ComicLibraryScreen();
       },
     ),
     GoRoute(

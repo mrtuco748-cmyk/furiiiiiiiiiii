@@ -67,6 +67,7 @@ void main() {
       expect(PinterestCleaner.cleanerJs, contains('standalone'));
       expect(PinterestCleaner.cleanerJs, contains('isExternalIntent'));
       expect(PinterestCleaner.cleanerJs, contains('HTMLMediaElement.prototype.play'));
+      expect(PinterestCleaner.cleanerJs, contains('sanitizeMedia'));
       expect(PinterestCleaner.cleanerJs, contains('furi-pinterest-cleaner'));
       expect(PinterestCleaner.cleanerJs, contains('app_upsell_dismissed'));
     });

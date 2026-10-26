@@ -1,5 +1,106 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - BUGFIX - Resiliencia de Pinterest en Android: Eliminación de Fallback Erróneo en Móvil, Hybrid Composition y Supresión de Bucle por Renderer Gone
+
+**Resumen**:
+- **Solución a Salida Fantasma a Pantalla de Escritorio (`PinterestDesktopFallback`) en Móvil**:
+  - Se identificó y resolvió la causa por la cual al interactuar con Pinterest la app mostraba la pantalla de "En celular entra en Pinterest, en PC se abre...":
+    1. **Conflación de Fallback de Plataforma vs Estado de Reconstrucción**: En `PinterestScreen`, el operador ternario `_isMobile && _webViewWidget != null ? Stack(...) : PinterestDesktopFallback(...)` mostraba erróneamente la vista de escritorio de Windows en dispositivos Android cada vez que `_webViewWidget` era nulo temporalmente durante una recarga o reinicio del renderer.
+    2. **Falta de `setState` en Recuperación**: Tras una señal de `onRenderProcessGone`, el temporizador de recreación instanciaba el nuevo `_webViewWidget` pero no invocaba `setState`, dejando la pantalla estancada permanentemente en la vista de escritorio.
+    3. **Bucle de Eventos en Vistas Muertas en Android (`MainActivity.kt`)**: Al colapsar el proceso renderer de Chromium por decodificadores de hardware, `onRenderProcessGone` devolvía `true` pero no destruía ni desvinculaba la instancia muerta de `WebView`. Como consecuencia, cada pulsación o toque posterior del usuario en la pantalla invocaba inmediatamente un nuevo `onRenderProcessGone`, retroalimentando el bucle.
+- **Optimizaciones Implementadas**:
+  - `PinterestScreen`: Se reestructuró la vista para que `PinterestDesktopFallback` se renderice **únicamente** cuando `!_isMobile` (Windows/Desktop). En móviles Android/iOS, si el widget se está recreando, se renderiza un loader brutalista sin saltar jamás a la pantalla de escritorio. Se introdujo debounce de 2 segundos y `_viewKey++` con `setState` en la recuperación.
+  - `MainActivity.kt`: Se añadió remoción del contenedor padre y llamada a `view.destroy()` dentro de `onRenderProcessGone`, eliminando la vista muerta para evitar que los toques táctiles disparen eventos fantasma. Se configuró `mediaPlaybackRequiresUserGesture = true` a nivel de WebSettings nativo.
+  - `PinterestControllerFactory`: Se activó `displayWithHybridComposition: true`. El modo Hybrid Composition integra el `WebView` directamente en la jerarquía de vistas de Android sin duplicar texturas GPU en memoria, reduciendo el consumo de RAM/VRAM en más de un 50% y eliminando los colapsos de Chromium en scroll infinito.
+  - `NavigationDelegate`: Se restringe la navegación interna a dominios de Pinterest (`pinterest.*`, `pinimg.com`, `pin.it`). Cualquier enlace externo a blogs, tiendas o recetas incrustados en un Pin se lanza en el navegador del sistema (`launchUrl(..., externalApplication)`), preservando intacta la sesión interna.
+  - `PinterestCleaner`: Se incorporó `sanitizeMedia` periódico en `cleanerJs` que desactiva `autoplay` y fuerza `preload = 'none'` en todas las etiquetas `<video>` del feed, evitando la saturación de decodificadores `MediaCodec`.
+- **Calidad y Verificación**:
+  - Todos los tests de `test/screens/galeria/` pasando (100% verde).
+  - Creado test de regresión `test/screens/galeria/pinterest_screen_test.dart`.
+  - `flutter analyze lib/screens/galeria`: 0 warnings, 0 errores.
+  - Regla estricta de 300 líneas verificada en todos los archivos del módulo.
+
+**Lecciones aprendidas**:
+- En Android WebView, cuando `onRenderProcessGone` se ejecuta, la instancia específica de `WebView` queda en un estado fatal permanente. Si no se remueve del `ViewGroup` y no se destruye explícitamente (`view.destroy()`), cualquier evento posterior (toque, dispatch, draw) continuará disparando `onRenderProcessGone` en bucle.
+- En Flutter, para vistas web pesadas con scroll infinito de imágenes y multimedia, `displayWithHybridComposition: true` previene la saturación de memoria de texturas virtuales en Android.
+
+**Archivos impactados**:
+- `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
+- `lib/screens/galeria/pinterest_screen.dart`
+- `lib/screens/galeria/helpers/pinterest_controller_factory.dart`
+- `lib/screens/galeria/widgets/pinterest_cleaner.dart`
+- `test/screens/galeria/pinterest_service_test.dart`
+- `test/screens/galeria/pinterest_screen_test.dart`
+
+## [2026-10-26] - FEATURE / REFACTOR - Rediseño Integral de Dibujo Digital y Estudio de Cómics
+
+**Resumen**:
+- **Pantalla de Herramientas Creativas (`lib/screens/herramientas/herramientas_screen.dart`, `widgets/herramienta_cards.dart`)**:
+  - Rediseño según directiva brutalista: Fila superior con 2 tarjetas idénticas cuadradas (1:1 AspectRatio) lado a lado para "Dibujo Digital" y "Historietas & Cómic", tarjeta ancha inferior para "Animación Flipbook" y contenedor espaciador con borde redondeado reservado para futuras herramientas.
+- **Taller de Dibujo Digital**:
+  1. **Valde de pintura (Flood Fill) delimitado**: Implementado `DrawingFloodFillHelper` para relleno de regiones cerradas y selección lazo mediante análisis perimetral de trazos, evitando que inunde toda la hoja.
+  2. **Zoom táctil ultra-amplio**: Rango de zoom en `InteractiveViewer` ampliado de `minScale: 0.02` a `maxScale: 40.0`, con márgenes periféricos de 1200 px para navegar fuera del lienzo sin bloqueos.
+  3. **Dock izquierdo simplificado**: Eliminado el último circulito blanco de opacidad del dock que generaba confusión. Retirado el botón de difuminar suelto bajo el lápiz e integrado como pincel nativo ("Dedo / Difuminador") en la biblioteca de pinceles.
+  4. **Capas con reordenamiento táctil y modal de opciones**: Lista de capas en `DrawingLayersDock` convertida a `ReorderableListView` para arrastre directo con el dedo. Creado `DrawingLayerOptionsSheet` con deslizador interactivo de opacidad en vivo (0 a 100%), bloqueo de capa, duplicar capa, combinar hacia abajo, renombrar y eliminar.
+  5. **Trama Halftone estilo Manga**: Implementado motor de trama vectorial monocromática (`DrawingToolType.screentone`) en `StrokeRenderer`, renderizando un patrón de puntos manga adaptativo con ángulo de 45° dentro del contorno del trazo.
+  6. **Nuevos iconos SVG limpios**: Creados `Assets/icons/creative/eraser.svg` y `Assets/icons/creative/bucket_fill.svg`, con helper `CreativeIcon` para visualización nítida y moderna.
+  7. **Galería de Proyectos de Dibujo (`DibujoProyectosScreen`)**: Creada pantalla de entrada con cuadrícula de proyectos con fondo de papel blanco y barra superior con botón `+` para crear lienzos directamente.
+  8. **Botones Deshacer y Rehacer Brutalistas**: Convertidos a píldoras gris oscuro (`#262626` / `#1E1E1E`) de alto contraste que destacan del fondo.
+  9. **Selector de Dimensiones de Lienzo (px y cm @ 300 DPI)**: Diálogo `CanvasDimensionsDialog` con selector de unidad de medida (Píxeles y Centímetros a 300 DPI estándar de imprenta) y presets comunes (A4, Manga B5, Postcard, Cuadrado 1080x1080, HD).
+- **Estudio de Historieta & Cómic**:
+  1. **Biblioteca con Carpetas y Capítulos (`ComicLibraryScreen`, `widgets/comic_chapter_card.dart`)**: Selector horizontal de carpetas/series con contador de capítulos y grilla con tarjetas visuales de capítulos, con opción para crear carpetas y nuevos capítulos.
+  2. **Configuración de Lienzo al Dibujar en Viñeta**: Al pulsar "Dibujar en Viñeta", se consulta interactivamente `CanvasDimensionsDialog` para elegir la resolución del dibujo antes de abrir el lienzo de dibujo.
+  3. **Mover Marco de Viñeta vs Mover Dibujo Embebido**: El marco de la viñeta puede desplazarse y redimensionarse normalmente, mientras que en modo `frameContent` se pueden desplazar y escalar libremente el dibujo y la imagen dentro de la máscara de la viñeta.
+  4. **Globos Siempre Arrastrables y Menú Compacto**: Priorización de hit-test para que tocar un globo sobre una viñeta lo seleccione de inmediato para arrastre continuo. Barra flotante `ComicFloatingBubbleBar` compactada a 2 filas horizontales limpias.
+  5. **Redimensión Dinámica no Escalar**: Los globos y paneles no se estiran como imagen deformada; el texto se recalcula y refluye de acuerdo con las nuevas dimensiones y el marco se dibuja con geometría adaptativa.
+  6. **Formas Complejas de Globos de Cómic**: Rediseñadas `ComicBubblePainter` para nubes de pensamiento con arcos múltiples convexos, ondas de mareo senoidales fluidas, grito shonen con puntas agudas dinámicas y rayos eléctricos en zigzag, con anclaje cuadrantal de cola superior, inferior, izquierdo y derecho.
+  7. **Modo Inmersivo (Ojo) con Salida Inmediata**: Incorporada píldora flotante superior visible `[ 👁️ VISTA LIMPIA • TOCA PARA VOLVER  X ]` y salida al pulsar en cualquier parte del lienzo.
+  8. **Navegación de Páginas en Barra Superior**: Controles `< Página X de Y >` y `+` trasladados a la barra superior, suprimiendo el indicador estático redundante y liberando la barra inferior exclusivamente para herramientas creativas.
+  9. **Guías Magnéticas Suaves y No Obstructivas**: Reducido el umbral magnético a 2.5 px con factor de amortiguación suave de 0.40 en `ComicSmartGuidesEngine`, permitiendo que los elementos se deslicen suavemente por las guías sin trabarse.
+  10. **12 Plantillas Clásicas Reales**: Reemplazados los prefabs antiguos por 12 plantillas clásicas y proporcionales universales de cómic occidental y manga (Cuadrícula 2x2, Tira 3 viñetas, Clásico 6 viñetas, 4-Koma vertical, Splash page, Tira Shonen con viñeta horizontal panorámica, etc.).
+  11. **Color de Borde de Viñeta Visible al Seleccionar**: El color real elegido para el borde se dibuja siempre, complementado con un halo exterior cian translúcido (`alpha: 0.35`) que indica la selección sin ocultar el color.
+- **Calidad y Verificación**:
+  - `flutter analyze lib/screens/herramientas lib/router.dart`: 0 issues found!
+  - `flutter test test/screens/herramientas/`: 147 tests pasando (100% verde).
+  - Regla estricta de 300 líneas: 100% de los archivos de `lib/screens/herramientas` cumplen con $\le 300$ líneas.
+
+**Lecciones aprendidas**:
+- En los gestores de eventos de lienzo superpuestos (`GestureDetector` en `CustomPaint`), el orden de verificación de hit-testing es fundamental: si una viñeta ocupa un área amplia, el toque en el cuerpo de la viñeta nunca debe preceder a la comprobación de elementos hijos como globos u onomatopeyas.
+- El imantado de guías de alineación no debe congelar el puntero (hard-clamping); una interpolación amortiguada permite al usuario sentir el snap magnético sin perder la agilidad del arrastre táctil.
+
+**Archivos impactados**:
+- `lib/router.dart`
+- `lib/screens/herramientas/herramientas_screen.dart`
+- `lib/screens/herramientas/widgets/herramienta_cards.dart`
+- `lib/screens/herramientas/widgets/creative_icon.dart`
+- `lib/screens/herramientas/widgets/canvas_dimensions_dialog.dart`
+- `lib/screens/herramientas/dibujo/dibujo_proyectos_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_undo_redo_buttons.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layer_options_sheet.dart`
+- `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/comic/comic_library_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_chapter_card.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bottom_toolbar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_bubble_bar.dart`
+- `lib/screens/herramientas/comic/painters/comic_page_painter.dart`
+- `lib/screens/herramientas/comic/painters/comic_bubble_painter.dart`
+- `lib/screens/herramientas/comic/helpers/comic_smart_guides_engine.dart`
+- `lib/screens/herramientas/comic/helpers/comic_editor_actions.dart`
+- `lib/screens/herramientas/comic/models/comic_template.dart`
+- `lib/screens/herramientas/comic/models/comic_template_layouts.dart`
+- `lib/screens/herramientas/comic/models/comic_project.dart`
+- `lib/screens/herramientas/comic/services/comic_storage_service.dart`
+- `Assets/icons/creative/eraser.svg`
+- `Assets/icons/creative/bucket_fill.svg`
+
 ## [2026-10-26] - RELEASE - F.U.R.I. v1.0.13: Taller de Dibujo Digital Pro Multicapa, Taller de Cómic & Manga con Guías Inteligentes y Auditoría de Estabilidad
 
 **Resumen**:

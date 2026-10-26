@@ -28,9 +28,9 @@ void main() {
         controller: controller,
       );
 
-      // Debe haber atraído exactamente a los centros de la hoja (200.0, 300.0)
-      expect(snap.snappedCenter.dx, closeTo(200.0, 0.001));
-      expect(snap.snappedCenter.dy, closeTo(300.0, 0.001));
+      // Debe haber atraído suavemente hacia los centros de la hoja (200.0, 300.0)
+      expect((snap.snappedCenter.dx - 200.0).abs(), lessThan(2.5));
+      expect((snap.snappedCenter.dy - 300.0).abs(), lessThan(2.5));
 
       // Debe haber generado las guías de centro de página
       expect(snap.guides.length, 2);
@@ -69,8 +69,8 @@ void main() {
         controller: controller,
       );
 
-      // Debe alinear con el centro de la viñeta (110.0)
-      expect(snap.snappedCenter.dx, closeTo(110.0, 0.001));
+      // Debe alinear suavemente hacia el centro de la viñeta (110.0)
+      expect((snap.snappedCenter.dx - 110.0).abs(), lessThan(2.0));
       final elementGuide = snap.guides.firstWhere((g) => g.isVertical);
       expect(elementGuide.type, ComicGuideType.elementCenter);
       expect(elementGuide.position, closeTo(110.0, 0.001));
@@ -95,7 +95,7 @@ void main() {
         width: 120.0,
         height: 80.0,
       );
-      expect(snappedRect.left, closeTo(20.0, 0.001));
+      expect((snappedRect.left - 20.0).abs(), lessThan(2.0));
       expect(snap.guides.any((g) => g.type == ComicGuideType.pageMargin), isTrue);
     });
 

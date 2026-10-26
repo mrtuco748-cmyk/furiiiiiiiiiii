@@ -9,6 +9,10 @@ import 'package:furi_app/screens/herramientas/dibujo/widgets/drawing_infinite_do
 void main() {
   group('Drawing Studio Brush Library Tests', () {
     testWidgets('DrawingFloatingBrushPopover renders all 6 brushes and updates controller', (tester) async {
+      tester.view.physicalSize = const Size(1000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
       final controller = DrawingController();
       bool closed = false;
 
@@ -43,6 +47,7 @@ void main() {
       expect(controller.selectedTool, DrawingToolType.airbrush);
 
       // Seleccionar chip de tamaño rápido 35
+      await tester.scrollUntilVisible(find.text('35'), 50);
       await tester.tap(find.text('35'));
       await tester.pumpAndSettle();
       expect(controller.strokeWidth, 35.0);

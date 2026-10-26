@@ -13,8 +13,8 @@ import 'package:furi_app/screens/herramientas/comic/painters/comic_panel_shape_h
 
 void main() {
   group('Comic Template Layouts Tests', () {
-    test('Todos los 14 layouts generan paneles con rects válidos', () {
-      expect(ComicTemplateType.values.length, 14);
+    test('Todos los 12 layouts clásicos generan paneles con rects válidos', () {
+      expect(ComicTemplateType.values.length, 12);
 
       for (final type in ComicTemplateType.values) {
         final panels = ComicTemplateLayouts.generate(type);

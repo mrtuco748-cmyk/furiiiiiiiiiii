@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../widgets/canvas_dimensions_dialog.dart';
 import '../../dibujo/dibujo_screen.dart';
 import '../../dibujo/models/drawing_project.dart';
 import '../../dibujo/services/drawing_storage_service.dart';
@@ -24,8 +25,22 @@ abstract final class ComicEditorActions {
 
     const baseW = 1200.0;
     const baseH = 1697.0;
-    final panelWidth = panel.normalizedRect.width * baseW;
-    final panelHeight = panel.normalizedRect.height * baseH;
+    final defaultWidth = (panel.normalizedRect.width * baseW).clamp(300.0, 3840.0);
+    final defaultHeight = (panel.normalizedRect.height * baseH).clamp(300.0, 3840.0);
+
+    Size chosenSize = Size(defaultWidth, defaultHeight);
+    if (project == null) {
+      if (!context.mounted) return;
+      final selected = await CanvasDimensionsDialog.show(
+        context,
+        initialSize: Size(defaultWidth, defaultHeight),
+        panelAspectRatio: defaultWidth / defaultHeight,
+      );
+      if (selected == null) return;
+      chosenSize = selected;
+    } else {
+      chosenSize = Size(project.canvasWidth, project.canvasHeight);
+    }
 
     if (!context.mounted) return;
 
@@ -33,7 +48,7 @@ abstract final class ComicEditorActions {
       MaterialPageRoute(
         builder: (_) => DibujoScreen(
           project: project,
-          canvasSize: Size(panelWidth, panelHeight),
+          canvasSize: chosenSize,
           panelGuideShape: panel.panelShape,
           panelGuidePolygon: panel.polygonPoints,
           panelGuideBorderRadius: panel.borderRadius,

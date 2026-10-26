@@ -26,6 +26,8 @@ class DrawingFloatingBrushPopover extends StatelessWidget {
     (DrawingToolType.marker, 'Marcador Tinta', 'Tinta densa con bordes nítidos'),
     (DrawingToolType.airbrush, 'Aerógrafo', 'Gradiente radial y aspersión suave'),
     (DrawingToolType.highlighter, 'Resaltador', 'Capa translúcida multiplicada'),
+    (DrawingToolType.screentone, 'Trama Manga', 'Puntos de semitono para sombreado'),
+    (DrawingToolType.smudge, 'Difuminador (Dedo)', 'Difumina y suaviza trazos'),
   ];
 
   @override

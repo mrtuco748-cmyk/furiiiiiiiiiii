@@ -28,7 +28,7 @@ abstract final class ComicSmartGuidesEngine {
     required Rect candidateRect,
     required ComicController controller,
     String? currentElementId,
-    double snapThreshold = 6.0,
+    double snapThreshold = 2.5,
   }) {
     final xTargets = <_GuideTarget>[
       _GuideTarget(pageSize.width * 0.5, ComicGuideType.pageCenter, 'Centro'),
@@ -141,7 +141,8 @@ abstract final class ComicSmartGuidesEngine {
       ?bestGuideY,
     ];
 
-    final snappedCenter = candCenter + Offset(bestDeltaX, bestDeltaY);
+    // Fuerza magnética suave con amortiguamiento del 40% para preservar máxima fluidez táctil
+    final snappedCenter = candCenter + Offset(bestDeltaX * 0.40, bestDeltaY * 0.40);
     return ComicSnapResult(snappedCenter: snappedCenter, guides: guides);
   }
 }

@@ -44,6 +44,9 @@ abstract final class StrokeRenderer {
       case DrawingToolType.gradient:
         _renderGradient(canvas, stroke);
         break;
+      case DrawingToolType.screentone:
+        _renderScreentone(canvas, stroke);
+        break;
       case DrawingToolType.eraser:
         _renderEraser(canvas, stroke);
         break;
@@ -249,5 +252,34 @@ abstract final class StrokeRenderer {
       ..strokeWidth = 1.8
       ..style = PaintingStyle.stroke;
     canvas.drawPath(path, strokePaint);
+  }
+
+  /// Trama Manga (Screentone): Puntos de semitono auténticos recortados al trazo.
+  static void _renderScreentone(Canvas canvas, DrawingStroke stroke) {
+    if (stroke.points.isEmpty) return;
+    final bounds = stroke.path.getBounds();
+    if (bounds.isEmpty) return;
+
+    canvas.save();
+    canvas.clipPath(stroke.path);
+
+    final dotPaint = Paint()
+      ..color = stroke.color.withValues(alpha: stroke.opacity)
+      ..style = PaintingStyle.fill;
+
+    const double spacing = 12.0;
+    final double dotRadius = (stroke.strokeWidth * 0.12).clamp(1.5, 5.0);
+    final startX = (bounds.left ~/ spacing) * spacing;
+    final startY = (bounds.top ~/ spacing) * spacing;
+
+    for (double y = startY; y <= bounds.bottom + spacing; y += spacing) {
+      final isOddRow = ((y / spacing).round() % 2) != 0;
+      final xOffset = isOddRow ? spacing / 2 : 0.0;
+      for (double x = startX - spacing; x <= bounds.right + spacing; x += spacing) {
+        canvas.drawCircle(Offset(x + xOffset, y), dotRadius, dotPaint);
+      }
+    }
+
+    canvas.restore();
   }
 }

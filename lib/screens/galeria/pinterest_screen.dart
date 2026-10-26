@@ -31,6 +31,8 @@ class _PinterestScreenState extends State<PinterestScreen> {
   bool _isMobile = false;
   bool _showCredentialsBar = true;
   bool _isLoggedIn = false;
+  int _viewKey = 0;
+  int _lastRendererRecovery = 0;
 
   static const String _accountEmail = 'derrame_company@yahoo.com';
   static const String _accountPass = 'Zapallo1234*';
@@ -81,6 +83,10 @@ class _PinterestScreenState extends State<PinterestScreen> {
 
   void _handleRendererGone() {
     if (!mounted) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastRendererRecovery < 2000) return;
+    _lastRendererRecovery = now;
+
     debugPrint('[Pinterest] Renderer process recuperado de forma segura');
     setState(() {
       _loading = true;
@@ -90,7 +96,10 @@ class _PinterestScreenState extends State<PinterestScreen> {
     });
     Future.delayed(const Duration(milliseconds: 250), () {
       if (mounted) {
-        _initWebView(initialUrl: _service.currentUrl);
+        setState(() {
+          _viewKey++;
+          _initWebView(initialUrl: _service.currentUrl);
+        });
       }
     });
   }
@@ -187,36 +196,61 @@ class _PinterestScreenState extends State<PinterestScreen> {
                   onClose: () => setState(() => _showCredentialsBar = false),
                 ),
               Expanded(
-                child: _isMobile && _webViewWidget != null
-                    ? Stack(
-                        children: [
-                          Positioned.fill(child: _webViewWidget!),
-                          if (_customWidget != null)
-                            Positioned.fill(
-                              child: Container(
-                                color: Colors.black,
-                                child: _customWidget!,
-                              ),
-                            ),
-                          if (_loading)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              child: LinearProgressIndicator(
-                                value: _progress > 0 ? _progress : null,
-                                backgroundColor: const Color(0xFF222222),
-                                color: const Color(0xFFE60023),
-                                minHeight: 2.5,
-                              ),
-                            ),
-                        ],
-                      )
-                    : PinterestDesktopFallback(
+                child: !_isMobile
+                    ? PinterestDesktopFallback(
                         accountEmail: _accountEmail,
                         accountPass: _accountPass,
                         onOpenExternal: _openExternal,
-                      ),
+                      )
+                    : _webViewWidget != null
+                        ? Stack(
+                            key: ValueKey('pinterest_stack_$_viewKey'),
+                            children: [
+                              Positioned.fill(child: _webViewWidget!),
+                              if (_customWidget != null)
+                                Positioned.fill(
+                                  child: Container(
+                                    color: Colors.black,
+                                    child: _customWidget!,
+                                  ),
+                                ),
+                              if (_loading)
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: LinearProgressIndicator(
+                                    value: _progress > 0 ? _progress : null,
+                                    backgroundColor: const Color(0xFF222222),
+                                    color: const Color(0xFFE60023),
+                                    minHeight: 2.5,
+                                  ),
+                                ),
+                            ],
+                          )
+                        : Container(
+                            color: const Color(0xFF141414),
+                            child: const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(
+                                    color: Color(0xFFE60023),
+                                    strokeWidth: 3,
+                                  ),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    'Cargando Pinterest...',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
               ),
             ],
           ),

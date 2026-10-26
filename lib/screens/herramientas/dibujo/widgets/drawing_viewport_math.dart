@@ -13,7 +13,7 @@ abstract final class DrawingViewportMath {
     final double paddingH = viewportSize.height * 0.76;
     final double scaleW = paddingW / canvasSize.width;
     final double scaleH = paddingH / canvasSize.height;
-    final double scale = math.min(scaleW, scaleH).clamp(0.12, 3.0);
+    final double scale = math.min(scaleW, scaleH).clamp(0.02, 10.0);
 
     final double tx = (viewportSize.width - canvasSize.width * scale) / 2;
     final double ty = (viewportSize.height - canvasSize.height * scale) / 2;
@@ -80,7 +80,7 @@ abstract final class DrawingViewportMath {
     final currentDistance = calculateDistance(activePointers);
     double s = 1.0;
     if (initialDistance != null && initialDistance > 10.0 && currentDistance > 10.0) {
-      s = (currentDistance / initialDistance).clamp(0.2, 5.0);
+      s = (currentDistance / initialDistance).clamp(0.05, 20.0);
     }
     final f0 = initialFocalPoint;
     final f1 = currentFocalPoint;

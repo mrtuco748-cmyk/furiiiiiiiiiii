@@ -99,4 +99,60 @@ abstract final class DrawingLayerOperations {
       return e.value;
     }).toList();
   }
+
+  static (List<DrawingLayer>, int) reorderLayers(
+    List<DrawingLayer> currentLayers,
+    int activeIndex,
+    int oldIndex,
+    int newIndex,
+  ) {
+    if (oldIndex < 0 || oldIndex >= currentLayers.length) return (currentLayers, activeIndex);
+    if (newIndex < 0 || newIndex > currentLayers.length) return (currentLayers, activeIndex);
+    final activeId = activeIndex >= 0 && activeIndex < currentLayers.length
+        ? currentLayers[activeIndex].id
+        : null;
+    final list = List<DrawingLayer>.from(currentLayers);
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    final nextActive = activeId != null ? list.indexWhere((l) => l.id == activeId) : 0;
+    return (list, nextActive != -1 ? nextActive : 0);
+  }
+
+  static (List<DrawingLayer>, int)? mergeDown(
+    List<DrawingLayer> currentLayers,
+    int activeIndex,
+  ) {
+    if (activeIndex <= 0 || activeIndex >= currentLayers.length) return null;
+    final upper = currentLayers[activeIndex];
+    final lower = currentLayers[activeIndex - 1];
+    final mergedStrokes = [...lower.strokes, ...upper.strokes];
+    final mergedLayer = lower.copyWith(strokes: mergedStrokes);
+    final list = List<DrawingLayer>.from(currentLayers);
+    list[activeIndex - 1] = mergedLayer;
+    list.removeAt(activeIndex);
+    return (list, activeIndex - 1);
+  }
+
+  static List<DrawingLayer> toggleLock(List<DrawingLayer> currentLayers, int index) {
+    if (index < 0 || index >= currentLayers.length) return currentLayers;
+    return currentLayers.asMap().entries.map((entry) {
+      if (entry.key == index) {
+        return entry.value.copyWith(isLocked: !entry.value.isLocked);
+      }
+      return entry.value;
+    }).toList();
+  }
+
+  static List<DrawingLayer> renameLayer(List<DrawingLayer> currentLayers, int index, String newName) {
+    if (index < 0 || index >= currentLayers.length) return currentLayers;
+    return currentLayers.asMap().entries.map((entry) {
+      if (entry.key == index) {
+        return entry.value.copyWith(name: newName);
+      }
+      return entry.value;
+    }).toList();
+  }
 }

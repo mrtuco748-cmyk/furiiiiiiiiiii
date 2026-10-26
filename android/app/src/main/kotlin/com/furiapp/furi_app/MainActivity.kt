@@ -214,6 +214,7 @@ class MainActivity : FlutterActivity() {
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 cacheMode = WebSettings.LOAD_DEFAULT
+                mediaPlaybackRequiresUserGesture = true
             }
 
             android.webkit.CookieManager.getInstance().apply {
@@ -333,7 +334,7 @@ class MainActivity : FlutterActivity() {
             if (host.contains("play.google.com") || host.contains("apps.apple.com")) {
                 return true
             }
-            return false
+            return delegate?.shouldOverrideUrlLoading(view, request) ?: false
         }
 
         @Deprecated("Deprecated in Java")
@@ -347,14 +348,19 @@ class MainActivity : FlutterActivity() {
             if (host.contains("play.google.com") || host.contains("apps.apple.com")) {
                 return true
             }
-            return false
+            return delegate?.shouldOverrideUrlLoading(view, url) ?: false
         }
 
         override fun onRenderProcessGone(
             view: WebView,
             detail: RenderProcessGoneDetail
         ): Boolean {
-            // CRÍTICO: devolver true evita que Android mate toda la app F.U.R.I si el proceso renderer de Chromium colapsa por RAM/GPU
+            // CRÍTICO: destruir y remover la vista muerta para evitar que eventos táctiles posteriores invoquen onRenderProcessGone en bucle
+            try {
+                val parent = view.parent as? ViewGroup
+                parent?.removeView(view)
+                view.destroy()
+            } catch (_: Exception) {}
             dispatchMusicAction("webview_renderer_gone", null)
             return true
         }

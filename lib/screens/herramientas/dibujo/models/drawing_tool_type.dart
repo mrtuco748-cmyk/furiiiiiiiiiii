@@ -15,6 +15,7 @@ enum DrawingToolType {
   trajectory,
   bucketFill,
   gradient,
+  screentone,
   eraser,
   smudge;
 
@@ -46,6 +47,8 @@ enum DrawingToolType {
         return 'Rellenar';
       case DrawingToolType.gradient:
         return 'Degradado';
+      case DrawingToolType.screentone:
+        return 'Trama Manga';
       case DrawingToolType.eraser:
         return 'Borrador';
       case DrawingToolType.smudge:
@@ -78,9 +81,11 @@ enum DrawingToolType {
       case DrawingToolType.trajectory:
         return Icons.timeline;
       case DrawingToolType.bucketFill:
-        return Icons.format_paint;
+        return Icons.format_color_fill;
       case DrawingToolType.gradient:
         return Icons.gradient;
+      case DrawingToolType.screentone:
+        return Icons.texture;
       case DrawingToolType.eraser:
         return Icons.cleaning_services;
       case DrawingToolType.smudge:
@@ -103,14 +108,15 @@ enum DrawingToolType {
       case DrawingToolType.highlighter:
         return 'highlighter';
       case DrawingToolType.lasso:
-        return 'shapes';
       case DrawingToolType.line:
       case DrawingToolType.rectangle:
       case DrawingToolType.circle:
       case DrawingToolType.trajectory:
       case DrawingToolType.gradient:
+      case DrawingToolType.screentone:
         return 'shapes';
       case DrawingToolType.bucketFill:
+        return 'bucket_fill';
       case DrawingToolType.eraser:
         return 'eraser';
     }
@@ -130,6 +136,8 @@ enum DrawingToolType {
         return 28.0;
       case DrawingToolType.highlighter:
         return 24.0;
+      case DrawingToolType.screentone:
+        return 28.0;
       case DrawingToolType.lasso:
         return 2.0;
       case DrawingToolType.line:
@@ -179,5 +187,6 @@ enum DrawingToolType {
       this == DrawingToolType.airbrush ||
       this == DrawingToolType.highlighter ||
       this == DrawingToolType.eraser ||
+      this == DrawingToolType.screentone ||
       this == DrawingToolType.smudge;
 }

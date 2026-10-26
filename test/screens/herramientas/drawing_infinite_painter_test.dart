@@ -38,12 +38,7 @@ void main() {
       );
 
       expect(find.byIcon(Icons.brush), findsOneWidget);
-      expect(find.byIcon(Icons.blur_on), findsOneWidget);
       expect(find.byTooltip('Borrador'), findsOneWidget);
-
-      await tester.tap(find.byIcon(Icons.blur_on));
-      await tester.pump();
-      expect(controller.selectedTool, DrawingToolType.smudge);
 
       await tester.tap(find.byTooltip('Borrador'));
       await tester.pump();
@@ -183,9 +178,8 @@ void main() {
       expect(find.byIcon(Icons.layers), findsOneWidget);
       expect(find.byIcon(Icons.more_horiz), findsOneWidget);
 
-      // Dock izquierdo
+      // Dock izquierdo (con pincel y borrador, sin blur raro)
       expect(find.byIcon(Icons.brush), findsOneWidget);
-      expect(find.byIcon(Icons.blur_on), findsOneWidget);
 
       // Botón Deshacer inferior izquierdo
       expect(find.byIcon(Icons.undo), findsOneWidget);

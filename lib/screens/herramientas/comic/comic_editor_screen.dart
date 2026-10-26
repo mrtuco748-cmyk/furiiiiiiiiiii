@@ -125,6 +125,8 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
               Positioned.fill(
                 child: ComicPageEditorWidget(
                   controller: _controller,
+                  isImmersive: _isImmersive,
+                  onExitImmersive: () => setState(() => _isImmersive = false),
                   onPanelTap: (_) => _toggleOverlay(),
                   onBubbleTap: (bubble) => _toggleOverlay(bubble: true, bubbleItem: bubble),
                   onSfxTap: (sfx) => _toggleOverlay(sfxEditor: true, sfxItem: sfx),
@@ -156,21 +158,34 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                   ),
                 ),
 
-              // Botón Salir de Modo Inmersivo
+              // Píldora visible para Salir de Modo Inmersivo
               if (_isImmersive)
                 Positioned(
-                  top: 16,
-                  right: 16,
+                  top: 14,
+                  left: 20,
+                  right: 20,
                   child: SafeArea(
-                    child: GestureDetector(
-                      onTap: () => setState(() => _isImmersive = false),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E1E1E).withValues(alpha: 0.8),
-                          shape: BoxShape.circle,
+                    child: Center(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _isImmersive = false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E1E),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFF00D4FF), width: 1.5),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.visibility, color: Color(0xFF00D4FF), size: 16),
+                              SizedBox(width: 8),
+                              Text('VISTA LIMPIA • TOCA PARA VOLVER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                              SizedBox(width: 8),
+                              Icon(Icons.close, color: Colors.white54, size: 16),
+                            ],
+                          ),
                         ),
-                        child: const Icon(Icons.visibility, color: Color(0xFF00D4FF), size: 20),
                       ),
                     ),
                   ),
@@ -200,23 +215,15 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                 onOpenPanelCustomizer: () => setState(() => _showPanelCustomizer = true),
                 onClosePanelCustomizer: () => setState(() => _showPanelCustomizer = false),
                 onSaveBubble: (savedBubble) {
-                  if (_controller.selectedBubbleId != null) {
+                  if (_controller.selectedBubbleId != null || _editingBubble != null) {
                     _controller.updateBubble(savedBubble);
-                  } else if (_editingBubble == null) {
-                    _controller.addBubble(bubble: savedBubble);
                   } else {
-                    _controller.updateBubble(savedBubble);
+                    _controller.addBubble(bubble: savedBubble);
                   }
                   _editingBubble = savedBubble;
                 },
-                onDeleteBubble: (id) {
-                  _controller.deleteBubble(id);
-                  _toggleOverlay();
-                },
-                onCloseBubble: () {
-                  _controller.selectBubble(null);
-                  _toggleOverlay();
-                },
+                onDeleteBubble: (id) { _controller.deleteBubble(id); _toggleOverlay(); },
+                onCloseBubble: () { _controller.selectBubble(null); _toggleOverlay(); },
                 onUpdateSfx: (updated) => _controller.updateSfx(updated),
                 onDeleteSfx: () {
                   final id = _controller.selectedSfxId ?? _editingSfx?.id;

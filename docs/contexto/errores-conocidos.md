@@ -8,6 +8,48 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
+### ~~CRÍTICA - Pinterest saltando a pantalla de escritorio ("En celular entra en Pinterest...") en bucle al interactuar en Android~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`, `lib/screens/galeria/helpers/pinterest_controller_factory.dart`
+- **Qué pasaba**: Al interactuar con la página de Pinterest en celular, después de unos momentos la pantalla se salía a la vista de respaldo de PC ("En celular entra en Pinterest, en PC se abre..."), y cada botón o toque posterior volvía a sacarlo a esa misma pantalla impidiendo navegar.
+- **Causa raíz**:
+  1. `PinterestScreen` evaluaba `_isMobile && _webViewWidget != null ? Stack(...) : PinterestDesktopFallback(...)`. Cuando `_webViewWidget` era nulo temporalmente durante la recreación del WebView, mostraba erróneamente la pantalla de Windows en celulares Android.
+  2. En `MainActivity.kt`, al colapsar el proceso renderer de Chromium por agotamiento de decodificadores de hardware en scroll infinito, `onRenderProcessGone` no destruía la vista muerta (`view.destroy()`). Cualquier toque posterior en la pantalla disparaba `onRenderProcessGone` en bucle continuo.
+  3. `displayWithHybridComposition: false` consumía excesiva VRAM por copia de texturas virtuales en Android.
+- **Fix**:
+  1. Se aisló `PinterestDesktopFallback` exclusivamente para plataformas no móviles (`!_isMobile`). En celular, si el WebView se reconecta, muestra un loader brutalista sin saltar jamás al fallback de escritorio.
+  2. En `MainActivity.kt`, `onRenderProcessGone` remueve del `ViewGroup` y destruye explícitamente la vista muerta con `view.destroy()`.
+  3. Se activó `displayWithHybridComposition: true` reduciendo el uso de memoria a más de la mitad y eliminando los colapsos de GPU.
+  4. Se inyectó `sanitizeMedia` para desactivar el autoplay y preload de videos en segundo plano del feed, y los enlaces externos fuera de Pinterest se abren en el navegador del sistema.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-26
+
+### ~~ALTA - Valde de pintura inundando todo el lienzo sin respetar límites de trazos o lazo~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`, `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`
+- **Qué pasaba**: Al usar el valde de pintura o lazo, el canvas completo se rellenaba con el color seleccionado, ignorando las figuras cerradas.
+- **Causa raíz**: Falta de un algoritmo de detección perimetral de rayos o contorno para calcular la envolvente de la forma seleccionada.
+- **Fix**: Se implementó `DrawingFloodFillHelper` que analiza los trazos cerrados o polígono de lazo y genera un `Path` vectorial cerrado que se rellena con `canvas.drawPath` sin inundar la pantalla.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+### ~~MEDIA - Bloqueo de interacción en globos de diálogo al intentar moverlos por segunda vez sobre una viñeta~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- **Qué pasaba**: Al colocar un globo y moverlo inicialmente funcionaba, pero al tocarlo por segunda vez el panel subyacente capturaba el evento y no permitía moverlo.
+- **Causa raíz**: El `hitTest` del panel seleccionado comprobaba `body` antes de consultar `findTappedBubble`, capturando el puntero en el marco del panel en lugar del globo.
+- **Fix**: Se priorizó el hit-test de globos y onomatopeyas por encima del cuerpo del panel seleccionado.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-26
+
+### ~~MEDIA - Bloqueo en guías magnéticas inteligentes por umbral duro de imantación~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/helpers/comic_smart_guides_engine.dart`
+- **Qué pasaba**: Al arrastrar elementos en el cómic, las líneas guías de alineación frenaban fuertemente el movimiento con el dedo.
+- **Causa raíz**: Umbral rígido de 6.0 px con reemplazo exacto del delta que atrapaba el puntero en la línea guía.
+- **Fix**: Se redujo el umbral a 2.5 px y se introdujo un factor de amortiguación suave de 0.40 para que el snap sea fluido y no bloquee el movimiento.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-26
+
+### ~~BAJA - Color de borde de viñeta seleccionado oculto bajo el color azul de selección~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/painters/comic_page_painter.dart`
+- **Qué pasaba**: Al seleccionar una viñeta para cambiar el color del marco, el borde se pintaba completamente de azul sólido, impidiendo previsualizar el color real elegido.
+- **Causa raíz**: Se sustituía `panel.borderColor` por `Color(0xFF00D4FF)` en lugar de pintar el borde real y sobreponer un halo translúcido.
+- **Fix**: Se pinta siempre el `panel.borderColor` real y se añade un halo cian translúcido exterior (`alpha: 0.35`) que indica la selección sin ocultar el color.
+- **Prioridad**: ~~BAJA~~ → RESUELTO 2026-10-26
+
 ### ~~ALTA - Crash en Modo Lector de Cómic al abrir proyectos de 1 sola página por aserción min < max en Slider~~ ✅ RESUELTO 2026-10-26
 - **Dónde**: `lib/screens/herramientas/comic/comic_reader_screen.dart`
 - **Qué pasaba**: Al ingresar al modo lector en un cómic que contiene una sola página (como al crear un cómic nuevo), la aplicación se congelaba o lanzaba un error fatal de Flutter: `'min < max': is not true`.

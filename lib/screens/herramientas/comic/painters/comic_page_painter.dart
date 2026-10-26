@@ -85,16 +85,27 @@ class ComicPagePainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Borde de la viñeta
-    final isSelected = selectedPanelId == panel.id;
+    // Borde real de la viñeta (siempre visible con su color y grosor real)
     final borderPaint = Paint()
-      ..color = isSelected ? const Color(0xFF00D4FF) : panel.borderColor
-      ..strokeWidth = isSelected ? panel.borderWidth + 2.0 : panel.borderWidth
+      ..color = panel.borderColor
+      ..strokeWidth = panel.borderWidth
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
 
     canvas.drawPath(path, borderPaint);
+
+    // Halo exterior tenue azul cian indicador de selección sin tapar el color del marco
+    final isSelected = selectedPanelId == panel.id;
+    if (isSelected) {
+      final haloPaint = Paint()
+        ..color = const Color(0xFF00D4FF).withValues(alpha: 0.35)
+        ..strokeWidth = panel.borderWidth + 4.0
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round;
+      canvas.drawPath(path, haloPaint);
+    }
   }
 
   void _paintSfx(Canvas canvas, Size size, ComicSticker sfx) {

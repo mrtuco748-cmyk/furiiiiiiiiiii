@@ -12,6 +12,7 @@ class ComicProject {
   final List<ComicPage> pages;
   final int activePageIndex;
   final String? coverImageBase64;
+  final String folderName;
 
   ComicProject({
     required this.id,
@@ -22,6 +23,7 @@ class ComicProject {
     required this.pages,
     this.activePageIndex = 0,
     this.coverImageBase64,
+    this.folderName = 'General',
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
@@ -38,6 +40,7 @@ class ComicProject {
     List<ComicPage>? pages,
     int? activePageIndex,
     String? coverImageBase64,
+    String? folderName,
   }) {
     return ComicProject(
       id: id ?? this.id,
@@ -48,6 +51,7 @@ class ComicProject {
       pages: pages ?? this.pages,
       activePageIndex: activePageIndex ?? this.activePageIndex,
       coverImageBase64: coverImageBase64 ?? this.coverImageBase64,
+      folderName: folderName ?? this.folderName,
     );
   }
 
@@ -59,6 +63,7 @@ class ComicProject {
     'updatedAt': updatedAt.toIso8601String(),
     'activePageIndex': activePageIndex,
     'coverImageBase64': coverImageBase64,
+    'folderName': folderName,
     'pages': pages.map((p) => p.toMap()).toList(),
   };
 
@@ -91,6 +96,7 @@ class ComicProject {
       pages: pages,
       activePageIndex: (map['activePageIndex'] as int?) ?? 0,
       coverImageBase64: map['coverImageBase64'] as String?,
+      folderName: map['folderName'] as String? ?? 'General',
     );
   }
 

@@ -70,6 +70,24 @@ abstract final class ComicStorageService {
     }
   }
 
+  /// Lista todas las carpetas únicas disponibles.
+  static Future<List<String>> listFolders() async {
+    final projects = await listProjects();
+    final folders = {'General'};
+    for (final p in projects) {
+      if (p.folderName.trim().isNotEmpty) {
+        folders.add(p.folderName.trim());
+      }
+    }
+    return folders.toList();
+  }
+
+  /// Lista los cómics pertenecientes a una carpeta específica.
+  static Future<List<ComicProject>> listProjectsInFolder(String folderName) async {
+    final projects = await listProjects();
+    return projects.where((p) => p.folderName == folderName).toList();
+  }
+
   /// Elimina un cómic por su ID.
   static Future<bool> deleteProject(String id) async {
     try {

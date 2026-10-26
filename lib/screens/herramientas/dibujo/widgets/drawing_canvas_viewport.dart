@@ -219,9 +219,9 @@ class _DrawingCanvasViewportState extends State<DrawingCanvasViewport> {
             behavior: HitTestBehavior.opaque,
             child: InteractiveViewer(
             transformationController: widget.transformController,
-            boundaryMargin: const EdgeInsets.all(2000),
-            minScale: 0.1,
-            maxScale: 8.0,
+            boundaryMargin: const EdgeInsets.all(10000),
+            minScale: 0.02,
+            maxScale: 40.0,
             constrained: false,
             panEnabled: false,
             scaleEnabled: false,

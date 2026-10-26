@@ -119,20 +119,67 @@ class ComicTopBar extends StatelessWidget {
             ),
             const SizedBox(width: 8),
 
-            // Chip indicador de Página
+            // Control Integrado de Páginas (Arriba, sin duplicar indicador)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
                 color: const Color(0xFF1E1E1E).withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF333333)),
               ),
-              child: Text(
-                '$currentPage / $totalPages',
-                style: const TextStyle(
-                  color: Color(0xFFFFDE59),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: controller.activePageIndex > 0
+                        ? () => controller.goToPage(controller.activePageIndex - 1)
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.chevron_left,
+                        size: 18,
+                        color: controller.activePageIndex > 0 ? Colors.white : Colors.white24,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      '$currentPage / $totalPages',
+                      style: const TextStyle(
+                        color: Color(0xFFFFDE59),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: controller.activePageIndex < totalPages - 1
+                        ? () => controller.goToPage(controller.activePageIndex + 1)
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: controller.activePageIndex < totalPages - 1 ? Colors.white : Colors.white24,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => controller.addPage(blank: true),
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 2),
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF39FF14),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.add, size: 14, color: Colors.black),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 8),

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -58,7 +59,18 @@ class PinterestControllerFactory {
           return NavigationDecision.prevent;
         }
 
-        return NavigationDecision.navigate;
+        // Permitir toda la navegación interna dentro del ecosistema Pinterest
+        final isPinterest = host.contains('pinterest.') ||
+            host.contains('pinimg.com') ||
+            host == 'pin.it';
+        if (isPinterest) {
+          return NavigationDecision.navigate;
+        }
+
+        // Si es un enlace externo fuera de Pinterest (tiendas, blogs, recetas):
+        // Abrir en el navegador externo para no saturar el WebView de la app
+        launchUrl(uri, mode: LaunchMode.externalApplication);
+        return NavigationDecision.prevent;
       },
     );
 
@@ -105,7 +117,7 @@ class PinterestControllerFactory {
       params = AndroidWebViewWidgetCreationParams
           .fromPlatformWebViewWidgetCreationParams(
         params,
-        displayWithHybridComposition: false,
+        displayWithHybridComposition: true,
       );
     }
 

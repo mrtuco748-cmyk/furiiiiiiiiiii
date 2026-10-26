@@ -18,22 +18,14 @@ abstract final class ComicBubblePainter {
       ..strokeJoin = StrokeJoin.round;
 
     final path = getBubblePath(size, bubble);
-
-    // Relleno
     canvas.drawPath(path, fillPaint);
 
-    // Borde
     if (bubble.type == ComicBubbleType.whisperDotted) {
-      // Línea punteada para susurro
-      final metrics = path.computeMetrics();
-      for (final metric in metrics) {
-        double distance = 0.0;
-        const dashLength = 6.0;
-        const dashSpace = 4.0;
-        while (distance < metric.length) {
-          final extractPath = metric.extractPath(distance, distance + dashLength);
-          canvas.drawPath(extractPath, borderPaint);
-          distance += dashLength + dashSpace;
+      for (final metric in path.computeMetrics()) {
+        double dist = 0.0;
+        while (dist < metric.length) {
+          canvas.drawPath(metric.extractPath(dist, dist + 6.0), borderPaint);
+          dist += 10.0;
         }
       }
     } else {
@@ -60,7 +52,7 @@ abstract final class ComicBubblePainter {
         body = _buildSpikyPath(w, h, 16, 1.10, 0.82);
         break;
       case ComicBubbleType.thoughtCloud:
-        body = Path()..addRRect(RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), Radius.circular(h / 2)));
+        body = _buildThoughtCloudPath(w, h);
         break;
       case ComicBubbleType.narratorBox:
         body = Path()..addRect(Rect.fromLTWH(0, 0, w, h));
@@ -102,74 +94,42 @@ abstract final class ComicBubblePainter {
     final tail = Path();
     switch (dir) {
       case ComicTailDirection.bottom:
-        final baseCx = (w * 0.5 + txOffset * 0.25).clamp(w * 0.25, w * 0.75);
-        final baseW = (w * 0.18).clamp(18.0, 34.0);
-        final rootY = h - (h * 0.22).clamp(10.0, 24.0);
-        final r1 = Offset(baseCx - baseW * 0.5, rootY);
-        final r2 = Offset(baseCx + baseW * 0.5, rootY);
-        const tipLen = 28.0;
-        final tipY = h + tipLen;
-        final tipX = (baseCx + txOffset * 0.35).clamp(w * 0.10, w * 0.90);
-        final cp1 = Offset(r1.dx + (tipX - r1.dx) * 0.35, h + 4.0);
-        final cp2 = Offset(r2.dx + (tipX - r2.dx) * 0.35, h + 4.0);
-
-        tail.moveTo(r1.dx, r1.dy);
-        tail.quadraticBezierTo(cp1.dx, cp1.dy, tipX, tipY);
-        tail.quadraticBezierTo(cp2.dx, cp2.dy, r2.dx, r2.dy);
+        final cx = (w * 0.5 + txOffset * 0.25).clamp(w * 0.25, w * 0.75);
+        final baseW = (w * 0.16).clamp(18.0, 30.0);
+        final tipX = (cx + txOffset * 0.35).clamp(w * 0.10, w * 0.90);
+        tail.moveTo(cx - baseW / 2, h - 4.0);
+        tail.quadraticBezierTo(cx - baseW / 4, h + 8.0, tipX, h + 28.0);
+        tail.quadraticBezierTo(cx + baseW / 4, h + 8.0, cx + baseW / 2, h - 4.0);
         tail.close();
         break;
 
       case ComicTailDirection.top:
-        final baseCx = (w * 0.5 + txOffset * 0.25).clamp(w * 0.25, w * 0.75);
-        final baseW = (w * 0.18).clamp(18.0, 34.0);
-        final rootY = (h * 0.22).clamp(10.0, 24.0);
-        final r1 = Offset(baseCx - baseW * 0.5, rootY);
-        final r2 = Offset(baseCx + baseW * 0.5, rootY);
-        const tipLen = 28.0;
-        final tipY = -tipLen;
-        final tipX = (baseCx + txOffset * 0.35).clamp(w * 0.10, w * 0.90);
-        final cp1 = Offset(r1.dx + (tipX - r1.dx) * 0.35, -4.0);
-        final cp2 = Offset(r2.dx + (tipX - r2.dx) * 0.35, -4.0);
-
-        tail.moveTo(r1.dx, r1.dy);
-        tail.quadraticBezierTo(cp1.dx, cp1.dy, tipX, tipY);
-        tail.quadraticBezierTo(cp2.dx, cp2.dy, r2.dx, r2.dy);
+        final cx = (w * 0.5 + txOffset * 0.25).clamp(w * 0.25, w * 0.75);
+        final baseW = (w * 0.16).clamp(18.0, 30.0);
+        final tipX = (cx + txOffset * 0.35).clamp(w * 0.10, w * 0.90);
+        tail.moveTo(cx - baseW / 2, 4.0);
+        tail.quadraticBezierTo(cx - baseW / 4, -8.0, tipX, -28.0);
+        tail.quadraticBezierTo(cx + baseW / 4, -8.0, cx + baseW / 2, 4.0);
         tail.close();
         break;
 
       case ComicTailDirection.left:
-        final baseCy = (h * 0.5 + tyOffset * 0.15).clamp(h * 0.25, h * 0.75);
-        final baseH = (h * 0.22).clamp(16.0, 30.0);
-        final rootX = (w * 0.22).clamp(12.0, 26.0);
-        final r1 = Offset(rootX, baseCy - baseH * 0.5);
-        final r2 = Offset(rootX, baseCy + baseH * 0.5);
-        const tipLen = 28.0;
-        final tipX = -tipLen;
-        final tipY = (baseCy + tyOffset * 0.25).clamp(h * 0.12, h * 0.88);
-        final cp1 = Offset(-4.0, r1.dy + (tipY - r1.dy) * 0.35);
-        final cp2 = Offset(-4.0, r2.dy + (tipY - r2.dy) * 0.35);
-
-        tail.moveTo(r1.dx, r1.dy);
-        tail.quadraticBezierTo(cp1.dx, cp1.dy, tipX, tipY);
-        tail.quadraticBezierTo(cp2.dx, cp2.dy, r2.dx, r2.dy);
+        final cy = (h * 0.5 + tyOffset * 0.15).clamp(h * 0.25, h * 0.75);
+        final baseH = (h * 0.20).clamp(16.0, 26.0);
+        final tipY = (cy + tyOffset * 0.25).clamp(h * 0.12, h * 0.88);
+        tail.moveTo(4.0, cy - baseH / 2);
+        tail.quadraticBezierTo(-8.0, cy - baseH / 4, -28.0, tipY);
+        tail.quadraticBezierTo(-8.0, cy + baseH / 4, 4.0, cy + baseH / 2);
         tail.close();
         break;
 
       case ComicTailDirection.right:
-        final baseCy = (h * 0.5 + tyOffset * 0.15).clamp(h * 0.25, h * 0.75);
-        final baseH = (h * 0.22).clamp(16.0, 30.0);
-        final rootX = w - (w * 0.22).clamp(12.0, 26.0);
-        final r1 = Offset(rootX, baseCy - baseH * 0.5);
-        final r2 = Offset(rootX, baseCy + baseH * 0.5);
-        const tipLen = 28.0;
-        final tipX = w + tipLen;
-        final tipY = (baseCy + tyOffset * 0.25).clamp(h * 0.12, h * 0.88);
-        final cp1 = Offset(w + 4.0, r1.dy + (tipY - r1.dy) * 0.35);
-        final cp2 = Offset(w + 4.0, r2.dy + (tipY - r2.dy) * 0.35);
-
-        tail.moveTo(r1.dx, r1.dy);
-        tail.quadraticBezierTo(cp1.dx, cp1.dy, tipX, tipY);
-        tail.quadraticBezierTo(cp2.dx, cp2.dy, r2.dx, r2.dy);
+        final cy = (h * 0.5 + tyOffset * 0.15).clamp(h * 0.25, h * 0.75);
+        final baseH = (h * 0.20).clamp(16.0, 26.0);
+        final tipY = (cy + tyOffset * 0.25).clamp(h * 0.12, h * 0.88);
+        tail.moveTo(w - 4.0, cy - baseH / 2);
+        tail.quadraticBezierTo(w + 8.0, cy - baseH / 4, w + 28.0, tipY);
+        tail.quadraticBezierTo(w + 8.0, cy + baseH / 4, w - 4.0, cy + baseH / 2);
         tail.close();
         break;
 
@@ -179,12 +139,36 @@ abstract final class ComicBubblePainter {
     return tail;
   }
 
-  static Path _buildSpikyPath(double w, double h, int numPoints, double outerFactor, double innerFactor) {
+  static Path _buildThoughtCloudPath(double w, double h) {
+    final p = Path();
+    final nx = (w / 36).clamp(3, 8).round();
+    final ny = (h / 30).clamp(2, 6).round();
+    final sx = w / nx;
+    final sy = h / ny;
+    p.moveTo(0, h * 0.5);
+    for (int i = ny - 1; i >= 0; i--) {
+      p.quadraticBezierTo(-7, (i + 0.5) * sy, 0, i * sy);
+    }
+    for (int i = 0; i < nx; i++) {
+      p.quadraticBezierTo((i + 0.5) * sx, -9, (i + 1) * sx, 0);
+    }
+    for (int i = 0; i < ny; i++) {
+      p.quadraticBezierTo(w + 7, (i + 0.5) * sy, w, (i + 1) * sy);
+    }
+    for (int i = nx - 1; i >= 0; i--) {
+      p.quadraticBezierTo((i + 0.5) * sx, h + 9, i * sx, h);
+    }
+    p.close();
+    return p;
+  }
+
+  static Path _buildSpikyPath(double w, double h, int basePoints, double outerFactor, double innerFactor) {
     final p = Path();
     final cx = w / 2;
     final cy = h / 2;
     final rx = w / 2;
     final ry = h / 2;
+    final numPoints = math.max(basePoints, ((w + h) / 18).round() * 2);
 
     for (int i = 0; i < numPoints; i++) {
       final angle = (i * 2 * math.pi) / numPoints;
@@ -205,26 +189,51 @@ abstract final class ComicBubblePainter {
 
   static Path _buildElectricPath(double w, double h) {
     final p = Path();
-    p.moveTo(12, 0);
-    p.lineTo(w - 20, 6);
-    p.lineTo(w, 18);
-    p.lineTo(w - 6, h * 0.45);
-    p.lineTo(w + 8, h * 0.65);
-    p.lineTo(w - 12, h);
-    p.lineTo(w * 0.6, h - 4);
-    p.lineTo(w * 0.4, h + 6);
-    p.lineTo(20, h - 2);
-    p.lineTo(0, h * 0.75);
-    p.lineTo(8, h * 0.35);
-    p.lineTo(0, 16);
+    final nx = (w / 22).clamp(3, 10).round();
+    final ny = (h / 22).clamp(2, 8).round();
+    final sx = w / nx;
+    final sy = h / ny;
+    p.moveTo(0, 0);
+    for (int i = 0; i < nx; i++) {
+      p.lineTo((i + 0.5) * sx, i.isEven ? -7 : 4);
+      p.lineTo((i + 1) * sx, 0);
+    }
+    for (int i = 0; i < ny; i++) {
+      p.lineTo(w + (i.isEven ? 7 : -4), (i + 0.5) * sy);
+      p.lineTo(w, (i + 1) * sy);
+    }
+    for (int i = nx - 1; i >= 0; i--) {
+      p.lineTo((i + 0.5) * sx, h + (i.isEven ? 7 : -4));
+      p.lineTo(i * sx, h);
+    }
+    for (int i = ny - 1; i >= 0; i--) {
+      p.lineTo(i.isEven ? -7 : 4, (i + 0.5) * sy);
+      p.lineTo(0, i * sy);
+    }
     p.close();
     return p;
   }
 
   static Path _buildWavyPath(double w, double h) {
     final p = Path();
-    final rect = Rect.fromLTWH(4, 4, w - 8, h - 8);
-    p.addRRect(RRect.fromRectAndRadius(rect, Radius.circular(h / 3)));
+    final nx = (w / 18).clamp(4, 14).round();
+    final ny = (h / 18).clamp(3, 10).round();
+    final sx = w / nx;
+    final sy = h / ny;
+    p.moveTo(0, 0);
+    for (int i = 0; i < nx; i++) {
+      p.quadraticBezierTo((i + 0.5) * sx, i.isEven ? -4 : 4, (i + 1) * sx, 0);
+    }
+    for (int i = 0; i < ny; i++) {
+      p.quadraticBezierTo(w + (i.isEven ? 4 : -4), (i + 0.5) * sy, w, (i + 1) * sy);
+    }
+    for (int i = nx - 1; i >= 0; i--) {
+      p.quadraticBezierTo((i + 0.5) * sx, h + (i.isEven ? 4 : -4), i * sx, h);
+    }
+    for (int i = ny - 1; i >= 0; i--) {
+      p.quadraticBezierTo(i.isEven ? -4 : 4, (i + 0.5) * sy, 0, i * sy);
+    }
+    p.close();
     return p;
   }
 

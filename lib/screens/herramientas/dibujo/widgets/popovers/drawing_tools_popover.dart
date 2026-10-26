@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../controllers/drawing_controller.dart';
-import '../../models/canvas_background_type.dart';
 import '../../models/drawing_symmetry_mode.dart';
 import '../../models/drawing_tool_type.dart';
 
@@ -117,9 +116,12 @@ class DrawingToolsPopover extends StatelessWidget {
               ),
               _buildItem(
                 icon: Icons.texture,
-                label: 'Trama',
-                isSelected: controller.backgroundType != CanvasBackgroundType.blank,
-                onTap: () { controller.cycleBackgroundPattern(); onClose(); },
+                label: 'Trama Manga',
+                isSelected: controller.selectedTool == DrawingToolType.screentone,
+                onTap: () {
+                  controller.toggleTool(DrawingToolType.screentone);
+                  onClose();
+                },
               ),
               _buildItem(
                 icon: Icons.copy_all,
