@@ -67,6 +67,12 @@
 | MusicTrack | Canción de la biblioteca compartida descargada comprimida desde YouTube con streaming y cache local | SQLite `music_tracks` + Supabase `music_tracks` |
 | MusicPlaylist | Playlist colaborativa con canciones ordenadas compartidas entre la pareja | SQLite `music_playlists` + Supabase `music_playlists` |
 | MusicComment | Comentario o nota colaborativa en una canción compartida | SQLite `music_comments` + Supabase `music_comments` |
+| DrawingProject | Proyecto de dibujo digital con capas, trazos vectoriales suaves, miniatura PNG y persistencia local | Almacenamiento local `furi_drawings/projects/` |
+| ComicProject | Proyecto multipágina de cómic o manga con metadatos y lista de páginas | Almacenamiento local `furi_comics/projects/` |
+| ComicPage | Página de cómic con viñetas, globos de diálogo y onomatopeyas | Incrustada en `ComicProject` |
+| ComicPanel | Viñeta delimitada con dibujo a proporción real, escala y encuadre | Incrustada en `ComicPage` |
+| ComicBubble | Globo de diálogo vectorial con 6 estilos (manga clásico, grito, pensamiento, narrador, susurro, chat FURI) y tipografías mangaka | Incrustada en `ComicPage` |
+| ComicSticker | Onomatopeya / SFX con contorno, rotación y tipografía Bangers | Incrustada en `ComicPage` |
 
 ## Siglas y Acrónimos
 

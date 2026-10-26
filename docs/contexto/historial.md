@@ -1,5 +1,1076 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - RELEASE - F.U.R.I. v1.0.13: Taller de Dibujo Digital Pro Multicapa, Taller de Cómic & Manga con Guías Inteligentes y Auditoría de Estabilidad
+
+**Resumen**:
+- **Lanzamiento Oficial v1.0.13**:
+  - Empaquetados y publicados binarios oficiales para Android (APKs `arm64-v8a`, `armeabi-v7a`, `x86_64`) y Windows Desktop x64 (`furi-windows-x64-v1.0.13.zip`).
+  - Incorporación integral del Taller de Dibujo Digital Pro (soporte multicapa, 11 tipos de pinceles con físicas realistas, estabilización anti-temblor, trazo predictivo 1-10, cursor visual interactivo, geometría y lazo con traslación).
+  - Incorporación integral del Taller de Cómic & Manga (maquetador de páginas, cortador de viñetas, globos de texto con colas multicuadrante, onomatopeyas SFX, guías magnéticas inteligentes estilo Canva/Figma y visor de lectura).
+  - Auditoría de estabilidad, prevención de crash en cómics de una página y resiliencia en controles táctiles.
+  - 475 tests pasando (100% verde) y 0 errores/warnings en análisis estático.
+
+**Archivos impactados**:
+- Todos los módulos correspondientes a v1.0.13 detallados en `docs/release_notes_v1.0.13.md`.
+
+
+## [2026-10-26] - BUGFIX / POLISH - Auditoría Profunda: Prevención de Crash en Lector de Cómic de 1 Página, Cierre del Dock de Capas y Resiliencia de Controles Deslizantes
+
+**Resumen**:
+- **Modo Lector de Cómic (`lib/screens/herramientas/comic/comic_reader_screen.dart`)**:
+  - **Crash por Asersión de Flutter en Sliders de 1 Sola Página (`min < max`)**:
+    - Se identificó y resolvió una falla crítica en `ComicReaderScreen`: al abrir un cómic nuevo o con una sola página (`totalPages == 1`), la barra de navegación instanciaba un `Slider` con `min: 0` y `max: 0` (`totalPages - 1`), provocando que Flutter lance una aserción fatal `min < max: is not true` que bloqueaba el visor.
+    - Se implementó renderizado condicional: el `Slider` y sus divisiones solo se construyen cuando `totalPages > 1`, mostrando `Spacer()` seguro en cómics de una sola página.
+- **Dock de Capas de Dibujo (`lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`)**:
+  - **Botón de Cierre "x" en Cabecera**:
+    - El widget recibía el parámetro obligatorio `final VoidCallback onClose` pero nunca lo utilizaba ni ofrecía un botón directo de cierre. Se incorporó un botón circular de cierre en la parte superior derecha del dock, permitiendo desestimar el panel de capas directamente sin tener que buscar el icono inferior.
+- **Resiliencia en Sliders de Transformación y Configuración**:
+  - Se añadieron salvaguardas explícitas `.clamp(min, max)` en `comic_panel_context_bar.dart`, `comic_panel_options_sheet.dart`, `comic_panel_customizer_tabs.dart`, `comic_bubble_tabs.dart`, `comic_sfx_editor_tabs.dart`, `drawing_brush_settings_sheet.dart` y `drawing_layers_sheet.dart`, impidiendo cualquier aserción si los valores exceden los límites tras interacción gestual en lienzo.
+- **Botones de Navegación de Página en Cómic (`comic_bottom_toolbar.dart`)**:
+  - Se configuró `onTap: null` en lugar de `() {}` en los botones de página anterior/siguiente cuando están inactivos, suprimiendo eventos fantasma.
+- **Calidad y Verificación**:
+  - Creada suite de pruebas dedicada: `test/screens/herramientas/comic_reader_test.dart` (3/3 pasando).
+  - Suite de herramientas: **147 tests pasando (100% verde)**.
+  - `flutter analyze lib test`: **0 advertencias, 0 errores**.
+  - Regla estricta de 300 líneas: 100% verificada en todo el código.
+
+**Lecciones aprendidas**:
+- En Flutter, `Slider` exige estrictamente que `max > min`. Cualquier componente de paginación que use sliders basados en `totalPages - 1` debe validar que `totalPages > 1` antes de montar el widget en el árbol.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/comic_reader_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bottom_toolbar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_options_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_customizer_tabs.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bubble_tabs.dart`
+- `lib/screens/herramientas/comic/widgets/comic_sfx_editor_tabs.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bubble_editor_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_brush_settings_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_sheet.dart`
+- `test/screens/herramientas/comic_reader_test.dart`
+
+
+## [2026-10-26] - BUGFIX / FEATURE - Deselección y Restauración de Herramientas Previas, Activación de Botones Inactivos y Auditoría General
+
+**Resumen**:
+- **Taller de Dibujo (`lib/screens/herramientas/dibujo/`)**:
+  - **Deselección y Alternancia de Herramientas (`DrawingController.toggleTool` & `previousDrawingTool`)**:
+    - Se resolvió el problema reportado ("cuando apretas no puede deseleccionar para dejar de usarlo"): al presionar Borrador, Dedo/Difuminar, Formas (Línea, Rectángulo, Círculo, Trayectoria), Lazo o Relleno una segunda vez, la herramienta se deselecciona automáticamente y restaura el pincel/lápiz activo previo del usuario (`previousDrawingTool`), en lugar de forzar siempre a birome estándar o quedar trabada.
+    - `DrawingInfiniteDock`: Al pulsar Borrador o Dedo estando activos, se deseleccionan al instante; al pulsar el icono de Pincel desde una herramienta no-pincel, restaura el pincel previo configurado.
+    - `DrawingToolsPopover` y `DrawingBottomToolbar`: Integrado `toggleTool` para Lazo, Relleno, Degradado y Formas geométricas.
+    - `DibujoScreen`: Al descartar el chip de herramienta activa superior, se restaura `previousDrawingTool`.
+  - **Acción "Mover" en Barra de Lazo (`DrawingLassoActionBar`)**:
+    - Se dotó de respuesta inmediata al botón "Mover" (antes con callback vacío `onTap: () {}`), mostrando una guía flotante en SnackBar informando cómo trasladar la selección con el dedo en el lienzo.
+- **Menú de Herramientas (`lib/screens/herramientas/herramientas_screen.dart`)**:
+  - **Tarjeta Animación Flipbook**:
+    - Se dotó de funcionalidad a la tarjeta (antes inerte con `onTap: () {}`), desplegando un diálogo explicativo brutalista que detalla la futura animación por fotogramas basada en capas y provee un botón directo de acceso al Taller de Dibujo.
+- **Taller de Cómic y Manga (`lib/screens/herramientas/comic/`)**:
+  - **Alternancia de Modo Cortar y Encuadre (`ComicEditorOverlays`)**:
+    - Los botones de cortar viñeta (`slicePanel`) y encuadre de contenido (`frameContent`) ahora alternan reactivamente: al pulsarlos de nuevo, regresan fluidamente a `ComicInteractionMode.normal`.
+- **Calidad y Verificación**:
+  - Creada suite de pruebas: `test/screens/herramientas/drawing_comic_deselection_and_fixes_test.dart` (8/8 pasando).
+  - Suite de herramientas: **144 tests pasando (100% verde)**.
+  - Suite global completa: **472 tests pasando (100% verde)**.
+  - `flutter analyze lib test`: **0 advertencias, 0 errores**.
+  - Regla estricta de 300 líneas: verificados todos los archivos de `lib/`, 0 archivos exceden 300 líneas.
+
+**Lecciones aprendidas**:
+- Al implementar herramientas auxiliares o transitorias (borradores, difuminadores, lazos, selectores de formas), el controlador debe almacenar una referencia persistente a la última herramienta de dibujo primaria (`previousDrawingTool`) para que el usuario pueda alternar libremente (toggle) sin perder su lápiz o pincel preferido ni su configuración de grosor/opacidad.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_bottom_toolbar.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_tools_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_lasso_action_bar.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_overlays.dart`
+- `lib/screens/herramientas/herramientas_screen.dart`
+- `test/screens/herramientas/drawing_comic_deselection_and_fixes_test.dart`
+
+
+## [2026-10-26] - FEATURE - Guías Magnéticas Inteligentes de Alineación estilo Canva/Figma en Taller de Cómic
+
+**Resumen**:
+- **Taller de Cómic y Manga (`lib/screens/herramientas/comic/`)**:
+  - **Motor de Guías y Atracción Magnética (`ComicSmartGuidesEngine`)**:
+    - Implementado motor de alineación magnética en tiempo real al mover viñetas, bocadillos de diálogo y stickers SFX.
+    - **Alineación con Centros de la Hoja**: Detecta cuando el centro horizontal o vertical del elemento se aproxima a los centros de la página (`pageSize.width * 0.5` y `pageSize.height * 0.5`) dentro de un umbral de atracción de 6 px, aplicando un *soft snap* magnético y desplegando la guía central en cian eléctrico (`#00D4FF`) con badge interactivo "Centro".
+    - **Alineación de Elementos entre Sí**: Detecta bordes (izquierdo, derecho, superior, inferior) y centros de otras viñetas y globos vecinos, atrayendo el elemento y proyectando líneas de guía punteadas en magenta neón Canva (`#FF2A85`).
+    - **Alineación con Márgenes de Página**: Detecta bordes perimetrales con márgenes del 5% y 95% de la hoja en amarillo cálido (`#FFDE59`).
+  - **Renderizado Visual Canva-style (`ComicSelectionBoxPainter`)**:
+    - Líneas punteadas de alto contraste (7 px trazo, 4 px espacio) con bajo-relieve de sombra para visibilidad 100% nítida tanto sobre lienzo blanco puro como sobre viñetas oscuras.
+    - Píldoras informativas (`_drawGuidePill`) indicando "Centro" y "Margen" con micro-tipografía nítida y esquinas redondeadas.
+  - **Integración Táctil Continua (`ComicEditorGestureHelper.applyMoveWithSnap` & `ComicPageEditorWidget`)**:
+    - Las guías se calculan y actualizan dinámicamente en `_handlePanUpdate` durante el arrastre, y se ocultan inmediatamente al soltar el dedo (`_handlePanEnd`).
+- **Calidad y Verificación**:
+  - Creada suite de pruebas dedicadas: `test/screens/herramientas/comic_smart_guides_test.dart` (5/5 pasando).
+  - Suite completa de herramientas: **136 tests pasando (100% verde)**.
+  - `flutter analyze lib test`: **0 advertencias, 0 errores**.
+  - Regla estricta de 300 líneas respetada en los 5 archivos del subsistema: `comic_page_editor_widget.dart` (297 l), `comic_selection_handles.dart` (265 l), `comic_editor_gesture_helper.dart` (210 l), `comic_smart_guides_engine.dart` (147 l), `comic_alignment_guide.dart` (32 l).
+
+**Lecciones aprendidas**:
+- En sistemas de guías magnéticas inteligentes estilo Canva/Figma, la prioridad de atracción debe favorecer ligeramente el alineamiento de centros (`candCenter`) sobre el alineamiento de bordes (`priorityBonus = -0.5`) para evitar que bordes lejanos compitan con la alineación central deliberada del usuario.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/models/comic_alignment_guide.dart`
+- `lib/screens/herramientas/comic/helpers/comic_smart_guides_engine.dart`
+- `lib/screens/herramientas/comic/widgets/comic_selection_handles.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_gesture_helper.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `test/screens/herramientas/comic_smart_guides_test.dart`
+
+## [2026-10-26] - BUGFIX / REFACTOR - Geometría Paramétrica Vectorial de Colas de Globos de Cómic (Izquierda, Arriba, Derecha y Abajo)
+
+**Resumen**:
+- **Taller de Cómic y Manga (`lib/screens/herramientas/comic/`)**:
+  - **Reingeniería Geométrica de la Cola de Globos (`ComicBubblePainter._buildTailPath`)**:
+    - **Cola Superior (`ComicTailDirection.top`)**: Se resolvió la asimetría y el pliegue/mella hacia adentro (`h * 0.05` que hundía la curva dentro del cuerpo del globo). Se implementó interpolación continua entre la raíz interna y la punta exterior, ubicando los puntos de control Bézier estrictamente fuera de la frontera superior (`y = -4.0`), logrando una cola manga pura, afilada y ascendente sin arrugas ni escalones.
+    - **Cola Izquierda (`ComicTailDirection.left`)**: Se eliminó la caída vertical hacia el fondo provocada por el desplazamiento por defecto de `tailY = 50.0` y el punto de control interno (`w * 0.05`). La punta ahora apunta con total claridad hacia la izquierda (`x = -28.0`), con control points en `x = -4.0` que garantizan curvatura suave y unión cóncava/convexa limpia con el óvalo o rectángulo del globo.
+    - **Cola Derecha e Inferior (`ComicTailDirection.right` & `bottom`)**: Se modernizaron con la misma formulación paramétrica basada en interpolación tangencial continua de raíz a punta.
+    - **Burbuja de Pensamiento Multidireccional (`_drawThoughtDots`)**: Las esferas ascendentes/descendentes de pensamiento ahora se proyectan hacia el lado exacto configurado (`top`, `left`, `right`, `bottom`) en lugar de caer invariablemente hacia abajo.
+  - **Limpieza de Rectángulo de Selección Interior (`ComicPagePainter`)**:
+    - Se eliminó el `canvas.drawRect` redundante que dibujaba una línea cian interior atravesando la base y el tallo de la cola del globo, confiando exclusivamente en el `ComicSelectionBoxPainter` perimetral interactivo.
+  - **Tolerancia de Toque en Cola (`ComicTransformResolver.findTappedBubble`)**:
+    - Se amplió la zona de captura a 34 px cuando el globo tiene cola activa, permitiendo seleccionarlo directamente pulsando sobre la punta de la cola en cualquier dirección.
+- **Calidad y Verificación**:
+  - Creada suite de pruebas unitarias y geométricas: `test/screens/herramientas/comic_bubble_tail_test.dart` (5/5 pasando).
+  - Suite completa de herramientas: **131 tests pasando (100% verde)**.
+  - `flutter analyze lib test`: **0 advertencias, 0 errores**.
+  - Regla estricta de 300 líneas: `comic_bubble_painter.dart` (290 líneas), `comic_page_painter.dart` (222 líneas), `comic_transform_resolver.dart` (99 líneas).
+
+**Lecciones aprendidas**:
+- Al construir uniones booleanas de trazados (`Path.combine(PathOperation.union, body, tail)`), los puntos de control de las curvas Bézier de la cola deben situarse estrictamente en o fuera del perímetro del cuerpo. Si un punto de control se ubica en el interior del cuerpo, la curva puede arquearse hacia adentro antes de tocar el perímetro, produciendo hendiduras o dobleces antiestéticos en el trazo perimetral final.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/painters/comic_bubble_painter.dart`
+- `lib/screens/herramientas/comic/painters/comic_page_painter.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `test/screens/herramientas/comic_bubble_tail_test.dart`
+
+## [2026-10-26] - BUGFIX / FEATURE - Interacción Táctil Continua en Globos de Cómic y Círculo de Grosor en Tiempo Real en Lienzo
+
+**Resumen**:
+- **Taller de Cómic y Manga (`lib/screens/herramientas/comic/`)**:
+  - **Interacción Multitoque y Selección Continua de Bocadillos (`ComicPageEditorWidget` & `ComicTransformResolver`)**:
+    - Se resolvió el bug donde los globos de texto solo respondían al ser creados y quedaban inamovibles en interacciones posteriores si una viñeta estaba seleccionada o al tocar de nuevo con los dedos.
+    - Se reordenó la detección de toques en `ComicPageEditorWidget._handlePanDown`: los bocadillos y efectos SFX superpuestos tienen ahora prioridad de captura sobre el cuerpo de viñetas subyacentes, permitiendo tocarlos, arrastrarlos y editarlos directamente en cualquier momento.
+    - Se expandió la tolerancia de hit-testing táctil en `ComicTransformResolver.findTappedBubble` de 14 a 22 px para permitir toques rápidos con dedos sin requerir precisión milimétrica de puntero de mouse.
+    - Se eliminó el `GestureDetector` exterior en `ComicEditorScreen` que deseleccionaba los elementos al pulsar la pantalla.
+  - **Redimensionamiento Táctil por Aristas en Globos (`ComicEditorGestureHelper.applyBubbleEdgeResize`)**:
+    - Se añadió soporte completo para redimensionar bocadillos arrastrando los tiradores laterales izquierdo, derecho, superior e inferior (`resizeLeft`, `resizeRight`, `resizeTop`, `resizeBottom`) con compensación de rotación trigonométrica.
+- **Taller de Dibujo (`lib/screens/herramientas/dibujo/`)**:
+  - **Círculo Indicador de Puntero y Grosor en Tiempo Real (`DrawingCursorPainter`)**:
+    - Implementado anillo visual de ayuda que sigue el puntero o dedo y replica exactamente el grosor configurado (`strokeWidth / 2.0`), con doble anillo contrastado blanco/oscuro, punto guía central cyan para lápices y tinte coral para el borrador.
+    - Desacoplado cálculo de coordenadas de viewport en `DrawingViewportMath` (92 líneas) manteniendo `DrawingCanvasViewport` en 296 líneas.
+    - Creado `DrawingBrushCursorCard` para activar/desactivar el cursor en ajustes.
+- **Calidad y Verificación**:
+  - Nuevas pruebas de regresión: `test/screens/herramientas/comic_bubble_move_test.dart` y `test/screens/herramientas/drawing_brush_cursor_test.dart`.
+  - Suite de herramientas: 126 tests pasando (100% verde).
+  - `flutter analyze lib test`: 0 advertencias, 0 errores.
+  - Regla de 300 líneas verificada en todos los archivos modificados.
+
+**Lecciones aprendidas**:
+- En lienzos jerárquicos interactivos (viñetas de fondo + textos flotantes), el hit-testing nunca debe delegar al elemento previamente seleccionado si dicho elemento es de fondo y el toque cae sobre un objeto flotante foreground. El hit-testing debe evaluar siempre primero los elementos superiores más pequeños (bocadillos, sfx) antes de conceder el drag al cuerpo de la viñeta.
+- En pruebas de gestos de Flutter (`WidgetTester.startGesture`), el primer `moveBy` rompe el `kTouchSlop` (18 px) para que el recognizer acepte el gesto; para simular un arrastre que despache `onPanUpdate`, se deben enviar al menos dos llamadas de `moveBy`.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_gesture_helper.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_cursor_painter.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_brush_cursor_card.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_viewport_math.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `test/screens/herramientas/comic_bubble_move_test.dart`
+- `test/screens/herramientas/drawing_brush_cursor_test.dart`
+
+## [2026-10-26] - BUGFIX / REFACTOR - Caza Extrema de Bugs en Taller de Dibujo y Taller de Cómics (Auditoría Exhaustiva de 98 Archivos)
+
+**Resumen**:
+- **Taller de Dibujo Digital (`lib/screens/herramientas/dibujo/`)**:
+  - **Exportación PNG con Lienzo Personalizado y Miniaturas sin Recorte (`DrawingRenderExporter` & `DrawingController`)**:
+    - Se solucionó el bug donde la miniatura (200x200 px) o la exportación a alta resolución salía en blanco o severamente recortada porque se ignoraban las dimensiones reales del lienzo (`canvasWidth`/`canvasHeight`) y no se escalaban las transformaciones `canvas.scale(targetW / canvasW, targetH / canvasH)`.
+    - `loadProject` y `toProject` ahora persisten y restauran fielmente `canvasWidth` y `canvasHeight`.
+  - **Herramienta Lazo y Relleno Poligonal (`DrawingLassoOperations` & `StrokeRenderer`)**:
+    - El Lazo y el Relleno (`bucketFill`) con polígono cerrado ahora usan `canvas.drawPath` con el polígono trazado en lugar de un `canvas.drawPaint` indiscriminado que inundaba toda la capa entera.
+    - La selección por Lazo ahora detecta correctamente formas geométricas (círculo, rectángulo, línea) evaluando puntos perimetrales y de centro, excluye trazos de goma (`eraser`), y el volteo horizontal invierte con precisión los `polygonPoints`.
+  - **Detección Bimanual Limpia y Prevención de Trazos Fantasma (`DrawingCanvasViewport`)**:
+    - Se implementó `cancelActiveStroke()` en `DrawingController` para descartar limpiamente el trazo inicial al posar el segundo dedo en pinch-to-zoom/pan sin contaminar el historial ni requerir un `undo()`.
+    - Se eliminó la llamada ilícita a `controller.setCanvasSize(...)` durante el método `build`, moviéndose a `initState` y `didUpdateWidget`.
+  - **Reactividad de Interfaz y Opciones (`DibujoScreen`, `DrawingFloatingColorPopover`, `DrawingOptionsPopover`)**:
+    - `_onControllerChange` en `DibujoScreen` ahora sincroniza inmediatamente la interfaz completa (chips de herramientas, barra de acciones de Lazo, deselección).
+    - `DrawingOptionsPopover`: el botón "Nuevo" ahora crea un nuevo proyecto limpio con nuevo ID e inicializa capas vacías en lugar de borrar la capa activa del dibujo actual.
+    - `DrawingFloatingColorPopover`: se garantizó reactividad al tocar swatches con contraste adaptativo en el checkmark (`color.computeLuminance() > 0.4 ? Colors.black : Colors.white`).
+- **Taller de Cómic y Manga (`lib/screens/herramientas/comic/`)**:
+  - **Limpieza de Dibujos Embebidos en Viñetas (`ComicPanel.copyWith` & `ComicController.setPanelDrawing`)**:
+    - Se solucionó el null-trap en `ComicPanel.copyWith`: al pasar `null` para eliminar un dibujo embebido, el operador `??` mantenía la imagen previa. Se incorporó `bool clearDrawing = false` y `bool clearPolygonPoints = false`.
+  - **Exportación Multi-Página Segura (`ComicController.exportPageToPng` & `ComicImageCache`)**:
+    - Se añadió `ComicImageCache.ensureDecoded` para decodificar asíncronamente las imágenes de viñetas de páginas inactivas antes de la exportación a PNG, impidiendo paneles en blanco.
+  - **Miniaturas de Cómic con BlendMode Seguro (`ComicDrawingThumbnail`)**:
+    - El pintor vectorial `_MiniProjectPainter` ahora envuelve capas en `canvas.saveLayer(...)` para que trazos de borrador con `BlendMode.clear` no perforen el fondo en negro.
+  - **Barra Inferior y Contextual Completa (`ComicBottomToolbar` & `ComicPanelContextBar`)**:
+    - Se agregaron botones de acceso directo para Plantillas (`onToggleTemplates`), Bocadillos (`onToggleBubble`) y Efectos SFX (`onToggleSfx`) en `ComicBottomToolbar`.
+    - Se agregó botón de personalización avanzada (`Icons.tune_rounded` para `widget.onCustomize`) y se envolvió la barra contextual en `SingleChildScrollView(scrollDirection: Axis.horizontal)` para eliminar `RenderFlex overflow` en pantallas angostas.
+  - **Cumplimiento Estricto de Guía Visual Brutalista (`ComicReaderScreen`)**:
+    - Reemplazado `Colors.black` puro por `const Color(0xFF141414)`.
+- **Regla Estricta de 300 Líneas y Pruebas**:
+  - Los 98 archivos del módulo de herramientas cumplen de forma estricta `<= 300 líneas`.
+  - Creados tests de regresión TDD: `drawing_critical_bugs_test.dart` y `comic_critical_bugs_test.dart`.
+  - Suite de herramientas: 124 tests pasando (100% verde).
+  - `flutter analyze lib test`: 0 advertencias, 0 errores.
+
+**Lecciones aprendidas**:
+- En clases inmutables con patrones `copyWith`, los campos opcionales que necesitan ser limpiados (`null`) no deben depender únicamente de `field ?? this.field`, sino contar con un flag explícito `bool clearField = false` para permitir anulaciones confiables sin romper inmutabilidad.
+- En `CustomPainter` o pipelines de exportación con múltiples capas donde los trazos usan `BlendMode.clear`, SIEMPRE se debe usar `canvas.saveLayer(rect, Paint())` y `canvas.restore()` por capa para evitar que el canal alpha perfore el canvas subyacente.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/helpers/drawing_render_exporter.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_lasso_operations.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_color_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_options_popover.dart`
+- `lib/screens/herramientas/comic/models/comic_panel.dart`
+- `lib/screens/herramientas/comic/helpers/comic_image_cache.dart`
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bottom_toolbar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_drawing_thumbnail.dart`
+- `lib/screens/herramientas/comic/comic_reader_screen.dart`
+- `test/screens/herramientas/drawing_critical_bugs_test.dart`
+- `test/screens/herramientas/comic_critical_bugs_test.dart`
+
+
+
+## [2026-10-26] - FEATURE - Guía Visual y Retícula Circular en Tiempo Real para Lápices, Pinceles y Borrador (Brush Cursor Exacto)
+
+**Resumen**:
+- **Círculo Guía Visual de Grosor en Tiempo Real (`DrawingCursorPainter`)**:
+  - Implementado el indicador visual de contorno de pincel y goma en tiempo real sobre el lienzo estilo software profesional (Procreate, Clip Studio, Photoshop).
+  - El diámetro del círculo coincide **exactamente** con el grosor seleccionado (`strokeWidth`), con radio `strokeWidth / 2.0` (y modulación dinámica para herramientas sensibles a la presión como Pluma G).
+  - **Doble Anillo de Contraste Adaptativo**: Anillo exterior oscuro semi-transparente (1.5 px) y anillo interior blanco brillante (1.0 px), garantizando visibilidad 100% nítida tanto sobre lienzo blanco como sobre tintas oscuras y fondos texturados.
+  - **Diferenciación Visual para Borrador**: En modo `eraser`, el cursor proyecta un tinte translúcido coral (`#FF5252`), anillo de precisión y punto central de referencia, permitiendo saber exactamente qué área de trazo será eliminada antes y durante el contacto.
+  - **Diferenciación Visual para Lápices y Pinceles**: Tinte tenue del color activo de tinta y micro-punto central cyan (`#00D4FF`) para precisión milimétrica en dibujos de detalle y manga.
+  - **Soporte de Simetría Especular**: Si el modo de simetría está activo (vertical, horizontal, radial o caleidoscopio), renderiza automáticamente las retículas circulares sincronizadas en todos los puntos simétricos proyectados.
+- **Detección Táctil y Puntero Hover (`DrawingCanvasViewport`)**:
+  - Detección fluida en `onPointerDown`, `onPointerMove`, `onPointerHover` (mediante `MouseRegion`) y ocultación instantánea al levantar el trazo (`_finishPointer` en `onPointerUp` / `onPointerCancel`) para no entorpecer la ilustración final.
+- **Configuración y Control (`DrawingBrushCursorCard` & `DrawingOptionsPopover`)**:
+  - Añadido interruptor `Guía Visual de Pincel y Goma` activo por defecto en la ventana de Opciones con switch `activeThumbColor: #00D4FF`.
+  - Métodos `showBrushCursor`, `setShowBrushCursor(bool)` y `toggleShowBrushCursor()` en `DrawingController`.
+- **Modularización y Regla de 300 Líneas**:
+  - Extraído `DrawingViewportMath` (92 líneas) para desacoplar operaciones de transformación y cálculo matricial bimanual.
+  - `DrawingCursorPainter`: 114 líneas.
+  - `DrawingBrushCursorCard`: 50 líneas.
+  - `DrawingCanvasViewport`: reducido y mantenido en 280 líneas.
+  - `DrawingController`: optimizado en 289 líneas.
+  - `DrawingOptionsPopover`: 267 líneas.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/drawing_brush_cursor_test.dart` (10 tests pasando).
+  - 117 tests pasando en la suite de herramientas (100% verde).
+  - `flutter analyze lib test`: 0 issues found.
+
+**Lecciones aprendidas**:
+- Al implementar guías de puntero táctiles sobre lienzos con soporte de rotación, inversión especular y simetría, componer el pintor de cursor como `foregroundPainter` en el `CustomPaint` exterior garantiza que la retícula siempre se superponga por encima de todas las capas de dibujo y máscaras de recorte de viñeta sin requerir cálculos de transformación manuales en coordenadas globales.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_cursor_painter.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/drawing_viewport_math.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/drawing_brush_cursor_card.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_options_popover.dart`
+- `test/screens/herramientas/drawing_brush_cursor_test.dart` (nuevo)
+
+
+
+## [2026-10-26] - FEATURE / BUGFIX - Renombrado Interactivo de Proyectos (TopBar, Opciones y Hojas de Proyectos) y Miniaturas de Dibujo con Fondo de Hoja Blanca en Lienzo
+
+**Resumen**:
+- **Renombrado Interactivo de Proyectos en Dibujo y Cómic**:
+  - Resuelto el problema donde los proyectos creados sólo decían "Sin Título" sin posibilidad de edición o renombrado.
+  - **Badge de Título Reactivo en TopBar (`DrawingTopBar` y `ComicTopBar`)**: Se agregó un badge central interactivo con icono de edición (`Icons.edit`). Al tocarlo, abre un diálogo estilizado para cambiar el nombre al vuelo. Envuelto con `ListenableBuilder` para actualizarse de manera reactiva instantánea ante llamadas a `controller.setTitle(...)`.
+  - **Acción "Renombrar" en Opciones (`DrawingOptionsPopover`)**: Se incorporó un botón de renombrado en la grilla flotante de 3x3 de opciones del taller de dibujo, con guardado automático.
+  - **Botón de Edición en Lista de Proyectos (`DrawingProjectsSheet` y `ComicProjectsSheet`)**: Cada tarjeta o fila de proyecto cuenta ahora con un botón de acción de renombrado (`Icons.edit_outlined`) para cambiar títulos de cualquier dibujo o cómic sin necesidad de cargarlo primero.
+- **Previsualización de Miniaturas con Lienzo Blanco Puro (`ComicDrawingThumbnail`)**:
+  - Resuelto el bug donde las miniaturas de los dibujos se veían con fondo negro o gris oscuro (`#1E1E1E`), haciendo que los trazos de tinta negra fueran invisibles o se confundieran con el fondo.
+  - Se modificó `ComicDrawingThumbnail` para usar `color: Colors.white` en su contenedor y pintar un lienzo base blanco `canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = Colors.white)` antes de renderizar los trazos vectoriales del proyecto.
+  - Las imágenes rasterizadas transparentes se montan sobre un fondo blanco sólido, garantizando que el boceto o historieta siempre se visualice como sobre una hoja de papel real.
+- **Modularización y Regla de 300 Líneas**:
+  - `comic_drawing_thumbnail.dart`: 84 líneas.
+  - `drawing_projects_sheet.dart`: 272 líneas.
+  - `drawing_top_bar.dart`: 197 líneas.
+  - `drawing_options_popover.dart`: 264 líneas.
+  - `comic_projects_sheet.dart`: 284 líneas.
+  - `comic_top_bar.dart`: 222 líneas.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/drawing_project_rename_white_thumbnail_test.dart` (4 tests pasando).
+  - 107 tests pasando en la suite de herramientas (100% verde).
+  - `flutter analyze lib test`: 0 issues found.
+
+**Lecciones aprendidas**:
+- Al renderizar `CustomPaint` sobre contenedores con fondos oscuros, si el pintor no dibuja explícitamente el color de fondo del lienzo del proyecto (blanco en lienzos de ilustración estándar), las capas transparentes heredarán el fondo oscuro del contenedor contenedor y ocultarán los trazos de tinta negra; forzar un `drawRect` blanco de inicio emula fielmente la hoja de papel físico bajo cualquier contexto.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/widgets/comic_drawing_thumbnail.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_projects_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_options_popover.dart`
+- `lib/screens/herramientas/comic/widgets/comic_projects_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `test/screens/herramientas/drawing_project_rename_white_thumbnail_test.dart` (nuevo)
+
+
+
+## [2026-10-26] - FEATURE / BUGFIX - Micro-Corrección de Trazos en Vivo (Anti-Temblores), Trazo Predictivo Ajustable del 1 al 10 e Icono Vectorial Real de Borrador en Taller de Dibujo
+
+**Resumen**:
+- **Corrección Visual de Icono de Borrador**:
+  - Resuelto el bug donde el borrador mostraba un ícono de varita / lápiz mágico (`Icons.auto_fix_high`).
+  - En `DrawingInfiniteDock`, se reemplazó el icono estático por `CreativeIcon('eraser', color: ..., size: 20, fallback: Icons.cleaning_services)`, renderizando el archivo vectorial real `Assets/icons/creative/eraser.svg`.
+  - En `DrawingToolType.eraser.icon`, se configuró `Icons.cleaning_services` como fallback en lugar de `auto_fix_high`.
+- **Micro-Corrección de Trazos en Vivo (Anti-Temblores) (`DrawingStrokeStabilizer`)**:
+  - Creado `DrawingStrokeStabilizer` con filtro pasa-bajos de promedio móvil ponderado (EMA) en tiempo real (`weight = 0.72`).
+  - Suprime micro-temblores de mano y ruido de digitalizadores en trazos a mano alzada a medida que se van dibujando, sin retraso perceptible y manteniendo la agilidad del lápiz.
+  - Filtro de umbral estático (< 1.0 px) que descarta la acumulación de ruido cuando el cursor o dedo apenas se mueve en el mismo píxel.
+  - Preservación inteligente de vértices y esquinas vivas: si el ángulo entre el vector previo y el actual cambia abruptamente (dot product < 0.35, quiebre > 70°), el peso sube a 0.94 para evitar redondear esquinas deliberadas (ej. letras Z o V).
+- **Trazo Predictivo con Control Deslizante del 1 al 10 (`DrawingPredictiveStrokeCard`)**:
+  - Implementada la opción configurable de Trazo Predictivo para entintado profesional, curvas manga y caligrafía.
+  - Amortiguación elástica de arrastre escalable de 0.52 (nivel 1, ligero) a 0.14 (nivel 10, máxima estabilización sedosa).
+  - Extrapolación de velocidad hacia adelante (*lookahead prediction*) basada en el vector de movimiento `(velocity * factor)`, anticipando y redondeando orgánicamente la curva en la dirección de dibujo.
+  - Cierre suave de trazo (`finish`) al levantar el dedo/pápiz, interpolando suavemente la distancia restante hacia la posición de liberación exacta.
+  - Creado widget `DrawingPredictiveStrokeCard` con Switch de activación, Slider del 1 al 10 y descripciones dinámicas ("Suavizado ágil", "Entintado manga & cómic balanceado", "Líneas caligráficas").
+  - Integrado de forma reactiva en `DrawingOptionsPopover` y `DrawingFloatingBrushPopover`.
+- **Modularización y Regla de las 300 Líneas**:
+  - `DrawingController`: optimizado y reducido a 291 líneas (delegando estabilización en `DrawingStrokeStabilizer`).
+  - `DrawingStrokeStabilizer`: 114 líneas.
+  - `DrawingPredictiveStrokeCard`: 131 líneas.
+  - `DrawingInfiniteDock`: 269 líneas.
+  - `DrawingOptionsPopover`: 190 líneas.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/drawing_stroke_stabilizer_test.dart` (10 tests pasando).
+  - 103 tests pasando en la suite de herramientas (100% verde).
+  - `flutter analyze lib test`: 0 issues found.
+
+**Lecciones aprendidas**:
+- En motores de entintado digital, un suavizado puro uniforme tiende a redondear y deformar esquinas agudas deliberadas al escribir o dibujar líneas quebradas; incorporar un cálculo de producto punto entre vectores consecutivos permite detectar esquinas agudas y deshabilitar temporalmente la amortiguación en esos vértices para preservar la intención del artista.
+- Para el trazo predictivo, desacoplar el estado de seguimiento de puntos del controlador principal en una clase de sesión (`DrawingStrokeStabilizer`) previene que la clase controladora crezca desmedidamente y simplifica enormemente las pruebas unitarias de algoritmos geométricos.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_stroke_stabilizer.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_predictive_stroke_card.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_brush_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_options_popover.dart`
+- `test/screens/herramientas/drawing_stroke_stabilizer_test.dart` (nuevo)
+- `test/screens/herramientas/drawing_infinite_painter_test.dart`
+
+## [2026-10-26] - BUGFIX / OPTIMIZATION - Solución Definitiva de Reinicios y Crashes en Pinterest, Emulación PWA Standalone, Supresión de Intents, Caché Nativa Persistente y Ocultamiento Inteligente de Credenciales
+
+**Resumen**:
+- **Solución del Bug Crítico de Reinicios Continuos al Navegar Secciones en Pinterest**:
+  - **Diagnóstico Causa Raíz A (Redirección a App Intent + Timeout)**: En Pinterest web móvil, al entrar a pins, perfiles, tableros o búsquedas, la página ejecuta scripts que intentan disparar `intent://`, `pinterest://` o `market://` para forzar la apertura de la app externa. Al bloquearse el intent en Android WebView, el timer de fallback de 1 segundo de Pinterest ejecutaba `window.location.replace('https://www.pinterest.com/')` o recargaba la página, provocando que el usuario fuera expulsado al inicio una y otra vez.
+  - **Diagnóstico Causa Raíz B (Agotamiento de Decodificadores de Video y OOM en Chromium)**: Los video pins en feeds cargaban con `autoplay muted playsinline`, instanciando múltiples decodificadores de hardware simultáneos que saturaban el subsistema `MediaCodec` de Android, colapsando el proceso GPU y provocando `onRenderProcessGone`. Dart recreaba el WebView desde cero en cada caída, reiniciando la aplicación.
+  - **Solución Implementada (`PinterestCleaner`, `MainActivity.kt`)**:
+    - **Neutralización de Intents en Origen**: Se sobreescribieron `window.location.assign`, `window.location.replace` y se interceptaron eventos `click` en fase de captura para bloquear silenciosamente cualquier URL `intent:`, `pinterest:`, `market:` o `play.google.com`, evitando que Pinterest dispare el timeout de recarga de fallback.
+    - **Emulación Standalone PWA**: Se inyectaron `Object.defineProperty(navigator, 'standalone', { get: () => true })`, `matchMedia('(display-mode: standalone)')` y cookies/storage pre-sembrados (`app_upsell_dismissed`, `_pinterest_pf_installed`, `hide_app_upsell`), haciendo que Pinterest reconozca el WebView como su app PWA instalada y suprima por completo los banners y trampas de instalación.
+    - **Control de Videos en Segundo Plano**: Interceptado `HTMLMediaElement.prototype.play` y fijado `preload="none"` en videos de feeds automáticos, impidiendo el colapso de decodificadores por GPU y erradicando los eventos `onRenderProcessGone`.
+    - **Manejo Seguro de Custom Views**: Se implementó `onCustomWidgetChange` en `PinterestControllerFactory` / `PinterestScreen` para renderizar overlays multimedia de forma segura en un `Stack` sin invocar `onCustomWidgetHidden()` prematuramente ni desestabilizar Chromium.
+- **Caché Nativa y Experiencia Fluida como App**:
+  - Habilitados en `MainActivity.kt` `databaseEnabled = true` (soporte completo de IndexedDB para guardar tableros y pines offline), `domStorageEnabled = true`, `allowFileAccess = true`, `allowContentAccess = true`, `saveFormData = true`, `useWideViewPort = true` y `loadWithOverviewMode = true`.
+  - Configurado `ServiceWorkerController.getInstance().serviceWorkerWebSettings.cacheMode = WebSettings.LOAD_DEFAULT` en Android N+, permitiendo que los Service Workers de Pinterest sirvan shells, scripts e imágenes desde la caché local sin descargar desde cero.
+  - Agregado canal nativo `flushCookies` y persistencia permanente con `CookieManager.getInstance().flush()`.
+- **Ocultamiento Inteligente del Cartel de Credenciales (`PinterestService`)**:
+  - Implementado `PinterestService` con canal JavaScript bidireccional (`FuriPinterest`).
+  - Detección en tiempo real del estado de autenticación: si el usuario ya inició sesión (`_pinterest_sess` cookie activa, perfil de usuario en DOM o sesión previa guardada en `SharedPreferences`), el cartel de correo y contraseña se oculta automáticamente.
+  - Si el usuario no ha iniciado sesión o se encuentra en pantalla de login, el banner aparece automáticamente con chips de 1 toque para copiar correo (`derrame_company@yahoo.com`) y contraseña (`Zapallo1234*`).
+  - El botón de llave en `PinterestTopBar` refleja el estado (sutil cuando está logueado, destacado cuando no) y permite desplegar el banner manualmente si el usuario lo desea.
+- **Modularización y Regla de las 300 Líneas**:
+  - `PinterestControllerFactory` extraído en `lib/screens/galeria/helpers/` (122 líneas).
+  - `PinterestService` creado en `lib/screens/galeria/services/` (111 líneas).
+  - `PinterestScreen` compactado a 227 líneas.
+  - Todos los archivos respetan el límite de <= 300 líneas.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/galeria/pinterest_service_test.dart` (4 tests pasando).
+  - Creado `test/screens/galeria/pinterest_top_bar_widget_test.dart` (2 tests pasando).
+  - 431 tests pasando (100% verde en suite completa).
+  - `flutter analyze lib`: 0 issues found.
+
+**Lecciones aprendidas**:
+- En aplicaciones web progresivas complejas como Pinterest, el mecanismo de "Abrir en la app" funciona lanzando un esquema `intent://` y configurando un temporizador JavaScript corto (`setTimeout`); si el intent es cancelado por el WebView nativo, el temporizador de la página web asume que la apertura falló y ejecuta una redirección automática forzada a la página principal o recarga la URL. Neutralizar el salto a nivel JavaScript en `window.location.assign`/`replace` y clicks antes de que el navegador intente despachar el intent previene que Pinterest entre en el ciclo de recarga.
+- En Android WebView, `databaseEnabled = true` es indispensable para habilitar `IndexedDB`; sin esta propiedad, los frameworks modernos de frontend (React PWA) no pueden persistir caché en disco y se ven obligados a descargar todo el árbol de componentes y datos desde la red en cada inicio.
+
+**Archivos impactados**:
+- `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
+- `lib/services/helpers/music_notification_manager.dart`
+- `lib/services/notification_service.dart`
+- `lib/screens/galeria/pinterest_screen.dart`
+- `lib/screens/galeria/helpers/pinterest_controller_factory.dart` (nuevo)
+- `lib/screens/galeria/services/pinterest_service.dart` (nuevo)
+- `lib/screens/galeria/widgets/pinterest_cleaner.dart`
+- `lib/screens/galeria/widgets/pinterest_top_bar.dart`
+- `test/screens/galeria/pinterest_service_test.dart` (nuevo)
+- `test/screens/galeria/pinterest_top_bar_widget_test.dart` (nuevo)
+- `test/screens/herramientas/drawing_infinite_painter_test.dart`
+- `test/screens/herramientas/drawing_pro_features_test.dart`
+- `docs/contexto/historial.md`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/mapa-del-codigo.md`
+
+## [2026-10-26] - FEATURE / ENHANCEMENT - Herramienta de Selección Lazo Libre en Dibujo Digital y Movimiento Directo Táctil de Globos y SFX en Cómic Studio
+
+**Resumen**:
+- **Herramienta de Selección por Lazo Libre (`DrawingToolType.lasso`, `DrawingLassoSelection`, `DrawingLassoOperations`)**:
+  - Incorporada la herramienta de lazo a mano alzada en el Motor de Dibujo Digital (Infinite Painter UI).
+  - Algoritmo de punto-en-polígono (Ray-Casting) para detectar trazos contenidos o intersectados por el lazo cerrado.
+  - Al cerrar el trazo de lazo, se intercepta en `DrawingController.endStroke()` evitando que se dibuje como trazo de pintura y creando un `DrawingLassoSelection` activo con previsualización translúcida y borde cian punteado.
+  - Arrastre interactivo 1:1 en el lienzo: arrastrar sobre la selección desplaza los trazos seleccionados en tiempo real.
+  - **Barra de Acciones de Lazo (`DrawingLassoActionBar`)**: Barra flotante inferior con acciones directas:
+    - Mover (desplazamiento táctil en lienzo)
+    - Duplicar (clona los trazos seleccionados en la capa activa)
+    - Rellenar (genera un polígono sólido relleno con el color actual dentro de la silueta del lazo)
+    - Voltear H (invierte horizontalmente los trazos respecto al centro de la selección)
+    - Borrar (elimina los trazos seleccionados de la capa con comando atómico `UpdateLayerStrokesAction` para Undo/Redo)
+    - Listo / Deseleccionar (despeja la selección activa)
+- **Movimiento Táctil Directo de Globos de Texto y SFX (`ComicPageEditorWidget`, `ComicEditorGestureHelper`)**:
+  - Resuelto el impedimento de arrastre directo de globos y onomatopeyas:
+    - Se agregó `onPanDown: (d) => _handlePanDown(d.localPosition, pageSize)` en `ComicPageEditorWidget`, permitiendo seleccionar y bloquear inmediatamente el modo de arrastre (`ComicDragMode.move`) al apoyar el dedo sobre cualquier globo o SFX sin requerir toques previos.
+    - Se corrigió el cálculo de bordes (`hit.isEdge`): para globos y SFX pequeños, las zonas de manija de borde (24px) abarcaban toda la altura y disparaban redimensionado de viñeta; ahora `hit.isEdge` se restringe exclusivamente a viñetas (`selectedPanel != null`).
+    - En `ComicEditorGestureHelper.applyMove`, se reemplazó el posicionamiento estático por traslación suave basada en delta `(dx, dy)` tanto para globos como para SFX, eliminando saltos bruscos y permitiendo deslizamiento fluido con dedos o cursor exactamente igual que las viñetas.
+    - Se configuró `InteractiveViewer(panEnabled: false)` en la página de edición para que el `GestureDetector` del lienzo reciba los eventos gestuales de arrastre sin que el visor infinito capture la arena gestual.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/drawing_lasso_tool_test.dart` (3 tests pasando).
+  - Creado `test/screens/herramientas/comic_bubble_move_test.dart` (2 tests pasando).
+  - Suite completa: 415 tests pasando (100% verde).
+  - `flutter analyze lib`: 0 issues found.
+  - Todos los archivos respetan el límite de <= 300 líneas (archivo más largo en dibujo/cómic: 272 líneas).
+
+**Lecciones aprendidas**:
+- En Flutter, `InteractiveViewer` con `panEnabled: true` intercepta y compite agresivamente en la arena gestual contra `GestureDetector` hijos; cuando se requiere interacción precisa de dibujo, corte o arrastre táctil de elementos en lienzo, `panEnabled` debe desactivarse en el modo de edición activa para transferir la prioridad de gestos a los componentes manipulables.
+- Para elementos de interfaz con dimensiones compactas (como globos de texto de 140x80 px), un radio de manija perimetral de 24 px cubre prácticamente todo el cuerpo del widget; desacoplar la lógica de redimensionamiento de bordes para que aplique solo a viñetas evita que los toques de movimiento sobre el cuerpo de un globo sean interpretados erróneamente como estiramiento de esquinas.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_lasso_selection.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/controllers/drawing_lasso_operations.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/controllers/drawing_action.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_canvas_painter.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_lasso_action_bar.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_tools_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_gesture_helper.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `test/screens/herramientas/drawing_lasso_tool_test.dart` (nuevo)
+- `test/screens/herramientas/comic_bubble_move_test.dart` (nuevo)
+
+## [2026-10-25] - BUGFIX / FEATURE / AUDIT - Edición y Borrado Inmediato de Globos y SFX en Cómic Studio, Biblioteca de Pinceles Profesionales en Dibujo Digital y Optimización de Hit-Testing
+
+**Resumen**:
+- **Edición y Borrado Reactivo de Globos de Diálogo (`ComicFloatingBubbleBar`)**:
+  - Resuelto el bug donde los globos no se podían editar ni borrar: `onBubbleTap: (_) => _toggleOverlay()` cerraba los overlays en vez de abrirlos. Ahora cualquier tap abre inmediatamente `ComicFloatingBubbleBar`.
+  - El botón de papelera de borrado (`Icons.delete_outline`) ahora está siempre visible y fijado a la derecha sin desbordamientos de layout (`RenderFlex`), permitiendo eliminar el globo en 1 toque.
+  - El campo de texto, tipo de globo, dirección de cola, rotación, dimensiones y colores se actualizan reactivamente al instante.
+- **Edición y Borrado Reactivo de Efectos de Sonido / Onomatopeyas (`ComicSfxEditorBar`)**:
+  - Resuelto el bug donde los SFX no se podían editar ni borrar: `onSfxTap` ahora abre `ComicSfxEditorBar` en 1 toque directo sin requerir doble tap.
+  - El botón de papelera roja elimina inmediatamente el sticker SFX del modelo y del lienzo.
+  - Estilos (3D, Pop, Neón, Halftone, etc.), escala, rotación, texto, fuentes y colores se actualizan en tiempo real.
+- **Hit-Testing Orientado de Extremo a Extremo (`ComicTransformResolver`)**:
+  - Optimizado `findTappedSfx` y `findTappedBubble` mediante proyección vectorial a coordenadas locales rotadas (`localX`, `localY`). Palabras largas como "¡KAAAABOOOM!" y globos anchos detectan toques en cualquier parte de su superficie.
+- **Biblioteca de Pinceles Profesionales (`DrawingFloatingBrushPopover`)**:
+  - Creado popover lateral flotante que desbloquea los 6 motores de pincel del proyecto: Birome (`pen`), Pluma G Manga (`gPen`), Lápiz Grafito (`pencil`), Marcador de Tinta (`marker`), Aerógrafo (`airbrush`) y Resaltador (`highlighter`).
+  - Cada pincel cuenta con previsualización en vivo (`_MiniBrushStrokePainter`), descripción técnica, chips de tamaños rápidos (2, 5, 10, 20, 35, 50 px) y sliders de grosor y opacidad.
+  - En `DrawingInfiniteDock`, tocar el botón de Pincel cuando está activo o mantenerlo presionado abre la biblioteca de pinceles como en Infinite Painter.
+- **Limpieza de Opciones en `DrawingEditPopover`**:
+  - Eliminados placeholders inactivos; agregadas funciones reales de rotación 90°, bloqueo de giro, volteo H/V, duplicación, inversión de colores, limpieza de capa y presets de lienzo.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/comic_bubble_sfx_edit_delete_test.dart` (5 tests pasando).
+  - Creado `test/screens/herramientas/drawing_brush_library_test.dart` (2 tests pasando).
+  - 410 tests pasando (100% verde en suite completa).
+  - `flutter analyze lib`: 0 issues found.
+
+**Lecciones aprendidas**:
+- En barras flotantes con ancho fijo (ej. 320-340px), ubicar múltiples pestañas con etiquetas largas junto a botones de acción en un `Row` plano causa `RenderFlex overflow` que empuja los botones de borrado y cierre fuera del viewport interactivo; envolver las pestañas en `Expanded(SingleChildScrollView(scrollDirection: Axis.horizontal))` garantiza que los botones de acción permanezcan anclados y accesibles en cualquier resolución de pantalla y bajo cualquier tamaño de fuente.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_overlays.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_bubble_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_sfx_editor_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_brush_popover.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_screen_popovers.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_edit_popover.dart`
+- `test/screens/herramientas/comic_bubble_sfx_edit_delete_test.dart` (nuevo)
+- `test/screens/herramientas/drawing_brush_library_test.dart` (nuevo)
+
+
+## [2026-10-25] - FEATURE / REFACTOR / AUDIT - Auditoría Completa de Dibujo y Cómic: Renderizado Universal de Miniaturas, Inserción de Fotos de Galería, Modo Encuadre Táctil, Deselección Fluida, Guías de Recorte en Vivo y Activación de Herramientas Pendientes
+
+**Resumen**:
+- **Selector de Dibujos en Viñeta (`ComicDrawingPickerSheet` & `ComicDrawingThumbnail`)**:
+  - Resuelto el bug donde los dibujos no se renderizaban en el selector si carecían de `thumbnailBase64`.
+  - Creado `ComicDrawingThumbnail` con renderizado reactivo: decodifica el PNG base64 si existe, y si es nulo, renderiza vectorialmente los trazos del proyecto mediante un `CustomPainter` ligero (`_MiniProjectPainter`), asegurando visualización del 100% de los dibujos.
+  - Al retornar de dibujar en una viñeta, `ComicEditorActions.drawInPanel` genera y guarda automáticamente el thumbnail en disco.
+- **Inserción de Fotos de Galería en Viñetas (`ImagePicker`)**:
+  - Incorporado botón de galería en `ComicPanelContextBar` y acción `pickImageFromGallery` en `ComicEditorActions`.
+  - Permite seleccionar fotos directamente desde la galería del dispositivo, comprimiéndolas y adaptándolas al panel con recorte a su silueta geométrica.
+- **Modo Encuadre Táctil Interactivo (`ComicInteractionMode.frameContent`)**:
+  - Implementado modo de encuadre táctil activable desde `ComicPanelContextBar` y banner informativo superior con botón de confirmación verde `[Listo]`.
+  - Desplazamiento 1:1 en tiempo real con el dedo (`offsetX`, `offsetY`) y zoom para ajustar la imagen o dibujo dentro de la viñeta con total precisión.
+- **Deselección Táctil y Salida de Modos**:
+  - Tocar cualquier margen vacío alrededor de la página de cómic deselecciona paneles, globos, stickers y cierra barras contextuales.
+  - En el taller de dibujo, al seleccionar herramientas de forma o relleno se muestra un chip superior accesible (`ActionChip`) que permite volver a pincel libre en 1 toque.
+- **Guías de Recorte en Vivo al Dibujar en Viñetas (`DrawingPanelGuidePainter`)**:
+  - Al abrir `DibujoScreen` desde una viñeta, el lienzo recibe la silueta del panel y renderiza una máscara exterior semi-transparente y una guía perimetral cyan que delimita con exactitud qué parte quedará visible en la historieta.
+- **Activación de Botones y Herramientas Pendientes**:
+  - `DrawingToolsPopover`: Conectadas las funciones de "Trama" (`cycleBackgroundPattern`), "Clonar Capa" (`duplicateActiveLayer`), "Caleidoscopio" (`DrawingSymmetryMode.kaleidoscope` con 8 cuadrantes simétricos) y "Centrar".
+  - `DrawingEditPopover`: Conectadas las funciones de "Rotar 90°", "Invertir Colores" y presets de lienzo ("Hoja Manga" 1200x1697, "Cuadrado" 1080x1080, "Webtoon" 1080x1920, "HD 16:9").
+  - `DrawingOptionsPopover`: Conectado diálogo de estadísticas "Detalles del Lienzo", selector de fondo y atajo de nueva capa.
+- **Modularización y Regla de 300 Líneas**:
+  - Creados `ComicDrawingThumbnail`, `ComicEditorGestureHelper`, `DrawingPanelGuidePainter`, `DrawingStrokeOperations` y `DrawingScreenPopovers`.
+  - El 100% de los archivos `.dart` del proyecto respetan la regla de <= 300 líneas (todos entre 60 y 296 líneas).
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/comic_frame_content_and_gallery_test.dart` (9 tests pasando).
+  - `flutter analyze lib`: 0 issues found.
+  - `flutter test`: 403 tests pasando (100% verde).
+
+**Lecciones aprendidas**:
+- Al implementar previews de proyectos con serialización asíncrona, depender exclusivamente de miniaturas generadas previamente deja proyectos sin renderizar si se guardaron antes de la exportación; proveer un fallback vectorial en tiempo real mediante `CustomPainter` garantiza que la UI sea determinística y nunca muestre estados en blanco.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/helpers/comic_editor_actions.dart`
+- `lib/screens/herramientas/comic/models/comic_interaction_mode.dart`
+- `lib/screens/herramientas/comic/widgets/comic_drawing_picker_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_drawing_thumbnail.dart` (nuevo)
+- `lib/screens/herramientas/comic/widgets/comic_editor_gesture_helper.dart` (nuevo)
+- `lib/screens/herramientas/comic/widgets/comic_editor_overlays.dart`
+- `lib/screens/herramientas/comic/widgets/comic_mode_indicator_banner.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_layer_operations.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_stroke_operations.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/models/drawing_symmetry_mode.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_canvas_painter.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_panel_guide_painter.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_projects_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_screen_popovers.dart` (nuevo)
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_edit_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_options_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_tools_popover.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `test/screens/herramientas/comic_frame_content_and_gallery_test.dart` (nuevo)
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/historial.md`
+
+## [2026-10-25] - BUGFIX / FEATURE - Soporte Completo de Corte Diagonal para Viñetas de Cómic (Sutherland-Hodgman Polygon Clipper & Manga Gutters)
+
+**Resumen**:
+- **Diagnóstico del Problema "no corta en diagonal"**:
+  - `ComicPanelOperations.slicePanelWithLine` forzaba particiones exclusivamente rectangulares mediante `if (dx <= dy)` evaluando solo el eje dominante X o Y. Los trazos diagonales eran obligados a un solo eje y fallaban si las dimensiones caían por debajo de 0.04.
+  - El modelo `ComicPanel` carecía de una representación geométrica poligonal arbitraria para capturar las siluetas trapezoidales y triangulares producidas por cortes no ortogonales.
+- **Motor de Corte Poligonal (`ComicPolygonCutter`)**:
+  - Creado `ComicPolygonCutter` en `lib/screens/herramientas/comic/helpers/comic_polygon_cutter.dart` (245 líneas).
+  - Implementa el algoritmo de recorte de polígonos convexos de Sutherland-Hodgman contra semiplanos infinitos basados en el vector dirigido de corte trazado por el usuario.
+  - Calcula automáticamente el canal de viñeta (gutter) separador entre ambas mitades sin distorsionar la geometría.
+  - Deriva las bounding boxes normalizadas y los vértices relativos `polygonPoints` en escala [0..1, 0..1] para ambos paneles resultantes.
+- **Modelo & Renderizado Poligonal**:
+  - `ComicPanel`: Añadido campo `polygonPoints` (lista de `Offset` relativa al bounding box) con soporte completo en constructor, `copyWith`, `toMap` y `fromMap` retrocompatible.
+  - `ComicPanelShapeHelper.getPanelPath`: Extendido para generar `Path` a partir de `polygonPoints` con soporte de rotación, preservando compatibilidad con formas predefinidas.
+  - Hit-testing (`path.contains`), recorte de dibujos internos (`canvas.clipPath`) y dibujo de bordes perimetrales funcionan de forma nativa e inmediata para los paneles diagonales.
+- **Cortes Consecutivos & Deshacer/Rehacer**:
+  - `ComicPolygonCutter` soporta cortes sucesivos sobre paneles ya cortados en diagonal.
+  - Integrado transparentemente en el historial de comandos `Undo/Redo` de `ComicController`.
+- **Pruebas y Verificación**:
+  - Creado `test/screens/herramientas/comic_polygon_cutter_test.dart` (5 pruebas unitarias cubriendo cortes diagonales, cortes sucesivos, historial undo/redo, degenerados y hit-testing de path).
+  - `flutter analyze lib`: 0 issues found.
+  - `flutter test`: 394 tests pasando (100% verde).
+  - 100% de archivos en `lib/` y `test/` bajo el límite estricto de 300 líneas.
+
+**Lecciones aprendidas**:
+- Al implementar herramientas de corte visual o navaja para viñetas de manga/cómic, particionar mediante bounding boxes ortogonales causa rechazo o colapso cuando el usuario traza en diagonal. Sutherland-Hodgman con normalización al bounding box local permite retener polígonos de cualquier ángulo sin requerir un motor de física externo.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/helpers/comic_polygon_cutter.dart` (nuevo)
+- `lib/screens/herramientas/comic/models/comic_panel.dart`
+- `lib/screens/herramientas/comic/painters/comic_panel_shape_helper.dart`
+- `lib/screens/herramientas/comic/controllers/comic_panel_operations.dart`
+- `test/screens/herramientas/comic_polygon_cutter_test.dart` (nuevo)
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/historial.md`
+
+## [2026-10-25] - BUGFIX / REFACTOR - Corrección de Selección Táctil en Cómic, Inversión de Coordenadas de Dibujo Espejado, Modularización <300 Líneas y Conformidad Brutalista
+
+**Resumen**:
+- **Desacoplamiento y Límite Estricto de 300 Líneas**:
+  - `ComicElementOperations` extraído de `ComicController` manejando globos, stickers SFX y gestión de páginas (reduciendo `comic_controller.dart` a 259 líneas).
+  - `DrawingLayerOperations` extraído de `DrawingController` administrando capas de dibujo, visibilidad y opacidad (reduciendo `drawing_controller.dart` a 237 líneas).
+  - `ComicPageEditorWidget` compactado y optimizado a 274 líneas.
+  - El 100% de los archivos `.dart` en `lib/` cumplen con la regla de <= 300 líneas.
+- **Corrección de Selección y Deselección Táctil de Viñetas (`ComicEditorScreen` & `ComicPageEditorWidget`)**:
+  - Se eliminó el `GestureDetector.onTapDown` externo en `ComicEditorScreen` que deseleccionaba prematuramente los paneles al tocarlos y se cambió `onPanelTap: (_) => _toggleOverlay()` sin llamar a `deselectAll()`.
+  - Se movió la resolución de `final activePanel = _controller.selectedPanel;` dentro del closure `builder` de `ListenableBuilder` en `ComicEditorScreen`, garantizando que `ComicEditorOverlays` reciba reactivamente el panel seleccionado sin quedar congelado en `null`.
+  - Se agregó `onTapUp` en `ComicPageEditorWidget` permitiendo la detección determinística de toques estacionarios sobre viñetas, globos y stickers.
+- **Inversión de Coordenadas en Lienzo Espejado (`DrawingCanvasViewport`)**:
+  - Al activar el volteo horizontal (`isFlippedHorizontal`) o vertical (`isFlippedVertical`), `DrawingCanvasViewport` invierte las coordenadas en `_toCanvasCoordinates`, asegurando que el trazo de tinta se dibuje exactamente debajo de la punta del lápiz/dedo en lienzos espejados.
+- **Cálculo de Bounding Box en `ComicTransformResolver`**:
+  - Corregido el cálculo para usar estrictamente las dimensiones normalizadas de la viñeta, evitando que el zoom o desplazamiento del dibujo interno desplace los mangos de selección fuera del panel.
+- **Redimensionamiento por Esquinas de Viñetas**:
+  - Implementado escalado proporcional de viñetas en `_handlePanUpdate` de `ComicPageEditorWidget` vía `updatePanelRect`.
+- **Conformidad Estilística Brutalista (`docs/skill_visual.md`)**:
+  - Removido `Border.all` no permitido en `DrawingLayersDock` y `DrawingInfiniteDock`, utilizando bloques sólidos de color `#1E1E1E` y chips limpios sin bordes.
+- **Calidad & Robustez**:
+  - `flutter analyze lib`: 0 issues found (100% limpio).
+  - `flutter test`: 389 tests pasando (100% verde).
+
+**Lecciones aprendidas**:
+- Al pasar estados reactivos de un `Listenable` (`_controller.selectedPanel`) a sub-árboles dentro de un `ListenableBuilder`, las variables locales deben resolverse DENTRO del closure `builder`, nunca en el método `build` padre; de lo contrario, las notificaciones reactivas re-ejecutan el builder pero usan la variable capturada previa.
+- En Flutter, si un widget tiene un `GestureDetector` con `onPanStart` sin `onTapUp`, los toques estacionarios (< 18px touch slop) pueden ser ignorados en favor de otros recognizers; proveer `onTapUp` asegura la resolución del tap.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/controllers/comic_element_operations.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_layer_operations.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`
+- `test/screens/herramientas/comic_draw_panels_test.dart`
+- `test/screens/herramientas/drawing_pro_features_test.dart`
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/historial.md`
+
+## [2026-10-25] - FEATURE / REFACTOR - Taller de Cómic Avanzado (Trazado Libre con Dedos, Navaja para Dividir Viñetas, 8 Mangos Táctiles, Barra de Contexto In-Place) y Taller de Dibujo Pro (Simetría en Vivo, Balde de Relleno, Degradados, Formas Vectoriales, Cámara)
+
+**Resumen**:
+- **Taller de Cómic**:
+  - **Trazado Libre de Viñetas (`ComicInteractionMode.drawPanel`)**: Botón destacado *"✏️ Trazar Viñeta en Pantalla"* en `ComicAddPanelsTab` y chip flotante superior con cancelar (`ComicModeIndicatorBanner`). Arrastrar con el dedo dibuja una guía punteada cyan (`ComicDrawGuidePainter`) y crea la viñeta rectangular proporcional seleccionándola al soltar.
+  - **Corte con Cuchilla / Navaja (`ComicInteractionMode.slicePanel`)**: Partición limpia y proporcional de viñetas existentes trazando una línea recta sobre ellas con láser cyan y cálculo puro en `ComicPanelOperations.slicePanelWithLine`.
+  - **8 Mangos Táctiles Independientes + Rotación Lollipop**: Caja de selección (`ComicSelectionBoxPainter`) con 4 esquinas de escala proporcional y 4 mangos medios (top, bottom, left, right) para estirar bordes de viñetas individualmente. Mango superior lollipop con tallo de 36px y radio de hit-test desacoplado para prevenir colisiones con el borde superior.
+  - **Barra de Contexto In-Place (`ComicPanelContextBar`)**: Píldora brutalista flotante al seleccionar una viñeta con acciones rápidas: Dibujar adentro (abre `DibujoScreen` con la viñeta como fondo), Insertar foto de galería, Cortar/Dividir con navaja, Borde Rápido (0, 2, 4, 8px y paleta de color directa en `ComicPanelQuickBorderRow`) y Eliminar.
+  - **Modularización & Desacoplamiento**: Extracción de `ComicTransformResolver` y `ComicPanelOperations`, reduciendo `ComicPageEditorWidget` a 275 líneas y `ComicController` a 286 líneas.
+- **Taller de Dibujo**:
+  - **Motor de Simetría Multicapa**: Modos Vertical, Horizontal y Radial 4 con proyección matemática en tiempo real (`DrawingSymmetryMode`), renderizado de trazos espejo en vivo y líneas guía punteadas en `DrawingCanvasPainter`. Deshacer/rehacer atómico de grupos de trazos mediante `AddStrokesGroupAction`.
+  - **Balde de Relleno y Degradados**: Herramientas integradas en `DrawingToolType`, `DrawingController` (`floodFill`, `applyGradient`) y `StrokeRenderer` con shader lineal `ui.Gradient.linear`.
+  - **Herramientas de Forma Geométrica en Vivo**: Línea recta, Rectángulo, Círculo y Flecha/Trayectoria (`trajectory`) con renderizado en tiempo real mientras se arrastra el dedo o stylus.
+  - **Cámara & Lienzo**: Inversión horizontal y vertical (`Transform.scale`) y bloqueo de rotación interactiva.
+- **Calidad & Robustez**:
+  - `flutter analyze lib`: 0 errores, 0 warnings.
+  - `flutter test`: 386 tests pasando (100% verde).
+  - Regla de 300 líneas: 100% de los archivos `.dart` en `lib/screens/herramientas/` cumplen el límite de 300 líneas.
+
+**Lecciones aprendidas**:
+- Al implementar mangos de rotación vertical tipo "lollipop" adyacentes a bordes superiores, una distancia geométrica insuficiente o radios de contacto táctil sobredimensionados pueden solapar los hit-tests del borde y la rotación. Aumentar el tallo a 36px y usar un radio de toque específico (18px) resuelve el solapamiento sin perder ergonomía táctil.
+- En pruebas de layouts normalizados (valores entre 0.0 y 1.0), las operaciones con punto flotante introducen discrepancias mínimas de precisión (`0.35000000000000003`); el uso de `closeTo(expected, tolerance)` garantiza determinismo en la suite de tests.
+- Separar la detección geométrica de toques en helpers desacoplados (`ComicTransformResolver`) permite mantener widgets complejos con interacción táctil rica por debajo del umbral estricto de 300 líneas sin sacrificar claridad.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/models/comic_interaction_mode.dart`
+- `lib/screens/herramientas/comic/controllers/comic_panel_operations.dart`
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/widgets/comic_selection_handles.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_quick_border_row.dart`
+- `lib/screens/herramientas/comic/widgets/comic_add_panels_tab.dart`
+- `lib/screens/herramientas/comic/widgets/comic_mode_indicator_banner.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/painters/comic_draw_guide_painter.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_symmetry_mode.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_action.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/helpers/drawing_render_exporter.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_canvas_painter.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_tools_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_edit_popover.dart`
+- `test/screens/herramientas/comic_draw_panels_test.dart`
+- `test/screens/herramientas/drawing_pro_features_test.dart`
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/historial.md`
+
+## [2026-10-21] - FEATURE / REDESIGN - Rediseño Taller de Cómic (Página en Blanco, Botón +, Menú Deslizable, Rotación/Escala Directa) y Taller de Dibujo (UI Fiel a Infinite Painter)
+
+**Resumen**:
+- **Rediseño Completo del Taller de Cómic**:
+  - **Página en Blanco por Defecto**: La hoja inicial y nuevas páginas inician vacías (`panels: []`), permitiendo libertad total sin plantillas preimpuestas. Se removió la restricción que impedía eliminar la última viñeta.
+  - **Botón Flotante `+` en Esquina Inferior Derecha**: Botón circular cyan `#00D4FF` de 52px que abre el menú deslizable sin ocupar la pantalla completa (~58% de altura).
+  - **Nuevo Menú Deslizable Modular (`ComicAddDrawer`)**: Organizado en 3 pestañas grandes para agregar elementos de forma individual:
+    1. *Viñetas*: Selección de 8 formas dinámicas (Rectángulo, Cortes Shonen, Trapecios, Rombo, Paralelogramo).
+    2. *Globos*: Selector de 12 tipos, campo de diálogo rápido y chips de sugerencias instantáneas.
+    3. *SFX*: Catálogo amplio de onomatopeyas shonen y kanjis auténticos con estilos gráficos (3D, Neón, Trama, Clásico).
+  - **Manipulación Directa de Rotación y Escala en Lienzo (Sin Menús)**:
+    - Implementado `ComicSelectionBoxPainter` y `ComicElementTransform`: caja delimitadora interactiva con mango de rotación vertical superior (lollipop handle) y mangos de escala en las 4 esquinas.
+    - Soporte fluido para rotar (-π a π) y escalar (ampliar/reducir) con el dedo o cursor directamente sobre el lienzo sin abrir ningún menú contextual (los taps simples seleccionan limpiamente sin abrir popups ni sheets; el editor de texto se activa exclusivamente mediante doble-tap).
+    - Exclusividad garantizada en `ComicController` al agregar elementos (`selectPanel`, `selectBubble`, `selectSfx`), asegurando que los mangos del lienzo respondan de inmediato al último elemento añadido sin colisiones de selección.
+    - Paginador inferior izquierdo minimalista (`ComicBottomToolbar`), eliminando barras superpuestas duplicadas para dejar el lienzo limpio.
+- **Rediseño Completo del Taller de Dibujo (UI Fiel a Infinite Painter)**:
+  - **Dock Flotante Izquierdo (`DrawingInfiniteDock`)**:
+    - Anclado al ras del borde izquierdo (`left: 0`) con esquinas derechas redondeadas (`BorderRadius.horizontal(right: Radius.circular(16))`), con Pincel, Dedo/Difuminar (`DrawingToolType.smudge`), Borrador, Círculo de Grosor interactivo (drag vertical con burbuja en vivo), Círculo de Color activo (tap abre paleta) y Círculo de Opacidad (drag vertical con porcentaje).
+    - Implementado motor de renderizado suave para la herramienta *Difuminar* con `MaskFilter.blur` en `StrokeRenderer`.
+  - **Barra Superior Infinite Painter (`DrawingTopBar`)**:
+    - Extremo izquierdo: Botón Home (`Icons.home_outlined`) flotante plano y limpio.
+    - Extremo derecho: Exactamente los 4 botones de Infinite Painter: Icono Compás/Herramientas (`Icons.architecture`), Transformar/Editar (`Icons.crop_free`), Capas (`Icons.layers`) y Más Opciones (`Icons.more_horiz`). Se eliminaron botones espurios de papelera y exportar que rompían la estética de la app de referencia.
+  - **Botones de Deshacer / Rehacer Inferior Izquierdo (`DrawingUndoRedoButtons`)**:
+    - Flecha curva de Deshacer y Rehacer flotantes sin contenedor circular intrusivo, exactamente como en Screenshots 4 y 5.
+  - **Dock Lateral de Capas (`DrawingLayersDock`)**:
+    - Columna vertical derecha con botón `+`, miniaturas de capas en tarjetas de lienzo blanco (efecto hoja de papel) con ojo de visibilidad, porcentaje de opacidad, resalte perimetral rojo en la capa activa (`#FF453A`) y selector circular de fondo inferior.
+  - **Popovers Flotantes**:
+    - `DrawingToolsPopover` (Herramientas, Guías, Formas, Simetría, Cámara: Encajar, Bloquear).
+    - `DrawingEditPopover` (Selección, Transformación, Edición y Lienzo).
+    - `DrawingOptionsPopover` (Nuevo, Abrir, Guardar, Importar, Exportar, Ajustes).
+- **Cumplimiento Estricto de Reglas del Proyecto**:
+  - *Regla de las 300 líneas*: Todos los submódulos y tests creados se encuentran entre 36 y 266 líneas (máximo 266 líneas en `comic_panel_options_sheet.dart`).
+  - *Análisis Estático*: 0 errores, 0 warnings (`flutter analyze lib` 100% limpio).
+  - *Suite de Pruebas*: 371 tests pasando al 100% en verde.
+
+**Lecciones aprendidas**:
+- Al implementar manipulación por gestos directos sobre elementos rotados en Canvas 2D, proyectar las coordenadas táctiles relativas contra la matriz de rotación inversa del elemento simplifica notablemente el hit-testing de handles y cajas delimitadoras arbitrarias.
+- Mantener la exclusividad atómica en el estado del controlador al instanciar nuevos elementos previene condiciones de carrera visuales en los handles del lienzo.
+- La fidelidad a los screenshots de referencia de diseño exige no agregar botones "de conveniencia" en las barras principales si la aplicación de referencia los organiza dentro de popovers contextuales.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_selection_handles.dart`
+- `lib/screens/herramientas/comic/widgets/comic_add_drawer.dart`
+- `lib/screens/herramientas/comic/widgets/comic_add_panels_tab.dart`
+- `lib/screens/herramientas/comic/widgets/comic_add_bubbles_tab.dart`
+- `lib/screens/herramientas/comic/widgets/comic_add_sfx_tab.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_undo_redo_buttons.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_tools_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_edit_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/popovers/drawing_options_popover.dart`
+- `test/screens/herramientas/infinite_painter_comic_redesign_test.dart`
+- `docs/contexto/historial.md`
+- `docs/contexto/mapa-del-codigo.md`
+
+---
+
+**Resumen**:
+- **Solución de Error de Compilación en `DibujoScreen`**: Corregido cierre anidado de `Scaffold` dentro de `PopScope`.
+- **Eliminación de Iconos Duplicados en `DrawingTopBar`**: Removidos botones redundantes de Deshacer/Rehacer en la barra superior para respetar el dock lateral Procreate (`DrawingFloatingSideDock`) como ubicación única y canónica, solucionando la falla de expectativa en `herramientas_screen_test.dart`.
+- **Conexión de Apertura de Proyectos en `ComicTopBar`**: Conectado el parámetro requerido `onOpenProjects` con el modal `ComicProjectsSheet`.
+- **Refactorización y Cumplimiento Estricto de la Regla de 300 Líneas**:
+  - `ComicEditorScreen`: Modularizado el manejo de estados de overlay mediante la función compacta `_toggleOverlay`, reduciendo el archivo de 305 a 249 líneas.
+  - `ComicPanelCustomizerTabs`: Extraído `_buildCustomizerSlider` unificado, reduciendo el archivo de 298 a 266 líneas.
+  - `ComicController`: Compactados métodos de mutación y corregido typo de scope en `moveSfx` (`s.copyWith` en lugar de `sfx.copyWith`), reduciendo el archivo de 293 a 274 líneas.
+  - Verificado que ningún archivo en `lib/screens/herramientas/` supera las 281 líneas.
+- **Resolución de Deprecaciones en Transformaciones Vectoriales**:
+  - Reemplazadas llamadas obsoletas `Matrix4.translate` y `scale` por `translateByDouble` y `scaleByDouble` con firma cuadrática en `DrawingCanvasViewport` y `DibujoScreen`, eliminando warnings estáticos sin introducir dependencias indebidas.
+- **Suite de Pruebas y Análisis**:
+  - `flutter analyze lib`: 0 issues found.
+  - `flutter test`: 354 tests pasados en verde (100% pass).
+
+**Lecciones aprendidas**:
+- La adición de botones de acción en múltiples toolbars debe considerar las suites de pruebas de widgets existentes que buscan widgets por tipo e icono con `findsOneWidget`.
+- En Flutter, `Matrix4.translateByDouble` y `scaleByDouble` de 4 argumentos permiten manipular transformaciones 2D/3D directamente sobre el almacenamiento nativo sin requerir la importación externa de `vector_math`.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_customizer_tabs.dart`
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `docs/contexto/historial.md`
+
+---
+
+## [2026-10-21] - FEATURE / BUGFIX - Edición Avanzada de Globos, SFX Gráficos, 14 Plantillas Dinámicas, Geometría Libre de Viñetas y Solución de Bugs Críticos (Autoguardado, Deshacer, Puntero Táctil)
+
+**Resumen**:
+- **Personalización Completa de Globos de Diálogo**:
+  - Catálogo de **12 tipos de globos**: Óvalo manga clásico, Grito de acción dentado, Pensamiento nube, Susurro punteado, Cápsula cómic americano, Transmisión electrónica / TV, Narración rectangular, Pergamino medieval, Corazón romántico, Shonen impacto, FURI enamorados y Llama furiosa.
+  - Control de orientación de cola (ninguna, abajo, arriba, izquierda, derecha), posición de la punta, rotación libre en radianes (-π a π), grosor de borde, tipografías temáticas y colores de relleno/borde.
+- **Catálogo Ampliado de Onomatopeyas SFX con Renderizado Gráfico Especializado**:
+  - 5 estilos de renderizado visual de impacto: **Relieve 3D** con extrusión sombreada, **Resplandor Neón**, **Líneas de Velocidad Shonen**, **Sombra con Trama de Semitonos** y **Contorno Clásico Manga**.
+  - Catálogo de más de 22 presets organizados por categoría (Acción, Romance, Comedia, Tensión/Misterio) y **Kanjis/Katakanas japoneses auténticos** con pronunciación y significado (ドンッ, ゴゴゴ, ズキューン, ドキドキ, ざわ…, バーン, バキッ, ドカーン).
+- **14 Plantillas de Página Dinámicas y Divertidas**:
+  - `shonenSlash`: Viñetas diagonales cortadas a 45 grados estilo batalla Shonen.
+  - `marvelSplit`: Doble splash page superior con viñetas de ritmo rápido inferiores.
+  - `webtoonVertical`: Tiras continuas verticales optimizadas para scroll móvil.
+  - `comicChaos`: Disposición asimétrica desordenada para escenas cómicas y gags.
+  - `overlappingImpact`: Panel central superpuesto que flota sobre viñetas de fondo.
+  - `cinemaScope`: Franjas ultrapanorámicas formato 21:9.
+  - `shoujoDream`: Viñeta vertical estilizada de cuerpo entero para momentos emotivos.
+  - `climaxFive`: Viñeta épica dominante con 4 viñetas de reacción periféricas.
+  - Formatos clásicos: Página completa splash, 2 horizontal/vertical, 3 niveles, 4-Koma tradicional y 6 viñetas simétricas.
+- **Geometría Libre y Personalización Dinámica de Viñetas**:
+  - Formas vectoriales modificables: Rectángulo, Esquinas redondeadas, Cortes diagonales Shonen (inclinación derecha e izquierda), Trapecios (base superior e inferior), Rombos y Paralelogramos.
+  - Parámetros de transformación en vivo: Rotación (-π a π), Sesgo horizontal (`skewX`), radio de curvatura y grosor/color de borde y fondo.
+  - **División Matemática de Viñetas (`splitPanel`)**: Permite dividir en 1-tap cualquier viñeta horizontal o verticalmente en dos paneles proporcionales para crear páginas infinitas.
+- **7 Paletas Legendarias de Mangas y Cómics Famosos (`ComicColorPalettes`)**:
+  - *Shonen Jump Clásico*: Naranja Goku, Azul Toriyama, Amarillo Super Saiyan, Rojo Jump.
+  - *Akira Cyberpunk*: Rojo moto Kaneda, Neón cibernético, Cian holograma, Púrpura noche.
+  - *JoJo Bizarre*: Violeta Stand, Fucsia menacing (ゴゴゴ), Dorado Golden Wind, Turquesa Morioh.
+  - *Marvel Retro CMYK*: Rojo Spidey, Azul Ben-Day Dots, Amarillo primario, Verde Hulk.
+  - *Gotham Dark Deco*: Azul noche Gotham, Gris Baticueva, Negro sombra, Amarillo Batiseñal.
+  - *Webtoon Romance*: Neón monarca, Rosa flor de cerezo, Menta suave, Durazno manhwa.
+  - *Manga Tinta G-Pen*: Negro tinta puro, 6 tonos de trama (80%, 60%, 40%, 25%, 10%) y papel Kent.
+  - Selector disponible tanto en la paleta flotante de Dibujo como en el personalizador de Cómic.
+- **Corrección de Bugs Críticos**:
+  - **Puntero táctil desplazado hacia abajo en viñeta de manga**: Identificado el desfase producido por la combinación de `Center` y `InteractiveViewer` en `DrawingCanvasViewport`. Solucionado asociando un `GlobalKey` directo al contenedor del lienzo y utilizando `canvasBox.globalToLocal(globalPosition)`, eliminando el error de coordenadas en viñetas de cualquier proporción.
+  - **Flechas de Deshacer / Rehacer no funcionales**: En Dibujo, el dock lateral Procreate no escuchaba reactivamente al `DrawingController`; solucionado envolviéndolo en `ListenableBuilder`. En Cómic, se implementó el controlador de historial inmutable `ComicHistory` y se incorporaron botones reactivos de Deshacer/Rehacer en la barra superior `ComicTopBar`.
+  - **Autoguardado local en dispositivo**: Implementado autoguardado local automático con debounce de 1.5s y ejecución garantizada al salir en `dispose()` tanto en `DibujoScreen` como en `ComicEditorScreen`.
+- **Arquitectura y Regla de las 300 Líneas**:
+  - Todos los módulos se mantuvieron estrictamente bajo el límite de 300 líneas mediante subcomponentes especializados en `widgets/`, `models/`, `painters/` y `helpers/`.
+  - Análisis estático: 0 errores y 0 warnings en `flutter analyze lib`.
+  - Tests: 32 tests unitarios y de widgets ejecutados y pasando al 100%.
+
+**Lecciones aprendidas**:
+- Al capturar toques dentro de un lienzo centrado en pantalla dentro de un `InteractiveViewer`, los cálculos basados en el `RenderBox` del viewport fallan si el lienzo tiene dimensiones menores a la pantalla porque `Center` aplica un offset de centrado que no forma parte de la matriz del visor interactivo. Obtener el `RenderBox` del contenedor exacto del lienzo resuelve este problema con total exactitud.
+- Mantener los snapshots del historial como copias inmutables de la página (`ComicPage`) permite operaciones de Deshacer y Rehacer instantáneas y sin efectos secundarios.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/models/comic_color_palette.dart`
+- `lib/screens/herramientas/comic/models/comic_template_layouts.dart`
+- `lib/screens/herramientas/comic/models/comic_bubble.dart`
+- `lib/screens/herramientas/comic/models/comic_sticker.dart`
+- `lib/screens/herramientas/comic/models/comic_panel.dart`
+- `lib/screens/herramientas/comic/models/comic_template.dart`
+- `lib/screens/herramientas/comic/painters/comic_panel_shape_helper.dart`
+- `lib/screens/herramientas/comic/painters/comic_bubble_painter.dart`
+- `lib/screens/herramientas/comic/painters/comic_page_painter.dart`
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/controllers/comic_history.dart`
+- `lib/screens/herramientas/comic/controllers/comic_panel_operations.dart`
+- `lib/screens/herramientas/comic/helpers/comic_image_cache.dart`
+- `lib/screens/herramientas/comic/helpers/comic_render_exporter.dart`
+- `lib/screens/herramientas/comic/helpers/comic_editor_actions.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_overlays.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bubble_tabs.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bubble_color_tab.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_customizer_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_customizer_tabs.dart`
+- `lib/screens/herramientas/comic/widgets/comic_sfx_editor_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_sfx_editor_tabs.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_template_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_sfx_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_bubble_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_side_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_color_popover.dart`
+- `test/screens/herramientas/comic_test.dart`
+- `test/screens/herramientas/comic_features_test.dart`
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/historial.md`
+
+---
+
+## [2026-10-21] - FEATURE / REFACTOR - UI de Overlay No Invasivo con Iconos Puros (Sin Texto) e Iconografía Vectorial Especializada para Dibujo y Cómic
+
+**Resumen**:
+- Se rediseñó la experiencia de usuario y la interfaz de las herramientas de **Dibujo Digital** y **Taller de Cómic & Manga**, implementando un sistema de **Overlay No Invasivo** y minimalista:
+  - **Cero Modales Obstructivos**: Se eliminaron los pop-ups y `showModalBottomSheet` que ocupaban la mitad o totalidad de la pantalla y tapaban la ilustración durante el trabajo activo.
+  - **Iconos Exclusivos (Cero Texto)**: Todos los botones, herramientas y barras de acción son 100% iconográficos, limpios y sin texto molesto, en cumplimiento estricto con la directiva del usuario.
+  - **Iconografía Especializada Vectorial**: Se incorporó `flutter_svg: ^2.3.0` y se diseñaron 18 iconos vectoriales SVG en `Assets/icons/creative/` (G-Pen, lápiz de boceto, marcador pincel, resaltador, aerógrafo, goma, formas, paleta, capas, slider de tamaño, plantillas de viñetas, globos manga/grito/pensamiento/FURI, SFX boom, lector cómic y ajuste de lienzo).
+  - **Dock Lateral Flotante Estilo Procreate (`DrawingFloatingSideDock`)**: Barra lateral izquierda flotante con sliders verticales para tamaño de pincel (con círculo dinámico de previsualización en píxeles) y opacidad en tiempo real, operables con el pulgar mientras se dibuja, además de botones 1-tap para Deshacer, Rehacer y Restablecer Zoom.
+  - **Paleta de Color Flotante Compacta (`DrawingFloatingColorPopover`)**: Popover compacto de 220px anclado en esquina inferior derecha con colores de pareja F.U.R.I y selector espectral HSV, manteniendo más del 85% del lienzo completamente visible y accesible.
+  - **Card Flotante de Capas (`DrawingFloatingLayersCard`)**: Tarjeta compacta en esquina superior derecha para alternar visibilidad, cambiar de capa activa y gestionar capas sin abandonar la vista de dibujo.
+  - **Dock Contextual de Viñetas (`ComicPanelContextBar`)**: Píldora de acciones contextuales anclada directamente sobre la viñeta activa en el taller de cómic para dibujar en el panel a tamaño real, insertar dibujo, ajustar zoom/pan in-place con mini slider o limpiar, sin abrir sábanas inferiores.
+  - **Barras Flotantes de Globos, SFX y Plantillas (`ComicFloatingBubbleBar`, `ComicFloatingSfxBar`, `ComicFloatingTemplateBar`)**: Docks horizontales delgados para selección directa e inmediata sin tapar la composición de la página.
+  - **Modo Inmersivo 1-Tap**: Botón de ojo en barras superiores de Dibujo y Cómic que oculta instantáneamente todos los controles para visualizar la obra en pantalla completa al 100%.
+  - **Ciclo Rápido de Fondo**: En `DrawingTopBar`, tocar el icono de cuadrícula cicla directamente el fondo del lienzo (blanco -> oscuro -> grilla -> puntos) sin desplegar menús intermedios.
+- **Arquitectura y Cumplimiento de Reglas**:
+  - **Regla de las 300 líneas**: Todos los archivos creados y refactorizados respetan estrictamente el límite máximo (ninguno supera 270 líneas).
+  - **Skill Visual F.U.R.I**: Fondos oscuros `#141414`, tarjetas sólidas sin bordes de contraste, bordes redondeados (`BorderRadius.circular(10-18)`), botones con retroalimentación háptica.
+  - **Tests**: 346 tests unitarios y de widgets ejecutados y pasando al 100%. Cero errores y cero warnings en `flutter analyze lib`.
+
+**Lecciones aprendidas**:
+- Un sistema de overlay flotante desacoplado que reacciona a toques en el fondo del lienzo proporciona una ergonomía profesional idéntica a Procreate o Clip Studio Paint, eliminando la fricción de modales y diálogos.
+- Envolver los iconos SVG con un widget wrapper (`CreativeIcon`) con soporte de fallback a `IconData` asegura una compatibilidad impecable tanto en dispositivos físicos como en pruebas unitarias headless.
+
+**Archivos impactados**:
+- `pubspec.yaml`
+- `Assets/icons/creative/*` (18 archivos SVG)
+- `lib/screens/herramientas/widgets/creative_icon.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_bottom_toolbar.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_side_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_color_popover.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_floating_layers_card.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bottom_toolbar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_bubble_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_sfx_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_template_bar.dart`
+- `test/screens/herramientas/creative_icon_test.dart`
+- `test/screens/herramientas/dibujo_test.dart`
+- `test/screens/herramientas/comic_test.dart`
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/historial.md`
+
+---
+
+## [2026-10-21] - FEATURE - Taller Completo de Cómic, Manga e Historietas Integrado al Motor de Dibujo
+
+**Resumen**:
+- Se completó la suite creativa de **Herramientas** integrando el **Taller de Cómic & Manga Multipágina** (`lib/screens/herramientas/comic/`), cumpliendo al 100% la meta `/goal` solicitada.
+- **Integración Nativa con el Motor de Dibujo**:
+  - Tocar cualquier viñeta abre la opción **"Dibujar en esta viñeta"**, que inicializa `DibujoScreen` con la **proporción y tamaño real exacto del panel seleccionado** (aspect ratio dinámico).
+  - Al guardar en el taller de dibujo, la obra se incrusta recortada y encuadrada directamente dentro de la viñeta en tiempo real.
+  - Opción **"Insertar de Dibujos guardados"** (`ComicDrawingPickerSheet`): Permite cargar directamente obras previas creadas en la herramienta de dibujo local.
+  - Herramientas de encuadre en viñeta: Sliders en tiempo real para escala (0.5x - 3.0x), paneo horizontal y paneo vertical.
+- **Plantillas y Diseño de Viñetas (`ComicTemplatesSheet`)**:
+  - Estructuras predefinidas: `singleFull` (Splash 1x1), `twoHorizontal` (Cinemático doble), `threeTiers` (3 tiras cómic clásico), `fourKoma` (Yonkoma tradicional japonés vertical) y `sixGrid` (Grilla manga de 6 viñetas).
+  - Miniaturas vectoriales de vista previa por plantilla con diseño brutalista.
+- **Globos de Diálogo Profesionales Manga & Webtoon (`ComicBubbleEditorSheet`, `ComicBubblePainter`)**:
+  - 6 estilos con dibujo vectorial paramétrico:
+    1. Manga Clásico (`mangaOval`): Ovalado redondeado con cola direccional hacia el personaje.
+    2. Grito / Acción Shonen (`screamSpiky`): Polígono estrellado con aristas afiladas.
+    3. Pensamiento (`thoughtCloud`): Nube con burbujitas secundarias.
+    4. Narrador (`narratorBox`): Caja rectangular con fondo sólido y tipografía limpia.
+    5. Susurro / Secreto (`whisperDotted`): Contorno punteado discontinuo.
+    6. Burbuja Chat F.U.R.I (`furiChat`): Diseño de chat con cola angular y color personalizable.
+  - Tipografías mangaka y webtoon: `Bangers`, `Comic Neue`, `Permanent Marker`, `Caveat`, `Patrick Hand`, `Press Start 2P` (`GoogleFonts`).
+  - Arrastre interactivo de globos por toda la hoja (`ComicPageEditorWidget`).
+- **Onomatopeyas y Efectos de Sonido SFX (`ComicSfxPickerSheet`)**:
+  - Catálogo de efectos: "¡¡BOOM!!", "¡¡DOKI DOKI!!", "¡¡ZAP!!", "¡¡WHAM!!", "¡¡CRASH!!", "¡¡KABOOM!!", "¡¡GLUP!!", "¡¡SUSPIRO!!", "¡¡TE AMO!!", "¡¡FURI!!", "¡¡SLAP!!", "¡¡CHU!!" y texto libre personalizado.
+  - Paleta de color vibrante (amarillo manga, rojo shonen, cian, verde, fucsia).
+- **Modo Lector Inmersivo (`ComicReaderScreen`)**:
+  - Lectura página a página con `PageView` optimizado.
+  - Selector de dirección: Lectura horizontal (Manga / Cómic occidental) y lectura vertical (Webtoon continuo).
+  - Zoom interactivo en cada página (`InteractiveViewer`) y barra inferior con scrubber de página.
+- **Exportación Dual (`ComicExportDialog`)**:
+  - Exportación de páginas en alta resolución (1200x1697) a PNG local (`furi_comics/exports/`).
+  - Publicación compartida a la Galería de pareja con 1-tap (`GalleryProvider.uploadAndAdd`).
+- **Arquitectura y Cumplimiento de Reglas**:
+  - **Regla de las 300 líneas**: Todos los archivos del módulo (11 componentes nuevos) están estrictamente por debajo de las 300 líneas (máximo 281 líneas, promedio 150 líneas).
+  - **Modularización del router**: Se extrajo `router_routes.dart` manteniendo `router.dart` en 234 líneas.
+  - **Skill Visual F.U.R.I**: Cero bordes perimetrales en cards y botones, bloques sólidos de un único color, fondo `#141414`, esquinas redondeadas.
+  - **Tests**: 346 tests pasando al 100% (`flutter test`). 0 errores y 0 warnings en `flutter analyze lib`.
+
+**Lecciones aprendidas**:
+- Parametrizar `DibujoScreen` con `canvasSize` permite reutilizar idénticamente todo el motor de dibujo profesional en cualquier relación de aspecto exigida por las viñetas del cómic, eliminando duplicación de código.
+- Modularizar `RouterRoutes` en su propio archivo desacopla la tabla de rutas de la instanciación de GoRouter y mantiene ambos archivos por debajo del límite de 300 líneas.
+
+**Archivos impactados**:
+- `lib/router.dart`
+- `lib/router_routes.dart`
+- `lib/screens/herramientas/herramientas_screen.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_action.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/comic_reader_screen.dart`
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/models/comic_bubble.dart`
+- `lib/screens/herramientas/comic/models/comic_page.dart`
+- `lib/screens/herramientas/comic/models/comic_panel.dart`
+- `lib/screens/herramientas/comic/models/comic_project.dart`
+- `lib/screens/herramientas/comic/models/comic_sticker.dart`
+- `lib/screens/herramientas/comic/models/comic_template.dart`
+- `lib/screens/herramientas/comic/painters/comic_bubble_painter.dart`
+- `lib/screens/herramientas/comic/painters/comic_page_painter.dart`
+- `lib/screens/herramientas/comic/services/comic_storage_service.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bottom_toolbar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_bubble_editor_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_drawing_picker_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_export_dialog.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_options_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_sfx_picker_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_templates_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `test/screens/herramientas/comic_test.dart`
+- `test/screens/herramientas/herramientas_screen_test.dart`
+- `docs/contexto/mapa-del-codigo.md`
+- `docs/contexto/glosario.md`
+- `docs/contexto/arquitectura.md`
+- `docs/contexto/historial.md`
+
+---
+
+## [2026-10-21] - FEATURE - Nueva Sección Herramientas y Motor Profesional de Dibujo Multicapa
+
+**Resumen**:
+- Se implementó la nueva pantalla de **Herramientas** (`HerramientasScreen`) accesible desde el bloque "Herramientas" / "Mis Cosas" del Home (`HomeMainGrid`).
+- Catálogo de herramientas con diseño brutalista de bloques sólidos:
+  1. **Dibujo Digital** (Activo): Taller de dibujo profesional con capas y calidad de lápiz/birome.
+  2. **Historietas & Comic** (Próximamente): Creador de cómics estructurado para reutilizar este mismo motor de dibujo en viñetas y páginas.
+- **Motor Profesional de Dibujo (`lib/screens/herramientas/dibujo/`)**:
+  - **Sistema de Capas (`DrawingLayersSheet`)**: Múltiples capas con orden de apilamiento, alternancia de visibilidad (ojito), control de opacidad independiente (0-100%), conteo de trazos y eliminación protegida.
+  - **Calidad de Trazo y Herramientas (`StrokeRenderer`)**:
+    - **Birome / Tinta**: Trazo suave continuo con interpolación Bézier por puntos medios y unión redonda sin facetas ni cortes.
+    - **Lápiz Grafito**: Trazo con microtextura, caída de opacidad suave y doble pasada (núcleo y sombra de grafito) simulando papel.
+    - **Marcador / Pincel**: Punta redonda definida y pigmento saturado.
+    - **Resaltador**: Punta plana biselada y alta translucidez.
+    - **Borrador**: Borrado mediante aislamiento de capa con `BlendMode.clear`.
+  - **Navegación Fluida Procreate (`DrawingCanvasViewport`)**: 1 dedo dibuja con precisión inmediata y 2 dedos controlan zoom continuo (pinch) y paneo del lienzo a 60/120 FPS sin dejar puntos accidentales.
+  - **Historial Completo**: Pila atómica de Deshacer (Undo) y Rehacer (Redo).
+  - **Ajustes de Pincel y Color**: Preajustes rápidos de grosor (2, 5, 10, 20, 35, 50 px), sliders continuos de ancho y opacidad, previsualización dinámica y selector con paleta brutalista FURI y espectro de matiz HSV.
+  - **Exportación Dual (`DrawingExportDialog`)**: Guardado directo como PNG en almacenamiento local (`furi_drawings/`) y publicación compartida instantánea a la Galería de pareja (`GalleryProvider`).
+- **Arquitectura y Regla de 300 Líneas**:
+  - Se crearon 16 archivos modulares con Principio de Responsabilidad Única (SRP), todos estrictamente por debajo de las 300 líneas (promedio 60-200 líneas).
+- **Verificación**:
+  - `flutter analyze lib`: 0 errores, 0 warnings.
+  - `flutter test`: 334 tests pasados con éxito (12 tests nuevos específicos para modelos, controller y widgets de herramientas).
+
+**Archivos impactados**:
+- `lib/screens/herramientas/herramientas_screen.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_point.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_layer.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_tool_type.dart`
+- `lib/screens/herramientas/dibujo/painters/drawing_canvas_painter.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_bottom_toolbar.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_brush_settings_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_color_picker_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_export_dialog.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_sheet.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`
+- `lib/screens/home/widgets/home_main_grid.dart`
+- `lib/screens/home_screen.dart`
+- `lib/router.dart`
+- `test/screens/herramientas/drawing_models_test.dart`
+- `test/screens/herramientas/drawing_controller_test.dart`
+- `test/screens/herramientas/herramientas_screen_test.dart`
+
+---
+
 ## [2026-10-20] - REFACTOR - Limpieza y Organización de Archivos Sueltos en la Raíz
 
 **Resumen**:
@@ -4750,7 +5821,7 @@ ecurrence) evita pantallas paralelas para clases vs eventos y facilita la sincro
 **Cambios realizados**:
 - lib/models/exercise_catalog.dart: catálogo de 7 grupos musculares (Pecho, Espalda, Piernas, Hombros, Brazos, Core, Cardio) con ejercicios estándar y sugerencia automática de grupo por nombre.
 - lib/screens/ejercicios/widgets/exercise_sheet.dart: bottom sheet ágil con selector de grupo muscular por chips horizontales, selección en 1 toque para completar nombre/grupo, steppers numéricos de series/repeticiones, botones rápidos de peso (+1, +2.5, +5 kg), selector de descanso (30s..120s) y notas.
-- lib/screens/ejercicios/ejercicios_style.dart: alineación completa a skill_visual .md (fondo sólido  xFF0D170D, paneles  xFF142614, acento lima  xFF39FF14, bordes idénticos al fondo, eliminación de sombras negras suaves).
+- lib/screens/ejercicios/ejercicios_style.dart: alineación completa a skill_visual .md (fondo sólido xFF0D170D, paneles xFF142614, acento lima xFF39FF14, bordes idénticos al fondo, eliminación de sombras negras suaves).
 - lib/screens/ejercicios/ejercicios_screen.dart: agregado botón atrás en el header, actualización de tabs a verde lima brutalista, reemplazo de _dialogNewLog por ExerciseSheet.show, y ampliación de _libraryChips para unificar ejercicios previos con el catálogo completo.
 - Tests automatizados: 41 pruebas verdes en total (exercise_catalog_test.dart + modelos de workout).
 **Lecciones**:

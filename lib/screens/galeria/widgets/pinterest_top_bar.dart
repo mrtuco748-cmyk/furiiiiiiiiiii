@@ -6,6 +6,7 @@ class PinterestTopBar extends StatelessWidget {
   final bool isMobile;
   final bool hasController;
   final bool showCredentialsBar;
+  final bool isLoggedIn;
   final VoidCallback onBack;
   final VoidCallback onToggleCredentials;
   final VoidCallback onReload;
@@ -16,6 +17,7 @@ class PinterestTopBar extends StatelessWidget {
     required this.isMobile,
     required this.hasController,
     required this.showCredentialsBar,
+    this.isLoggedIn = false,
     required this.onBack,
     required this.onToggleCredentials,
     required this.onReload,
@@ -93,12 +95,14 @@ class PinterestTopBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: showCredentialsBar
                     ? const Color(0xFFE60023)
-                    : const Color(0xFF242424),
+                    : (isLoggedIn ? const Color(0xFF242424) : const Color(0xFF2E2222)),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.vpn_key_rounded,
-                color: showCredentialsBar ? Colors.white : const Color(0xFFE60023),
+                color: showCredentialsBar
+                    ? Colors.white
+                    : (isLoggedIn ? Colors.white54 : const Color(0xFFE60023)),
                 size: 18,
               ),
             ),

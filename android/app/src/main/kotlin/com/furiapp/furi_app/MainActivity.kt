@@ -123,6 +123,25 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
+                "flushCookies" -> {
+                    try {
+                        android.webkit.CookieManager.getInstance().flush()
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
+
+                "checkPinterestAuthCookie" -> {
+                    try {
+                        val cookies = android.webkit.CookieManager.getInstance().getCookie("https://www.pinterest.com")
+                        val hasSession = cookies != null && (cookies.contains("_pinterest_sess") || cookies.contains("_auth=1"))
+                        result.success(hasSession)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
+
                 else -> result.notImplemented()
             }
         }
@@ -188,8 +207,32 @@ class MainActivity : FlutterActivity() {
                 setSupportMultipleWindows(false)
                 javaScriptCanOpenWindowsAutomatically = false
                 domStorageEnabled = true
+                databaseEnabled = true
+                allowFileAccess = true
+                allowContentAccess = true
+                saveFormData = true
+                useWideViewPort = true
+                loadWithOverviewMode = true
                 cacheMode = WebSettings.LOAD_DEFAULT
             }
+
+            android.webkit.CookieManager.getInstance().apply {
+                setAcceptCookie(true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    setAcceptThirdPartyCookies(webView, true)
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    val swController = android.webkit.ServiceWorkerController.getInstance()
+                    swController.serviceWorkerWebSettings.cacheMode = WebSettings.LOAD_DEFAULT
+                    swController.serviceWorkerWebSettings.allowContentAccess = true
+                    swController.serviceWorkerWebSettings.allowFileAccess = true
+                } catch (_: Exception) {
+                }
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val existingClient = webView.webViewClient
                 if (existingClient !is SafeFuriWebViewClient) {
@@ -205,11 +248,7 @@ class MainActivity : FlutterActivity() {
     ) : WebViewClient() {
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-            if (favicon != null) {
-                delegate?.onPageStarted(view, url, favicon)
-            } else {
-                super.onPageStarted(view, url, favicon)
-            }
+            delegate?.onPageStarted(view, url, favicon) ?: super.onPageStarted(view, url, favicon)
         }
 
         override fun onPageFinished(view: WebView, url: String) {
@@ -288,6 +327,20 @@ class MainActivity : FlutterActivity() {
             val scheme = uri.scheme?.lowercase() ?: ""
             if (scheme != "http" && scheme != "https") {
                 // Bloquear esquemas externos (intent://, pinterest://, market://) sin cancelar redirects HTTP
+                return true
+            }
+            val host = uri.host?.lowercase() ?: ""
+            if (host.contains("play.google.com") || host.contains("apps.apple.com")) {
+                return true
+            }
+            return false
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+            val uri = android.net.Uri.parse(url) ?: return true
+            val scheme = uri.scheme?.lowercase() ?: ""
+            if (scheme != "http" && scheme != "https") {
                 return true
             }
             val host = uri.host?.lowercase() ?: ""

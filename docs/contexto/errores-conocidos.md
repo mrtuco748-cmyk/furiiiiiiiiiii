@@ -7,6 +7,132 @@
 > errores. Los errores **activos/pendientes** que requieren acción se documentan en
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
+
+### ~~ALTA - Crash en Modo Lector de Cómic al abrir proyectos de 1 sola página por aserción min < max en Slider~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/comic_reader_screen.dart`
+- **Qué pasaba**: Al ingresar al modo lector en un cómic que contiene una sola página (como al crear un cómic nuevo), la aplicación se congelaba o lanzaba un error fatal de Flutter: `'min < max': is not true`.
+- **Causa raíz**: El `Slider` inferior de navegación configuraba `min: 0` y `max: (totalPages - 1).toDouble().clamp(0.0, double.infinity)`. Cuando `totalPages == 1`, tanto `min` como `max` equivalían a `0.0`. En Flutter, la clase `Slider` exige estrictamente que `max` sea mayor que `min`, arrojando una aserción no controlada.
+- **Fix**: Se condicionó el renderizado del `Slider` exclusivamente a `totalPages > 1`, mostrando un `Spacer()` seguro en publicaciones de página única.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+### ~~MEDIA - Imposibilidad de deseleccionar borrador, difuminar o formas al tocarlos por segunda vez~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/widgets/drawing_infinite_dock.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`, `lib/screens/herramientas/dibujo/widgets/popovers/drawing_tools_popover.dart`
+- **Qué pasaba**: Al seleccionar el borrador, difuminador (dedo) o herramientas de formas/relleno, presionar el botón de nuevo no hacía nada, impidiendo salir de la herramienta o deseleccionarla para volver al lápiz o pincel en uso.
+- **Causa raíz**: `selectTool` se llamaba de forma incondicional sin verificar si la herramienta ya estaba seleccionada, y el controlador carecía de seguimiento del pincel previo activo (`_previousDrawingTool`), forzando además un fallback rígido a birome (`DrawingToolType.pen`).
+- **Fix**: Se implementó `previousDrawingTool` y `toggleTool(tool)` en `DrawingController`. Al pulsar nuevamente la herramienta activa, se conmuta al pincel que el usuario utilizaba previamente.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-26
+
+### ~~CRÍTICA - Miniaturas y Exportaciones PNG de Dibujo saliendo en blanco o recortadas por falta de escalado del lienzo real~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/helpers/drawing_render_exporter.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- **Qué pasaba**: Al exportar dibujos o generar miniaturas automáticas de 200x200 px para persistencia y galería, la imagen resultante salía en blanco o mostraba solo una esquina recortada de trazos.
+- **Causa raíz**: `DrawingRenderExporter.exportToPng` pintaba directamente sobre un `Canvas(recorder)` de dimensiones fijas (ej. 200x200) sin aplicar la matriz de escala proporcional respecto al tamaño original del lienzo de trabajo (`canvasWidth`/`canvasHeight`), recortando todos los trazos con coordenadas superiores a 200 px.
+- **Fix**: Se introdujo el parámetro `Size? canvasSize` y una transformación `canvas.scale(size.width / srcW, size.height / srcH)` en `DrawingRenderExporter`, garantizando escalado proporcional perfecto de todas las capas vectoriales en cualquier resolución de destino.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-26
+
+### ~~CRÍTICA - Null-trap en ComicPanel.copyWith impidiendo borrar o desasociar dibujos incrustados en viñetas~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/models/comic_panel.dart`, `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- **Qué pasaba**: Al intentar vaciar el dibujo embebido de una viñeta mediante `controller.setPanelDrawing(panelId, null, null)`, la imagen de dibujo seguía mostrándose y no se eliminaba de la viñeta.
+- **Causa raíz**: El método `copyWith` de `ComicPanel` utilizaba `drawingProjectId: drawingProjectId ?? this.drawingProjectId` y `drawingPngBase64: drawingPngBase64 ?? this.drawingPngBase64`. Al pasar `null`, el operador coalescente `??` conservaba la referencia previa en lugar de limpiarla.
+- **Fix**: Se añadieron banderas booleanas explícitas `clearDrawing: false` y `clearPolygonPoints: false` en `ComicPanel.copyWith`. Cuando `clearDrawing == true`, los campos de dibujo se establecen inequívocamente a `null`.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-26
+
+### ~~ALTA - Trazo fantasma y desincronización de historial al usar pinch-to-zoom con dos dedos en el lienzo~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- **Qué pasaba**: Al posar dos dedos para navegar o hacer zoom en el lienzo, el primer dedo registraba un trazo diminuto no deseado. Para intentar borrarlo, el código llamaba a `endStroke()` seguido de `undo()`, lo cual si no había trazo previo o fallaba el historial dejaba puntos residuales o borraba acciones del usuario.
+- **Causa raíz**: Falta de un método atómico de cancelación de trazo en el controlador de dibujo.
+- **Fix**: Se implementó `cancelActiveStroke()` en `DrawingController`, que descarta el `_activeStroke` y `_activeMirroredStrokes` sin añadirlos al historial de capas ni requerir llamadas a `undo()`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+### ~~ALTA - Herramienta Lazo y Bote de Pintura inundando todo el lienzo en lugar de la región cerrada~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_lasso_operations.dart`
+- **Qué pasaba**: Al rellenar con Lazo o con Bote de Pintura en un polígono seleccionado, se pintaba la pantalla completa como un bloque sólido monocromático.
+- **Causa raíz**: `StrokeRenderer._renderBucketFill` ejecutaba `canvas.drawPaint(paint)`, ignorando los puntos del contorno poligonal trazados por el usuario.
+- **Fix**: Se implementó la construcción de un `Path` cerrado a partir de los puntos trazados (`stroke.points >= 3`) y su renderizado con `canvas.drawPath(path, paint)` con fill anti-alias.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `lib/screens/galeria/widgets/pinterest_cleaner.dart`, `lib/screens/galeria/services/pinterest_service.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
+- **Qué pasaba**: Al ingresar a Pinterest y navegar hacia ciertas secciones (pines con videos, tableros, perfiles de creadores o búsquedas), la página cargaba un instante y luego se reiniciaba o recargaba sola regresando a la página principal una y otra vez. Además, las credenciales se mostraban permanentemente en un cartel incluso tras haber iniciado sesión, y los elementos se descargaban desde cero.
+- **Causa raíz**:
+  1. **Temporizador de fallback de app externa en Pinterest**: En la versión web móvil, Pinterest ejecuta scripts al abrir pines o perfiles que intentan invocar la app nativa mediante `intent://`, `pinterest://` o `market://`. Android WebView bloqueaba el intent devolviendo `true`, pero Pinterest tiene un temporizador de seguridad de 1 segundo en JavaScript que, al detectar que la app no abrió, ejecuta `window.location.replace('https://www.pinterest.com/')` o recarga la página para forzar el banner de instalación.
+  2. **Colapso del renderer por decodificadores de video (MediaCodec OOM)**: Los pines de video en los feeds cargan con `muted autoplay playsinline`. Al scrollear, se instanciaban múltiples decodificadores de hardware simultáneos, excediendo el límite del chipset y provocando que Chromium matara el proceso renderer (`onRenderProcessGone`). Dart capturaba el evento y recreaba el WebView completo en la URL base, reseteando la sesión del usuario.
+  3. **`onShowCustomWidget` expulsaba capas de video**: En `pinterest_screen.dart`, `onShowCustomWidget` llamaba inmediatamente a `onCustomWidgetHidden()`, arrojando a Chromium a un estado de error al intentar abrir reproductores o vistas expandidas.
+  4. **Falta de soporte de IndexedDB y caché nativa Service Worker**: `databaseEnabled` no estaba configurado en Android WebSettings, impidiendo que Pinterest use `IndexedDB` y obligando a descargar los componentes desde la red en cada visita.
+- **Fix**:
+  1. Se sobreescribieron `window.location.assign`, `window.location.replace` y se interceptaron los eventos `click` en fase de captura para neutralizar de inmediato cualquier URL `intent:`, `pinterest:`, `market:` o `play.google.com`, impidiendo que Pinterest dispare el timeout de recarga de fallback.
+  2. Se configuró emulación completa de PWA Standalone (`navigator.standalone = true`, `matchMedia('(display-mode: standalone)')` y cookies/localStorage anti-upsell), haciendo que Pinterest reconozca el WebView como su app nativa instalada y suprima las trampas de redirección.
+  3. Se interceptó `HTMLMediaElement.prototype.play` y se fijó `preload="none"` en videos de feeds automáticos, impidiendo la apertura descontrolada de decodificadores de hardware por GPU.
+  4. Se implementó `databaseEnabled = true`, `allowFileAccess = true`, `saveFormData = true` y caché para Service Workers (`ServiceWorkerController.getInstance().serviceWorkerWebSettings.cacheMode = WebSettings.LOAD_DEFAULT`).
+  5. Se implementó `PinterestService` con canal JavaScript `FuriPinterest` para detectar reactivamente la autenticación (`_pinterest_sess` cookie / DOM): el banner de credenciales se oculta automáticamente si el usuario ya inició sesión y solo aparece cuando no está autenticado.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-26
+
+
+### ~~ALTA - Imposibilidad de arrastrar directamente globos de diálogo y onomatopeyas SFX en el Taller de Cómic (InteractiveViewer acaparando la arena de gestos y zonas de borde bloqueando el movimiento)~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`, `lib/screens/herramientas/comic/widgets/comic_editor_gesture_helper.dart`
+- **Qué pasaba**:
+  1. Al presionar y arrastrar un globo de diálogo o efecto de sonido (SFX) con el dedo o cursor, el elemento no se movía fluidamente por la página.
+  2. Si el elemento no estaba previamente seleccionado, el primer arrastre se ignoraba o causaba un salto abrupto en vez de una traslación fluida y suave como la de las viñetas.
+- **Causa raíz**:
+  1. `InteractiveViewer` con `panEnabled: true` ganaba la arena gestual contra el `GestureDetector` de la hoja de cómic, impidiendo que `onPanStart`/`onPanUpdate` se ejecutaran sobre los elementos.
+  2. Para elementos compactos como globos de 140x80 px, la manija de borde (24 px perimetrales) cubría la mayor parte de su superficie. Si `hit.isEdge` era verdadero, el gesto se interpretaba como redimensionamiento de viñeta (modo que los globos y SFX no soportan), ignorando `applyMove`.
+  3. `GestureDetector` de Flutter solo dispara `onPanStart` luego de vencer el `kTouchSlop` (18 px). Si la selección no se fijaba en `onPanDown`, el inicio de arrastre sobre un elemento no seleccionado no registraba el objetivo a mover.
+  4. En `ComicEditorGestureHelper.applyMove`, la posición del globo y del SFX se calculaba a partir de coordenadas absolutas en vez de desplazamientos delta `(dx, dy)`.
+- **Fix**:
+  1. Se configuró `InteractiveViewer(panEnabled: false)` en la página de edición para que el `GestureDetector` reciba todos los eventos táctiles directamente.
+  2. Se restringió `hit.isEdge` a viñetas (`selectedPanel != null`), garantizando que cualquier toque sobre un globo o SFX sea tratado como cuerpo entero para arrastre (`ComicDragMode.move`).
+  3. Se añadió `onPanDown: (d) => _handlePanDown(...)` para seleccionar y preparar inmediatamente el elemento bajo el dedo antes de que venza el slop gestual.
+  4. Se implementó traslación suave basada en delta `(dx, dy)` en `ComicEditorGestureHelper.applyMove` tanto para globos como para stickers SFX.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+### ~~ALTA - Imposibilidad de borrar o editar globos de diálogo y SFX en el Taller de Cómic (RenderFlex overflow desplazando el botón de eliminar, cierre en tap y hit-testing rígido)~~ ✅ RESUELTO 2026-10-25
+- **Dónde**: `lib/screens/herramientas/comic/widgets/comic_floating_bubble_bar.dart`, `lib/screens/herramientas/comic/widgets/comic_sfx_editor_bar.dart`, `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`, `lib/screens/herramientas/comic/widgets/comic_editor_overlays.dart`, `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- **Qué pasaba**:
+  1. Al presionar sobre un globo de diálogo o efecto de sonido (SFX) en la página del cómic, no se podía editar ni borrar. El botón de tacho de basura no era visible ni accesible.
+  2. Al tocar un globo o SFX con un solo toque, los menús o barras de herramientas activas se cerraban automáticamente en lugar de abrir sus propiedades.
+  3. Las onomatopeyas largas (ej. "¡KAAAABOOOM!") o rotadas en diagonal no detectaban el toque si se presionaba en sus extremos.
+- **Causa raíz**:
+  1. En `ComicFloatingBubbleBar` y `ComicSfxEditorBar`, la fila superior disponía etiquetas largas de pestañas ("Contenido", "Tipografía", "Dimensiones") junto a los botones de acción sin scroll horizontal en contenedores de ancho fijo (~320px). Esto generaba un `RenderFlex overflow` de 241 píxeles que empujaba físicamente el botón rojo de borrar fuera del canvas visible.
+  2. En `ComicEditorScreen`, las callbacks `onBubbleTap: (_) => _toggleOverlay()` y `onSfxTap: (_) => _toggleOverlay()` se invocaban sin parámetros, lo que configuraba `showBubbleBar = false` y `showSfxEditor = false` en cada tap individual, cerrando activamente los editores.
+  3. En `ComicTransformResolver`, `findTappedSfx` evaluaba la distancia euclidiana en un radio circular fijo de 44px desde el centro sin des-rotar el punto ni contemplar la caja elíptica u orientada de la onomatopeya.
+- **Fix**:
+  1. Se envolvieron las pestañas de `ComicFloatingBubbleBar` y `ComicSfxEditorBar` en `Expanded(SingleChildScrollView(scrollDirection: Axis.horizontal))` y se anclaron a la derecha el botón de tacho de basura rojo (`Icons.delete_outline`) y el botón de cerrar (`Icons.close`) con `HitTestBehavior.opaque`.
+  2. Se configuraron `onBubbleTap: (bubble) => _toggleOverlay(bubble: true, bubbleItem: bubble)` y `onSfxTap: (sfx) => _toggleOverlay(sfxEditor: true, sfxItem: sfx)`, garantizando que un toque sobre el elemento abra de inmediato su barra contextual.
+  3. Se proyectaron las coordenadas del tap con rotación inversa sobre el espacio local de SFX y globos en `ComicTransformResolver`.
+  4. Se implementó sincronización reactiva en `didUpdateWidget` cuando el usuario manipula las manijas táctiles del canvas.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-25
+
+### ~~ALTA - Los dibujos no se renderizaban en el selector de viñeta del Taller de Cómic y falta de opciones de galería, encuadre y deselección~~ ✅ RESUELTO 2026-10-25
+- **Dónde**: `lib/screens/herramientas/comic/widgets/comic_drawing_picker_sheet.dart`, `lib/screens/herramientas/comic/widgets/comic_drawing_thumbnail.dart`, `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`, `lib/screens/herramientas/comic/comic_editor_screen.dart`, `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- **Qué pasaba**:
+  1. Al presionar "Insertar Dibujo" en una viñeta, los proyectos guardados aparecían como tarjetas vacías con solo un ícono genérico gris en lugar de mostrar el contenido dibujado.
+  2. No existía opción para seleccionar fotos directamente de la galería del dispositivo dentro de una viñeta.
+  3. No había manera de encuadrar (mover o reescalar libremente con el dedo) una imagen o dibujo ya colocado en un panel.
+  4. Al tener seleccionada una viñeta, globo o herramienta, no se podía deseleccionar haciendo clic fuera de la página o cancelar herramientas no-lápiz fácilmente.
+- **Causa raíz**:
+  1. `DrawingProject` guardaba las capas y trazos vectoriales en JSON/disco, pero `thumbnailBase64` solo se generaba si el usuario ejecutaba manualmente la exportación. Al cargarse en `ComicDrawingPickerSheet`, el valor era nulo y caía en un placeholder sin renderizar los trazos.
+  2. La barra contextual de viñeta solo permitía "Dibujar" o "Elegir dibujo", sin integración de `image_picker`.
+  3. Las imágenes en paneles estaban fijadas a la escala inicial sin un sub-modo de manipulación táctil para desplazar el contenido (`offsetX`/`offsetY`).
+  4. El `GestureDetector` de `ComicPageEditorWidget` estaba delimitado exclusivamente a las dimensiones del contenedor de la página, por lo que clics en los márgenes exteriores o espacios vacíos no disparaban deselección.
+- **Fix**:
+  1. Se creó `ComicDrawingThumbnail` que evalúa si `thumbnailBase64` existe; en caso contrario, activa `_MiniProjectPainter`, un renderizador vectorial CustomPainter que escala y proyecta las capas y trazos del proyecto al vuelo.
+  2. Al terminar de dibujar dentro de una viñeta, `ComicEditorActions.drawInPanel` guarda automáticamente el PNG base64 en disco.
+  3. Se agregó botón de galería (`pickImageFromGallery`) en `ComicPanelContextBar`.
+  4. Se implementó `ComicInteractionMode.frameContent` y `ComicDragMode.frameContent` con manipulación 1:1 táctil y banner de confirmación `[Listo]`.
+  5. Se envolvieron los márgenes exteriores en detectores de deselección y se añadió un `ActionChip` en `DibujoScreen` para volver a la herramienta pincel en 1 toque.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-25
+
+- **Dónde**: `lib/screens/herramientas/comic/controllers/comic_panel_operations.dart`, `lib/screens/herramientas/comic/helpers/comic_polygon_cutter.dart`, `lib/screens/herramientas/comic/models/comic_panel.dart`
+- **Qué pasaba**: Al seleccionar el modo de corte con cuchilla (`ComicInteractionMode.slicePanel`) y trazar una línea diagonal sobre una viñeta, el corte no se producía o se forzaba de manera errónea a un corte puramente horizontal o vertical.
+- **Causa raíz**:
+  1. `ComicPanelOperations.slicePanelWithLine` evaluaba `if (dx <= dy)` y proyectaba el corte forzándolo exclusivamente a dos rectángulos ortogonales (eje horizontal o vertical).
+  2. Los trazos diagonales no ortogonales eran rechazados o deformados porque la lógica intentaba calcular dimensiones cartesianas `(width, height)` independientes y si alguna quedaba por debajo del umbral mínimo de 0.04, devolvía `null` cancelando la operación.
+  3. `ComicPanel` solo soportaba formas predefinidas o bounding boxes rectangulares sin un vector de vértices arbitrarios.
+- **Fix**:
+  1. Se implementó `ComicPolygonCutter` utilizando el algoritmo de recorte de polígonos convexos de Sutherland-Hodgman contra la recta dirigida de corte en cualquier ángulo oblicuo o diagonal.
+  2. Se añadió el campo `polygonPoints` (`List<Offset>?` normalizado al bounding box local) en `ComicPanel`.
+  3. Se adaptó `ComicPanelShapeHelper.getPanelPath` para dibujar y realizar hit-test preciso sobre el polígono cortado, permitiendo selección, dibujo interno recortado (`canvas.clipPath`) y bordes perimetrales exactos.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-25
+
 ### ~~ALTA - No detecta al apretar para escribir en el título ni en el cuerpo de las notas en el Pizarrón (RenderStack size.contains en lienzo infinito y zonas de toque reducidas)~~ ✅ RESUELTO 2026-10-20
 - **Dónde**: `lib/screens/milanote/milanote_screen.dart`, `lib/screens/milanote/widgets/pizarron_note_widget.dart`, `lib/screens/milanote/widgets/unbounded_hit_test_stack.dart`
 - **Qué pasaba**: Al presionar sobre el título o sobre el cuerpo de una nota para escribir, no se detectaba el toque, el teclado no aparecía y no se podía escribir en ningún lugar.

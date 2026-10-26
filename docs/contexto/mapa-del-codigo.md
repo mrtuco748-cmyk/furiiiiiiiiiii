@@ -37,6 +37,7 @@ lib/
 │   ├── favoritos/   # Lugares, series, películas y deseos compartidos con rating
 │   ├── finanzas/    # Gastos compartidos, balances y divisiones de pago
 │   ├── galeria/     # Galería estilo lienzo infinito y Pinterest integrado
+│   ├── herramientas/# Catálogo creativo, taller de dibujo multicapa y cómic
 │   ├── logros/      # Sistema de logros de pareja y estadísticas de racha
 │   ├── mazo/        # Cartas de conexión, preguntas íntimas y matches
 │   ├── milanote/    # Pizarrón interactivo infinito estilo Milanote
@@ -77,13 +78,40 @@ lib/
 
 #### 🖼️ Galería & Pinterest (`lib/screens/galeria/`)
 - [`galeria_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/galeria/galeria_screen.dart): Galería de fotos compartidas en grilla asimétrica infinita con visor de comentarios y reacciones.
-- [`pinterest_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/galeria/pinterest_screen.dart): Pinterest webview embebido nativo con credenciales en 1-tap y protección anti-crash.
-- **Subcarpeta `widgets/`**:
-  - `galeria_top_bar.dart`: Encabezado con conteo de fotos y botón a Pinterest.
-  - `galeria_photo_tile.dart`: Tarjeta de foto con proporciones variadas y badges.
-  - `galeria_detail_modal.dart`: Hoja inferior de foto completa, reacciones y envío de comentarios.
-  - `pinterest_top_bar.dart`: Barra de navegación nativa con botón atrás, reload y credenciales.
-  - `pinterest_credentials_banner.dart`: Barra con chips de copia de correo y contraseña.
+- [`pinterest_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/galeria/pinterest_screen.dart): Pinterest PWA nativa con credenciales condicionales, anti-crash por video decoders y recuperación de URL (<230 líneas).
+- **Subcarpetas `services/`, `helpers/`, `widgets/`**:
+  - `services/pinterest_service.dart`: Singleton de estado reactivo, autenticación persistente y flush de cookies.
+  - `helpers/pinterest_controller_factory.dart`: Factoría de instanciación del WebViewController con configuración PWA, aceleración y canales JS.
+  - `widgets/pinterest_cleaner.dart`: Script y CSS inyectado para emulación PWA standalone, supresión de intents y limitador de videos.
+  - `widgets/pinterest_top_bar.dart`: Barra de navegación nativa con botón atrás, reload, estado de login y credenciales.
+  - `widgets/pinterest_credentials_banner.dart`: Barra con chips de copia de correo y contraseña (oculta al iniciar sesión).
+  - `widgets/pinterest_desktop_fallback.dart`: Vista de respaldo para escritorio con botón a navegador externo.
+
+#### 🎨 Herramientas, Dibujo & Cómic (`lib/screens/herramientas/`)
+- [`herramientas_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/herramientas/herramientas_screen.dart): Menú principal de herramientas creativas (Dibujo y Cómic activos) con estética brutalista de bloques sólidos.
+- **Componentes Compartidos (`lib/screens/herramientas/widgets/`)**:
+  - `creative_icon.dart`: Renderizador de iconos vectoriales SVG (`Assets/icons/creative/*.svg`) con fallback automático a `IconData` para entornos headless/tests.
+- **Subcarpeta `dibujo/`**:
+  - `dibujo_screen.dart`: Lienzo principal de dibujo digital profesional con UI fiel a Infinite Painter (<290 líneas).
+  - `controllers/drawing_controller.dart`: Gestión de capas, historial undo/redo, herramientas activas, selección por lazo, estabilización y exportación a PNG (<295 líneas).
+  - `controllers/drawing_layer_operations.dart`: Operaciones atómicas de capas (visibilidad, opacidad, reordenamiento, adición, clonación, rotación 90° e inversión).
+  - `controllers/drawing_stroke_operations.dart`: Operaciones atómicas de relleno de cubeta, degradados y generación de trazos con simetría/caleidoscopio.
+  - `controllers/drawing_stroke_stabilizer.dart`: Micro-corrección de trazos en tiempo real contra temblores (anti-jitter EMA) y motor de trazo predictivo (amortiguación elástica y extrapolación de velocidad).
+  - `controllers/drawing_lasso_operations.dart`: Operaciones de selección por lazo libre (detección punto-en-polígono, traslación, duplicación, relleno, volteo y eliminación).
+  - `controllers/drawing_action.dart`: Comandos atómicos del historial de trazos, vaciado y transformaciones de selección.
+  - `models/`: Modelos atómicos de trazo (`drawing_stroke.dart`), punto (`drawing_point.dart`), capa (`drawing_layer.dart`), proyecto (`drawing_project.dart`), selección de lazo (`drawing_lasso_selection.dart`) y herramientas (`drawing_tool_type.dart` con soporte de Lazo, Difuminar/Smudge, Borrador, etc.).
+  - `painters/`: Renderizador especializado por herramienta (`stroke_renderer.dart`: birome fluida, lápiz grafito, difuminar gaussiano, lazo libre, etc.), `drawing_canvas_painter.dart`, guía visual de tamaño de pincel y goma en tiempo real (`drawing_cursor_painter.dart`) y guía de recorte en viñeta (`drawing_panel_guide_painter.dart`).
+  - `services/drawing_storage_service.dart`: Persistencia local de proyectos de dibujo en `furi_drawings/projects/`.
+  - `widgets/`: Viewport de gestos con arrastre directo de lazo y retícula de grosor en vivo (`drawing_canvas_viewport.dart`), matemáticas de coordenadas y transformaciones (`drawing_viewport_math.dart`), tarjeta de interruptor de guía visual (`drawing_brush_cursor_card.dart`), barra flotante de acciones de selección (`drawing_lasso_action_bar.dart`), tarjeta de control de trazo predictivo (`drawing_predictive_stroke_card.dart`), barra superior Infinite Painter (`drawing_top_bar.dart`), dock flotante izquierdo Infinite Painter con Pincel, Difuminador, Borrador SVG real, Grosor, Color y Opacidad (`drawing_infinite_dock.dart`), biblioteca flotante de pinceles (`drawing_floating_brush_popover.dart`), dock lateral derecho de capas (`drawing_layers_dock.dart`), botones de deshacer/rehacer inferior izquierdo (`drawing_undo_redo_buttons.dart`), paleta flotante de color (`drawing_floating_color_popover.dart`), diálogo de proyectos (`drawing_projects_sheet.dart`), exportación (`drawing_export_dialog.dart`), popovers superiores (`popovers/drawing_tools_popover.dart`, `drawing_edit_popover.dart`, `drawing_options_popover.dart`) y orquestador modal (`drawing_screen_popovers.dart`).
+- **Subcarpeta `comic/`**:
+  - `comic_editor_screen.dart`: Taller de creación multipágina de historietas con página en blanco por defecto, botón flotante `+` inferior derecho, autoguardado debounced y soporte undo/redo reactivo (<250 líneas).
+  - `comic_reader_screen.dart`: Modo lector inmersivo (manga horizontal / webtoon vertical).
+  - `controllers/`: `comic_controller.dart` (estado reactivo orquestador <260 líneas), `comic_panel_operations.dart` (división matemática y corte de viñetas), `comic_element_operations.dart` (operaciones de globos, SFX y páginas), `comic_history.dart` (pila inmutable de snapshots undo/redo).
+  - `models/`: `comic_project.dart`, `comic_page.dart`, `comic_panel.dart` (formas dinámicas, rotación, skew y bordes), `comic_bubble.dart` (12 estilos, dirección de cola, rotación), `comic_sticker.dart` (SFX con estilos 3D/neón/tramas), `comic_template.dart` (14 layouts), `comic_color_palette.dart` (7 paletas legendarias manga/cómic) y `comic_template_layouts.dart` (geometría de 14 layouts).
+  - `painters/`: `comic_page_painter.dart` (renderizado multicapa con rotación y estilos SFX), `comic_bubble_painter.dart` (trazado vectorial de 12 globos y colas orientables) y `comic_panel_shape_helper.dart` (siluetas dinámicas shonen, trapecios, rombos y paralelogramos).
+  - `helpers/`: `comic_image_cache.dart`, `comic_render_exporter.dart`, `comic_editor_actions.dart`.
+  - `services/comic_storage_service.dart`: Persistencia de proyectos en `furi_comics/projects/`.
+  - `widgets/`: Menú deslizable modal inferior no invasivo para agregar Viñetas, Globos y SFX individualmente (`comic_add_drawer.dart`, `comic_add_panels_tab.dart`, `comic_add_bubbles_tab.dart`, `comic_add_sfx_tab.dart`), lienzo con manipulación directa de rotación y escala por dedos/cursor sin menú (`comic_page_editor_widget.dart`, `comic_selection_handles.dart`), helper de gestos y encuadre 1:1 (`comic_editor_gesture_helper.dart`), barra superior con Deshacer/Rehacer (`comic_top_bar.dart`), barra contextual de viñeta activa con galería y encuadre (`comic_panel_context_bar.dart`), dock flotante para globos (`comic_floating_bubble_bar.dart`), tira flotante de SFX ampliada (`comic_floating_sfx_bar.dart`), selector flotante de plantillas (`comic_floating_template_bar.dart`), barras y pestañas de personalización (`comic_panel_customizer_bar.dart`, `comic_panel_customizer_tabs.dart`), editor flotante de SFX (`comic_sfx_editor_bar.dart`, `comic_sfx_editor_tabs.dart`), pestañas de globos (`comic_bubble_tabs.dart`, `comic_bubble_color_tab.dart`), orquestador de overlays (`comic_editor_overlays.dart`), selector de dibujos guardados (`comic_drawing_picker_sheet.dart`), miniaturas vectoriales reactivas (`comic_drawing_thumbnail.dart`), banner de modo encuadre (`comic_mode_indicator_banner.dart`) y diálogo de exportación (`comic_export_dialog.dart`).
 
 #### 🎵 Música Compartida (`lib/screens/music/`)
 - [`music_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/music/music_screen.dart): Reproductor estilo Spotify/YouTube Music, búsqueda, playlists y visor de comentarios por canción (<= 300 líneas).
@@ -141,6 +169,29 @@ lib/
 - [`class_board_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/calendar/class_board_screen.dart): Tablero de horarios de clase semanales.
 - **Widgets**: `daily_events_screen.dart`, `event_sheet.dart`, `schedule_form_screen.dart`.
 - **Providers**: `ScheduleProvider`, `ClassScheduleProvider`.
+
+#### 🎨 Herramientas Creativas: Taller de Dibujo y Taller de Cómic (`lib/screens/herramientas/`)
+- [`herramientas_screen.dart`](file:///d:/projetcs/proyectos/F.U.R.I/lib/screens/herramientas/herramientas_screen.dart): Hub central de acceso a las herramientas creativas de la pareja.
+- **Taller de Dibujo (`dibujo/`)**:
+  - `dibujo_screen.dart`: Pantalla principal del taller con dock Infinite Painter, guías de recorte para cómic y soporte multicapa.
+  - `controllers/drawing_controller.dart`, `drawing_layer_operations.dart` y `drawing_stroke_operations.dart`: Controlador reactivo con historial de deshacer/rehacer, simetría (vertical, horizontal, radial 4, caleidoscopio), formas vectoriales en tiempo real, balde de relleno y degradados.
+  - `models/drawing_tool_type.dart`, `drawing_symmetry_mode.dart`, `drawing_stroke.dart`: Modelos vectoriales, cálculo de proyección simétrica y flechas directas.
+  - `painters/stroke_renderer.dart`, `drawing_canvas_painter.dart`, `drawing_cursor_painter.dart` y `drawing_panel_guide_painter.dart`: Renderizado acelerado de trazos (birome, pluma G manga, lápiz grafito, marcador, aerógrafo, resaltador), anillo de ayuda visual de tamaño exacto del pincel/borrador, líneas de simetría y máscara de recorte en vivo para viñetas.
+  - `widgets/drawing_infinite_dock.dart`, `drawing_floating_brush_popover.dart`, `drawing_layers_dock.dart`, `drawing_canvas_viewport.dart`, `drawing_brush_cursor_card.dart`, `drawing_viewport_math.dart`, `drawing_screen_popovers.dart`: Docks táctiles flotantes, popovers desacoplados (biblioteca de pinceles con curvas vectoriales en vivo y presets), y viewport con inversión horizontal/vertical, cursor de grosor y bloqueo de rotación.
+  - `widgets/popovers/`: Menús popover de herramientas, edición y opciones de proyecto/exportación.
+- **Taller de Cómic (`comic/`)**:
+  - `comic_editor_screen.dart`: Editor de páginas de historietas con lienzo en blanco e indicadores de modo.
+  - `comic_reader_screen.dart`: Visor interactivo de lectura página por página de las creaciones.
+  - `controllers/comic_controller.dart` y `comic_panel_operations.dart`: Lógica pura de partición, trazado con gestos y corte de viñetas con cuchilla.
+  - `models/comic_bubble.dart`, `comic_alignment_guide.dart`: Modelos de bocadillos, orientaciones de cola y guías de alineación magnética.
+  - `helpers/comic_polygon_cutter.dart` y `comic_smart_guides_engine.dart`: Motor geométrico de corte poligonal por Sutherland-Hodgman y motor de alineación magnética Canva/Figma (centros de hoja, márgenes y elementos).
+  - `widgets/comic_selection_handles.dart`: Caja delimitadora táctil con 8 mangos (4 esquinas + 4 bordes), mango superior de rotación y renderizado de líneas guía magnéticas.
+  - `widgets/comic_editor_gesture_helper.dart`: Helper modular de transformaciones táctiles, escala, rotación y modo encuadre interactivo.
+  - `widgets/comic_drawing_thumbnail.dart`: Renderizador reactivo de miniaturas con fallback a preview vectorial directo.
+  - `widgets/comic_transform_resolver.dart`: Resuelve transforms y hit-test de elementos sobre la hoja del cómic.
+  - `widgets/comic_page_editor_widget.dart`: Coordinador de gestos multitáctiles para trazar viñetas a mano alzada, cortar y encuadrar imágenes.
+  - `widgets/comic_panel_context_bar.dart` y `comic_panel_quick_border_row.dart`: Barra de contexto sobre la viñeta seleccionada, selector de foto de galería, encuadre táctil y selector de borde y color en 1 tap.
+  - `widgets/comic_add_drawer.dart`, `comic_add_panels_tab.dart`, `comic_add_bubbles_tab.dart`, `comic_add_sfx_tab.dart`: Menú deslizable para agregar viñetas, globos de diálogo y onomatopeyas.
 
 ---
 

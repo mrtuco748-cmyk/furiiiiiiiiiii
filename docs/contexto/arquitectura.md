@@ -52,6 +52,10 @@ lib/
 │   │   └── deck_match_overlay.dart     # Pantalla "FURI!!" (match con confetti)
 │   ├── ejercicios/              # Seccion Ejercicios (boton pesa del Home)
 │   │   └── ejercicios_screen.dart      # 4 pestañas: Hoy, Ejercicios, Retos, Stats
+│   ├── herramientas/            # Sección Herramientas (Taller de Dibujo multicapa + Taller de Cómic & Manga)
+│   │   ├── herramientas_screen.dart    # Menú de herramientas creativas
+│   │   ├── dibujo/                     # Motor y pantalla de dibujo profesional multicapa
+│   │   └── comic/                      # Taller de cómic y manga multipágina con viñetas y modo lector
 │   ├── pizarra/                 # Pizarrón Infinito colaborativo (drag fluido, notas, checklists, dibujos)
 │   │   └── pizarra_screen.dart         # Canvas 2D con Pan/Zoom, grid punteado y sync realtime
 │   └── music/                   # Reproductor de Música compartida

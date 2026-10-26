@@ -79,6 +79,12 @@ class NotificationService {
   static Future<void> protectAndroidWebViews() =>
       MusicNotificationManager.protectAndroidWebViews();
 
+  static Future<void> flushWebViewCookies() =>
+      MusicNotificationManager.flushWebViewCookies();
+
+  static Future<bool> checkPinterestAuthCookie() =>
+      MusicNotificationManager.checkPinterestAuthCookie();
+
   static Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;

@@ -25,91 +25,20 @@ import 'screens/mapa_screen.dart';
 import 'screens/milanote/milanote_screen.dart';
 import 'screens/music/music_screen.dart';
 import 'screens/mosaico_wrappers.dart';
+import 'screens/herramientas/herramientas_screen.dart';
+import 'screens/herramientas/dibujo/dibujo_screen.dart';
+import 'screens/herramientas/comic/comic_editor_screen.dart';
+import 'screens/herramientas/comic/comic_reader_screen.dart';
+import 'screens/herramientas/comic/models/comic_project.dart';
+import 'router_routes.dart';
 
-/// Nombres canónicos de ruta. Las pantallas pasan su `AppMode` por [GoRouterState.extra];
-/// los flujos que devuelven resultado usan `context.push(...)` (propaga el `pop`).
-abstract final class RouterRoutes {
-  static const String home = '/home';
-  static const String login = '/login';
-  static const String settings = '/settings';
-  static const String notifications = '/notifications';
-  static const String nosotros = '/nosotros';
-  static const String calendar = '/calendar';
-  static const String trivia = '/trivia';
-  static const String finanzas = '/finanzas';
-  static const String galeria = '/galeria';
-  static const String pinterest = '/pinterest';
-  static const String favoritos = '/favoritos';
-  static const String milanote = '/milanote';
-  static const String notes = '/notes';
-  static const String pizarra = '/pizarra';
-  static const String music = '/music';
-  static const String ejercicios = '/ejercicios';
-  static const String logros = '/logros';
-  static const String rewards = '/rewards';
-  static const String chat = '/chat';
-  static const String retos = '/retos';
-  static const String cartas = '/cartas';
-  static const String metas = '/metas';
-  static const String mapa = '/mapa';
-  static const String scheduleForm = '/calendar/form';
-  static const String dailyEvents = '/calendar/dia';
-  static const String classBoard = '/calendar/clases';
-  static const String classSetup = '/calendar/setup';
-  static const String calendarMosaico = '/calendario-mosaico';
-  static const String notesMosaico = '/notes-mosaico';
-  static const String ejerciciosMosaico = '/ejercicios-mosaico';
-}
+export 'router_routes.dart';
 
 /// Lee el `AppMode` que la pantalla lanzó (viene por `extra`) con fallback seguro.
 AppMode _mode(GoRouterState state) =>
     state.extra is AppMode ? state.extra as AppMode : AppMode.dark;
 
-/// Mapea el `data.type` de una notificación push a la ruta canónica de la app,
-/// para "ir a la pantalla" cuando se toca una notificación. `null` si el tipo
-/// no tiene pantalla propia. (Solo mapea rutas que existen y no exigen extras.)
-String? routeForNotificationType(String type) {
-  switch (type) {
-    case 'message':
-      return RouterRoutes.chat;
-    case 'mood':
-    case 'letter':
-    case 'custom_question':
-    case 'timeline':
-      return RouterRoutes.nosotros;
-    case 'goal':
-      return RouterRoutes.metas;
-    case 'challenge':
-      return RouterRoutes.retos;
-    case 'note':
-    case 'pizarra':
-      return RouterRoutes.milanote;
-    case 'transaction':
-      return RouterRoutes.finanzas;
-    case 'favorite':
-      return RouterRoutes.favoritos;
-    case 'gallery':
-      return RouterRoutes.galeria;
-    case 'schedule':
-    case 'class_schedule':
-    case 'anniversary':
-      return RouterRoutes.calendar;
-    case 'achievement':
-      return RouterRoutes.logros;
-    case 'workout_log':
-    case 'workout_completion':
-    case 'workout_challenge':
-      return RouterRoutes.ejercicios;
-    case 'music':
-      return RouterRoutes.music;
-    case 'trivia':
-      return RouterRoutes.trivia;
-    case 'mapa':
-      return RouterRoutes.mapa;
-    default:
-      return RouterRoutes.notifications;
-  }
-}
+
 
 /// Clave del navegador raíz (usada por Escape→maybePop y por el router).
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -282,6 +211,28 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: RouterRoutes.ejerciciosMosaico,
       builder: (_, state) => EjerciciosMosaicoScreen(mode: _mode(state)),
+    ),
+    GoRoute(
+      path: RouterRoutes.herramientas,
+      builder: (_, state) => HerramientasScreen(mode: _mode(state)),
+    ),
+    GoRoute(
+      path: RouterRoutes.dibujo,
+      builder: (_, _) => const DibujoScreen(),
+    ),
+    GoRoute(
+      path: RouterRoutes.comic,
+      builder: (_, state) {
+        final project = state.extra is ComicProject ? state.extra as ComicProject : null;
+        return ComicEditorScreen(initialProject: project);
+      },
+    ),
+    GoRoute(
+      path: RouterRoutes.comicReader,
+      builder: (_, state) {
+        final project = state.extra as ComicProject;
+        return ComicReaderScreen(project: project);
+      },
     ),
   ],
 );

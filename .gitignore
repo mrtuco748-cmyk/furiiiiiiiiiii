@@ -12,6 +12,12 @@
 .swiftpm/
 migrate_working_dir/
 
+# Kotlin / Gradle cache
+.kotlin/
+android/.kotlin/
+.gradle/
+android/.gradle/
+
 # IntelliJ related
 *.iml
 *.ipr

@@ -176,6 +176,11 @@ class _BrutalGridState extends State<_BrutalGrid> with TickerProviderStateMixin 
     context.push(RouterRoutes.music);
   }
 
+  void _openHerramientas(double x, double y) {
+    _confettiAt(x, y);
+    context.push(RouterRoutes.herramientas, extra: _mode);
+  }
+
   void _openLogros() => context.push(RouterRoutes.logros, extra: _mode);
 
   bool get _canPop {
@@ -236,6 +241,7 @@ class _BrutalGridState extends State<_BrutalGrid> with TickerProviderStateMixin 
         onOpenEjercicios: _openEjercicios,
         onOpenFinanzas: _openFinanzas,
         onOpenFavoritos: _openFavoritos,
+        onOpenHerramientas: _openHerramientas,
         onOpenLogros: _openLogros,
         onModeTap: _onModeTap,
         onConfettiAt: _confettiAt,

@@ -83,6 +83,28 @@ class MusicNotificationManager {
     }
   }
 
+  static Future<void> flushWebViewCookies() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    ensureMusicChannelInitialized();
+    try {
+      await _musicServiceChannel.invokeMethod('flushCookies');
+    } catch (e) {
+      debugPrint('MusicNotificationManager.flushWebViewCookies error: $e');
+    }
+  }
+
+  static Future<bool> checkPinterestAuthCookie() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    ensureMusicChannelInitialized();
+    try {
+      final res = await _musicServiceChannel.invokeMethod<bool>('checkPinterestAuthCookie');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('MusicNotificationManager.checkPinterestAuthCookie error: $e');
+      return false;
+    }
+  }
+
   static Future<void> updateMusicNotification({
     required FlutterLocalNotificationsPlugin localNotifications,
     required bool isInitialized,

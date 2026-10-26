@@ -30,6 +30,7 @@ class HomeMainGrid extends StatelessWidget {
   final void Function(double x, double y) onOpenEjercicios;
   final void Function(double x, double y) onOpenFinanzas;
   final void Function(double x, double y) onOpenFavoritos;
+  final void Function(double x, double y)? onOpenHerramientas;
   final VoidCallback onOpenLogros;
   final void Function(AppMode mode, Offset g) onModeTap;
   final void Function(double x, double y) onConfettiAt;
@@ -58,6 +59,7 @@ class HomeMainGrid extends StatelessWidget {
     required this.onOpenEjercicios,
     required this.onOpenFinanzas,
     required this.onOpenFavoritos,
+    this.onOpenHerramientas,
     required this.onOpenLogros,
     required this.onModeTap,
     required this.onConfettiAt,
@@ -155,7 +157,7 @@ class HomeMainGrid extends StatelessWidget {
                     style: GoogleFonts.bangers(color: t.light, fontWeight: FontWeight.bold, fontSize: w * 0.055),
                   ),
                 ),
-                onConfettiAt,
+                onOpenHerramientas ?? onConfettiAt,
                 borderWidth: 5,
               ),
               block(x4, 0, c4, rh[0], t.dark, fillIcon(Icons.settings, t.light), (x, y) => onOpenSettings(), borderWidth: 3),
