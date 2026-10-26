@@ -13,7 +13,7 @@ import 'comic_selection_handles.dart';
 import 'comic_transform_resolver.dart';
 
 /// Canvas interactivo del cómic con soporte de trazado libre de viñetas con los dedos,
-/// manipulación táctil directa de globos, SFX y viñetas (mover, rotar y escalar por 8 mangos).
+/// manipulación táctil directa de globos, SFX y viñetas (mover, rotar y escalar).
 class ComicPageEditorWidget extends StatefulWidget {
   final ComicController controller;
   final ValueChanged<ComicPanel> onPanelTap;
@@ -43,17 +43,10 @@ class ComicPageEditorWidget extends StatefulWidget {
 }
 
 class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
-  final TransformationController _transformController = TransformationController();
   ComicDragMode _activeMode = ComicDragMode.none;
   List<ComicAlignmentGuide> _activeGuides = const [];
   double _initialDist = 1.0, _initialScale = 1.0, _initialW = 100.0, _initialH = 100.0;
   Offset? _drawStart, _drawCurrent, _sliceStart, _sliceCurrent;
-
-  @override
-  void dispose() {
-    _transformController.dispose();
-    super.dispose();
-  }
 
   ComicElementTransform? _getActiveTransform(Size pageSize) =>
       ComicTransformResolver.resolve(widget.controller, pageSize);
@@ -63,12 +56,14 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
 
     final t = _getActiveTransform(pageSize);
     if (t != null) {
-      final hit = t.hitTest(localPos);
-      if (hit == ComicHandleType.rotate) {
+      if ((localPos - t.rotationHandlePos).distance <= 18.0) {
         _activeMode = ComicDragMode.rotate;
         return;
       }
-      if (hit.isCorner) {
+      if ((localPos - t.topLeftPos).distance <= 14.0 ||
+          (localPos - t.topRightPos).distance <= 14.0 ||
+          (localPos - t.bottomLeftPos).distance <= 14.0 ||
+          (localPos - t.bottomRightPos).distance <= 14.0) {
         _activeMode = ComicDragMode.scale;
         _initialDist = math.max(10.0, (localPos - t.center).distance);
         _initialScale = widget.controller.selectedSfx?.scale ?? 1.0;
@@ -76,21 +71,23 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
         _initialH = t.halfH * 2;
         return;
       }
-      if (hit.isEdge) {
-        _activeMode = switch (hit) {
-          ComicHandleType.edgeTop => ComicDragMode.resizeTop,
-          ComicHandleType.edgeBottom => ComicDragMode.resizeBottom,
-          ComicHandleType.edgeLeft => ComicDragMode.resizeLeft,
-          ComicHandleType.edgeRight => ComicDragMode.resizeRight,
-          _ => ComicDragMode.none,
-        };
-        _initialW = t.halfW * 2;
-        _initialH = t.halfH * 2;
-        return;
+      if (widget.controller.selectedPanel != null) {
+        final hit = t.hitTest(localPos, handleRadius: 18.0);
+        if (hit.isEdge) {
+          _activeMode = switch (hit) {
+            ComicHandleType.edgeTop => ComicDragMode.resizeTop,
+            ComicHandleType.edgeBottom => ComicDragMode.resizeBottom,
+            ComicHandleType.edgeLeft => ComicDragMode.resizeLeft,
+            ComicHandleType.edgeRight => ComicDragMode.resizeRight,
+            _ => ComicDragMode.none,
+          };
+          _initialW = t.halfW * 2;
+          _initialH = t.halfH * 2;
+          return;
+        }
       }
     }
 
-    // Prioridad de toques directos: Globos > SFX > Cuerpo de elemento seleccionado > Viñeta de fondo
     final b = ComicTransformResolver.findTappedBubble(widget.controller, localPos, pageSize);
     if (b != null) {
       widget.controller.selectBubble(b.id);
@@ -107,7 +104,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
       return;
     }
 
-    if (t != null && t.hitTest(localPos) == ComicHandleType.body) {
+    if (t != null && t.containsPoint(localPos)) {
       _activeMode = ComicDragMode.move;
       return;
     }
@@ -132,21 +129,16 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
       widget.controller.recordHistory();
       return;
     }
-    if (_activeMode != ComicDragMode.none) return widget.controller.recordHistory();
-    _handlePanDown(localPos, pageSize);
-    if (_activeMode != ComicDragMode.none) return widget.controller.recordHistory();
-    widget.controller.deselectAll();
-    widget.onDeselect?.call();
+    if (_activeMode == ComicDragMode.none) _handlePanDown(localPos, pageSize);
+    if (_activeMode != ComicDragMode.none) widget.controller.recordHistory();
   }
 
   void _handlePanUpdate(DragUpdateDetails details, Size pageSize) {
     if (widget.controller.interactionMode == ComicInteractionMode.drawPanel) {
-      setState(() => _drawCurrent = details.localPosition);
-      return;
+      return setState(() => _drawCurrent = details.localPosition);
     }
     if (widget.controller.interactionMode == ComicInteractionMode.slicePanel) {
-      setState(() => _sliceCurrent = details.localPosition);
-      return;
+      return setState(() => _sliceCurrent = details.localPosition);
     }
     if (_activeMode == ComicDragMode.frameContent) {
       return ComicEditorGestureHelper.applyFramePan(controller: widget.controller, details: details);
@@ -172,9 +164,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
       setState(() {});
     } else if (_activeMode == ComicDragMode.resizeTop || _activeMode == ComicDragMode.resizeBottom ||
                _activeMode == ComicDragMode.resizeLeft || _activeMode == ComicDragMode.resizeRight) {
-      if (c.selectedBubble != null) {
-        ComicEditorGestureHelper.applyBubbleEdgeResize(controller: c, mode: _activeMode, details: details, bubble: c.selectedBubble!);
-      } else if (c.selectedPanel != null) {
+      if (c.selectedPanel != null) {
         ComicEditorGestureHelper.applyEdgeResize(controller: c, mode: _activeMode, details: details, pageSize: pageSize, panel: c.selectedPanel!);
       }
     }
@@ -189,10 +179,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
       ComicEditorGestureHelper.finishSlicePanel(controller: widget.controller, start: _sliceStart, current: _sliceCurrent, pageSize: pageSize);
       return setState(() { _sliceStart = _sliceCurrent = null; _activeMode = ComicDragMode.none; _activeGuides = const []; });
     }
-    setState(() {
-      _activeMode = ComicDragMode.none;
-      _activeGuides = const [];
-    });
+    setState(() { _activeMode = ComicDragMode.none; _activeGuides = const []; });
   }
 
   bool _selectElementAt(Offset localPos, Size pageSize) {
@@ -206,18 +193,18 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
   }
 
   void _handlePageTap(Offset localPos, Size pageSize) {
-    if (widget.isImmersive) {
-      widget.onExitImmersive?.call();
-      return;
+    if (widget.isImmersive) return widget.onExitImmersive?.call();
+    if (!_selectElementAt(localPos, pageSize)) {
+      widget.controller.deselectAll();
+      widget.onDeselect?.call();
     }
-    if (!_selectElementAt(localPos, pageSize)) { widget.controller.deselectAll(); widget.onDeselect?.call(); }
   }
 
   void _handleDoubleTap(Offset localPos, Size pageSize) {
     final sfx = ComicTransformResolver.findTappedSfx(widget.controller, localPos, pageSize);
-    if (sfx != null) { widget.controller.selectSfx(sfx.id); widget.onSfxDoubleTap?.call(sfx); return; }
+    if (sfx != null) return widget.onSfxDoubleTap?.call(sfx);
     final b = ComicTransformResolver.findTappedBubble(widget.controller, localPos, pageSize);
-    if (b != null) { widget.controller.selectBubble(b.id); widget.onBubbleDoubleTap?.call(b); }
+    if (b != null) widget.onBubbleDoubleTap?.call(b);
   }
 
   @override
@@ -247,19 +234,23 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
                     : null,
               };
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            if (widget.isImmersive) return widget.onExitImmersive?.call();
-            widget.controller.deselectAll();
-            widget.onDeselect?.call();
-          },
-          child: Center(
-            child: InteractiveViewer(
-              transformationController: _transformController,
-              minScale: 0.8,
-              maxScale: 3.5,
-              panEnabled: false,
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (widget.isImmersive) {
+                    widget.onExitImmersive?.call();
+                  } else {
+                    widget.controller.deselectAll();
+                    widget.onDeselect?.call();
+                  }
+                },
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Center(
               child: Container(
                 width: pageSize.width,
                 height: pageSize.height,
@@ -290,7 +281,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
                 ),
               ),
             ),
-          ),
+          ],
         );
       },
     );

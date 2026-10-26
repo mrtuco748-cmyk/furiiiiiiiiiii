@@ -54,7 +54,6 @@ void main() {
       final initialW = bubble.width;
       final initialH = bubble.height;
 
-      // Expandir ancho hacia la derecha
       ComicEditorGestureHelper.applyBubbleEdgeResize(
         controller: controller,
         mode: ComicDragMode.resizeRight,
@@ -67,7 +66,6 @@ void main() {
 
       expect(controller.selectedBubble!.width, greaterThan(initialW));
 
-      // Expandir alto hacia abajo
       ComicEditorGestureHelper.applyBubbleEdgeResize(
         controller: controller,
         mode: ComicDragMode.resizeBottom,
@@ -124,6 +122,83 @@ void main() {
       expect(controller.selectedBubbleId, isNotNull);
       expect(controller.selectedBubble!.x, greaterThan(initialX));
       expect(controller.selectedBubble!.y, greaterThan(initialY));
+    });
+
+    testWidgets('Dragging an already selected bubble moves it smoothly and does not deselect', (tester) async {
+      final controller = ComicController(blankPage: true);
+      controller.addBubble(
+        text: 'Already Selected',
+        type: ComicBubbleType.mangaOval,
+        x: 0.50,
+        y: 0.50,
+      );
+      final bubbleId = controller.selectedBubbleId!;
+      expect(bubbleId, isNotNull);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ComicPageEditorWidget(
+              controller: controller,
+              onPanelTap: (_) {},
+              onBubbleTap: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final editorFinder = find.byType(ComicPageEditorWidget);
+      final center = tester.getCenter(editorFinder);
+      final initialX = controller.selectedBubble!.x;
+      final initialY = controller.selectedBubble!.y;
+
+      final gesture = await tester.startGesture(center);
+      await tester.pump();
+      await gesture.moveBy(const Offset(35, 25));
+      await tester.pump();
+      await gesture.moveBy(const Offset(35, 25));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // Debe seguir seleccionado y haberse desplazado
+      expect(controller.selectedBubbleId, equals(bubbleId));
+      expect(controller.selectedBubble!.x, greaterThan(initialX));
+      expect(controller.selectedBubble!.y, greaterThan(initialY));
+    });
+
+    testWidgets('Tapping an already selected bubble keeps it selected', (tester) async {
+      final controller = ComicController(blankPage: true);
+      controller.addBubble(
+        text: 'Tap Keep Selected',
+        type: ComicBubbleType.mangaOval,
+        x: 0.50,
+        y: 0.50,
+      );
+      final bubbleId = controller.selectedBubbleId!;
+      expect(bubbleId, isNotNull);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ComicPageEditorWidget(
+              controller: controller,
+              onPanelTap: (_) {},
+              onBubbleTap: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final editorFinder = find.byType(ComicPageEditorWidget);
+      final center = tester.getCenter(editorFinder);
+
+      await tester.tapAt(center);
+      await tester.pumpAndSettle();
+
+      expect(controller.selectedBubbleId, equals(bubbleId));
     });
 
     testWidgets('Bubble inside a panel can be modified on 2nd interaction even if panel was selected', (tester) async {

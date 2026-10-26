@@ -1,5 +1,37 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - BUGFIX - Movimiento Fluido de Globos de Diálogo en Cómic: Erradicación de Deselección Accidental y Optimización Táctil Directa
+
+**Resumen**:
+- **Solución al problema crítico de globos que no se podían mover y se deseleccionaban al presionar**:
+  - Se eliminó el `InteractiveViewer` que envolvía el lienzo de páginas de cómic. Al tener `scaleEnabled: true` por defecto, su `ScaleGestureRecognizer` competía en la arena de gestos de Flutter con el `PanGestureRecognizer` del editor hijo, robando los eventos táctiles de 1 dedo y cancelando el arrastre de globos y elementos.
+  - Se eliminó la llamada destructiva a `deselectAll()` en `_handlePanStart`. Un gesto de arrastre jamás debe deseleccionar elementos si el modo de interacción inicial no fue reconocido en el primer fotograma.
+  - Se reestructuró la jerarquía de gestos en `ComicPageEditorWidget`: en lugar de envolver todo el editor en un `GestureDetector(onTap: deselectAll)`, se implementó un `Stack` de dos niveles donde el detector de fondo (`Positioned.fill`) reside detrás de la página centrada (Capa 0). De esta forma, cualquier pulsación dentro de la página es absorbida por la hoja (Capa 1) y nunca llega al detector de fondo, deseleccionando únicamente cuando se toca fuera de la hoja.
+  - En `_handlePanDown`, se acotaron los mangos de rotación (lollipop superior, radio 18 px) y mangos de escala de esquinas (radio 14 px). El toque directo sobre el cuerpo del globo y su cola (`ComicTransformResolver.findTappedBubble` y `t.containsPoint`) tiene máxima prioridad, asignando de inmediato `_activeMode = ComicDragMode.move` tanto si el globo estaba previamente seleccionado como si no.
+  - Se eliminó la ambigüedad de mangos de borde (`isEdge`) en globos de diálogo (que tienen dimensiones reducidas), reservando el cambio de dimensiones por borde exclusivamente a las viñetas.
+- **Calidad y Verificación**:
+  - Creados tests de regresión en `test/screens/herramientas/comic_bubble_move_test.dart`:
+    - Arrastre táctil de globo no seleccionado lo selecciona y desplaza inmediatamente con los dedos.
+    - Arrastre táctil de globo ya seleccionado lo mueve con fluidez y preserva la selección intacta.
+    - Toque simple en globo ya seleccionado mantiene la selección sin deseleccionar.
+    - Manipulación de globo ubicado encima de viñeta responde prioritariamente al globo.
+  - 149/149 tests de herramientas creativas pasando con éxito.
+  - `flutter analyze lib/screens/herramientas/comic`: 0 errores, 0 warnings.
+  - `comic_page_editor_widget.dart` cumple estrictamente con el límite de 300 líneas (289 líneas).
+
+**Lecciones aprendidas**:
+- Nunca envolver un lienzo interactivo con arrastres táctiles de 1 dedo dentro de un `InteractiveViewer` a menos que se use una combinación personalizada de reconocedores de gestos; `ScaleGestureRecognizer` se apodera de los gestos de pan de 1 dedo y los cancela al cruzar el slop de movimiento.
+- Para deseleccionar al tocar fuera de un área delimitada, usar siempre un `Stack` con una capa inferior `Positioned.fill` en vez de un `GestureDetector` padre que envuelva a los hijos, evitando que `onTap` del padre capture los eventos de los widgets hijos.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `test/screens/herramientas/comic_bubble_move_test.dart`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/historial.md`
+
+
+
 ## [2026-10-26] - BUGFIX - Resiliencia de Pinterest en Android: Eliminación de Fallback Erróneo en Móvil, Hybrid Composition y Supresión de Bucle por Renderer Gone
 
 **Resumen**:

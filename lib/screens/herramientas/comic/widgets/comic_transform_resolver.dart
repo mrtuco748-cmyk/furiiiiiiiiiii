@@ -74,7 +74,7 @@ class ComicTransformResolver {
       final sinAngle = math.sin(-b.rotation);
       final localX = diff.dx * cosAngle - diff.dy * sinAngle;
       final localY = diff.dx * sinAngle + diff.dy * cosAngle;
-      final allowance = b.tailDirection != ComicTailDirection.none ? 34.0 : 22.0;
+      final allowance = b.tailDirection != ComicTailDirection.none ? 42.0 : 30.0;
       if (localX.abs() <= halfW + allowance && localY.abs() <= halfH + allowance) {
         return b;
       }

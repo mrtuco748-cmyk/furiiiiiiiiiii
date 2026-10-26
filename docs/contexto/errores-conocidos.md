@@ -8,7 +8,23 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
-### ~~CRÍTICA - Pinterest saltando a pantalla de escritorio ("En celular entra en Pinterest...") en bucle al interactuar en Android~~ ✅ RESUELTO 2026-10-26
+### ~~CRÍTICA - Globos de texto en cómic se deseleccionaban y no se podían mover con los dedos~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`, `comic_transform_resolver.dart`
+- **Qué pasaba**: Al presionar o arrastrar con el dedo un globo de texto en el lienzo de cómic, en vez de moverse se deseleccionaba inmediatamente y se quedaba fijo sin responder al tacto.
+- **Causa raíz**:
+  1. **Conflicto en la arena de gestos con `InteractiveViewer`**: El lienzo estaba envuelto en un `InteractiveViewer` con `scaleEnabled: true` por defecto. En Flutter, `ScaleGestureRecognizer` intercepta los arrastres de 1 dedo y cancela el `PanGestureRecognizer` del editor hijo, impidiendo el movimiento.
+  2. **Deselección en `onTap` del `GestureDetector` padre**: Un `GestureDetector` exterior envolvía toda la vista con `onTap: deselectAll()`. Como el detector interno tenía `onTapUp` pero no `onTap`, al tocar o soltar el dedo el detector exterior ejecutaba inmediatamente `deselectAll()`, eliminando la selección al instante.
+  3. **Llamada destructiva a `deselectAll()` en `_handlePanStart`**: Si el modo de arrastre no coincidía inmediatamente en el primer frame de pan, `_handlePanStart` llamaba a `widget.controller.deselectAll()`, matando la selección antes de que pudiera empezar el movimiento.
+  4. **Solapamiento de mangos de redimensionamiento de borde**: Para globos seleccionados, `t.hitTest` evaluaba `isEdge` con radio 24px, lo que en un globo típico de 160x90 cubría prácticamente todo el cuerpo interior, interpretando el toque como estiramiento de borde en vez de arrastre de movimiento.
+- **Fix**:
+  1. Se eliminó `InteractiveViewer` innecesario del editor de páginas, eliminando toda competencia de gestos y devolviendo la respuesta táctil 100% nativa y fluida a los dedos.
+  2. Se desacopló la deselección exterior: se implementó un `Stack` donde el detector de deselección vive en la Capa 0 (`Positioned.fill`) DETRÁS de la hoja de cómic (Capa 1). Al tocar la hoja, el evento es capturado por la hoja y jamás llega al fondo exterior.
+  3. Se eliminó `deselectAll()` de `_handlePanStart`. Arrastrar con el dedo nunca deselecciona elementos.
+  4. En `_handlePanDown`, los mangos de rotación (lollipop superior, radio 18) y de escala de esquinas (radio 14) están estrictamente localizados, y cualquier toque sobre el globo se asigna inequívocamente a `ComicDragMode.move`.
+  5. Se verificó con tests de widgets que arrastrar o pulsar globos ya seleccionados o no seleccionados los mueve con los dedos y mantiene la selección intacta.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-26
+
+
 - **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`, `lib/screens/galeria/helpers/pinterest_controller_factory.dart`
 - **Qué pasaba**: Al interactuar con la página de Pinterest en celular, después de unos momentos la pantalla se salía a la vista de respaldo de PC ("En celular entra en Pinterest, en PC se abre..."), y cada botón o toque posterior volvía a sacarlo a esa misma pantalla impidiendo navegar.
 - **Causa raíz**:
