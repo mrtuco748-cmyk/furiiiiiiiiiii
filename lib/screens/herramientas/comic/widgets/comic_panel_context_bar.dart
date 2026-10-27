@@ -54,6 +54,14 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
     _dy = widget.panel.offsetY;
   }
 
+  @override
+  void didUpdateWidget(covariant ComicPanelContextBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.panel.scale != oldWidget.panel.scale) _scale = widget.panel.scale;
+    if (widget.panel.offsetX != oldWidget.panel.offsetX) _dx = widget.panel.offsetX;
+    if (widget.panel.offsetY != oldWidget.panel.offsetY) _dy = widget.panel.offsetY;
+  }
+
   void _applyTransform() {
     widget.onTransform(_scale, _dx, _dy);
   }
@@ -135,7 +143,7 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildSliderRow(Icons.aspect_ratio, const Color(0xFFFF00FF), _scale.clamp(0.5, 3.0), 0.5, 3.0, (v) {
+                _buildSliderRow(Icons.aspect_ratio, const Color(0xFFFF00FF), _scale.clamp(0.2, 5.0), 0.2, 5.0, (v) {
                   setState(() => _scale = v);
                   _applyTransform();
                 }, '${(_scale * 100).toInt()}%'),
@@ -232,17 +240,19 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
                 // Si tiene dibujo, encuadre y limpiar
                 if (hasDrawing) ...[
                   _buildIconButton(
-                    bg: const Color(0xFFFF00FF),
-                    child: const Icon(Icons.crop, color: Colors.white, size: 20),
+                    bg: _showTransformControls ? const Color(0xFFFF00FF) : const Color(0xFF282828),
+                    child: Icon(
+                      Icons.crop,
+                      color: _showTransformControls ? Colors.black : const Color(0xFFFF00FF),
+                      size: 20,
+                    ),
                     onTap: () {
-                      if (widget.onFrameContent != null) {
-                        widget.onFrameContent!();
-                      } else {
-                        setState(() {
-                          _showTransformControls = !_showTransformControls;
-                          _showBorderControls = false;
-                        });
-                      }
+                      final willOpen = !_showTransformControls;
+                      setState(() {
+                        _showTransformControls = willOpen;
+                        _showBorderControls = false;
+                      });
+                      widget.onFrameContent?.call();
                     },
                   ),
                   const SizedBox(height: 6),

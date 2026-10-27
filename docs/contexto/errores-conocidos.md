@@ -8,6 +8,40 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
+### ~~ALTA - Reset de grosor al intercalar entre lápiz/pinceles y borrador en Taller de Dibujo~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- **Qué pasaba**: Al configurar un grosor específico para el lápiz (ej. 14 px) y luego cambiar al borrador para corregir un trazo (ej. 45 px), al volver al lápiz o al borrador el grosor se reseteaba incondicionalmente a los valores predeterminados de fábrica de cada herramienta (`tool.defaultWidth`).
+- **Causa raíz**: En `DrawingController.selectTool`, cada llamada ejecutaba de forma dura `_strokeWidth = tool.defaultWidth;` y `_strokeOpacity = tool.defaultOpacity;` descartando cualquier ajuste previo del usuario.
+- **Fix**: Se introdujeron mapas de memoria persistente por herramienta `_toolWidths` y `_toolOpacities`. Al ajustar `setStrokeWidth` o `setOpacity`, se almacena el valor para la herramienta activa. Al conmutar con `selectTool` o `toggleTool`, se restaura el valor memorizado `_toolWidths[tool] ?? tool.defaultWidth`, preservando intactos los grosores individuales entre lápiz, borrador y pinceles.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+
+### ~~ALTA - Los nombres de cómics y dibujos no se guardaban o se revertían al salir~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`, `lib/screens/herramientas/dibujo/dibujo_screen.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`, `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`, `lib/screens/herramientas/comic/comic_editor_screen.dart`, `lib/screens/herramientas/comic/comic_library_screen.dart`, `lib/screens/herramientas/comic/widgets/comic_chapter_card.dart`
+- **Qué pasaba**: Al editar el nombre de un dibujo o de un cómic en la barra superior o en los modales, el nombre no se guardaba al salir a la biblioteca o galería previa. Además, en los cómics no existía opción para renombrar un capítulo directamente desde la biblioteca.
+- **Causa raíz**:
+  1. `DrawingTopBar` y `ComicTopBar` invocaban `controller.setTitle(newTitle)` en memoria pero no disparaban un guardado atómico asíncrono inmediato en disco.
+  2. Al pulsar el botón de atrás o el gesto de retroceso del sistema Android, `Navigator.pop()` se ejecutaba antes de que el temporizador de autoguardado (1500 ms) se disparara. En `dispose()`, el temporizador era cancelado y cualquier escritura pendiente quedaba inconclusa mientras la pantalla anterior recargaba (`_load()`) el archivo antiguo de disco.
+  3. En `DrawingController`, `toProject()` descartaba `thumbnailBase64` al reconstruir el proyecto en memoria, provocando que al renombrar o salir sin re-exportar PNG la miniatura en disco se sobrescribiera con `null`.
+- **Fix**:
+  1. En `DrawingTopBar` y `ComicTopBar`, el diálogo de renombrado guarda de inmediato en disco con `saveProject` tras actualizar el título.
+  2. En `DibujoScreen` y `ComicEditorScreen`, se implementó `PopScope(canPop: false)` y `_handleBack()` que cancelan el timer transitorio y aguardan explícitamente (`await _performAutoSave()`) antes de ejecutar `Navigator.pop()`.
+  3. `DrawingController` memoriza y preserva `_thumbnailBase64` en `toProject()`.
+  4. Se incorporó botón de renombrado directo (`Icons.edit_outlined`) y diálogo de renombre en `ComicChapterCard` y `ComicLibraryScreen`.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+
+### ~~MEDIA - Ausencia de previsualización de la primera página en tarjetas de cómic~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/comic/widgets/comic_page_thumbnail.dart`, `lib/screens/herramientas/comic/widgets/comic_chapter_card.dart`, `lib/screens/herramientas/comic/widgets/comic_projects_sheet.dart`, `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- **Qué pasaba**: En la biblioteca de cómic y en el explorador de proyectos, las tarjetas mostraban únicamente un icono genérico gris (`Icons.menu_book_rounded` o `Icons.auto_stories`) sin ninguna previsualización visual de las viñetas o páginas dibujadas.
+- **Causa raíz**: `ComicChapterCard` requería `project.coverImageBase64` precalculado. Si era nulo, caía en un placeholder estático en lugar de proyectar vectorialmente la primera página del cómic.
+- **Fix**:
+  1. Se creó el widget dedicado `ComicPageThumbnail`: si existe portada PNG la despliega inmediatamente; de lo contrario, renderiza vectorialmente la primera página (`project.pages.first`) con `CustomPaint(painter: ComicPagePainter(page: firstPage))` sobre el fondo de hoja, decodificando asíncronamente cualquier dibujo incrustado con `ComicImageCache`.
+  2. En `ComicEditorScreen._performAutoSave()`, al guardar el proyecto se renderiza y actualiza automáticamente la portada PNG con `ComicRenderExporter.exportPageToPng`.
+  3. Se eliminaron bordes perimetrales en `ComicChapterCard` conforme a la regla brutalista `docs/skill_visual.md`.
+- **Prioridad**: ~~MEDIA~~ → RESUELTO 2026-10-26
+
+
 ### ~~ALTA - Fallos e inconsistencias en la función Rellenar (Balde de pintura) en Taller de Dibujo~~ ✅ RESUELTO 2026-10-26
 - **Dónde**: `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`, `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`, `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
 - **Qué pasaba**: La herramienta de rellenar (balde de pintura) se bugueaba frecuentemente en varios escenarios:

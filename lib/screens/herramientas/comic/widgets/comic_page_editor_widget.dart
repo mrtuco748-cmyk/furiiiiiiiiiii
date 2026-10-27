@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../controllers/comic_controller.dart';
 import '../models/comic_alignment_guide.dart';
@@ -45,7 +46,7 @@ class ComicPageEditorWidget extends StatefulWidget {
 class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
   ComicDragMode _activeMode = ComicDragMode.none;
   List<ComicAlignmentGuide> _activeGuides = const [];
-  double _initialDist = 1.0, _initialScale = 1.0, _initialW = 100.0, _initialH = 100.0;
+  double _initialDist = 1.0, _initialScale = 1.0, _initialW = 100.0, _initialH = 100.0, _frameStartScale = 1.0;
   Offset? _drawStart, _drawCurrent, _sliceStart, _sliceCurrent;
 
   ComicElementTransform? _getActiveTransform(Size pageSize) =>
@@ -56,19 +57,13 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
 
     final t = _getActiveTransform(pageSize);
     if (t != null) {
-      if ((localPos - t.rotationHandlePos).distance <= 18.0) {
-        _activeMode = ComicDragMode.rotate;
-        return;
-      }
-      if ((localPos - t.topLeftPos).distance <= 14.0 ||
-          (localPos - t.topRightPos).distance <= 14.0 ||
-          (localPos - t.bottomLeftPos).distance <= 14.0 ||
-          (localPos - t.bottomRightPos).distance <= 14.0) {
+      if ((localPos - t.rotationHandlePos).distance <= 18.0) { _activeMode = ComicDragMode.rotate; return; }
+      if ((localPos - t.topLeftPos).distance <= 14.0 || (localPos - t.topRightPos).distance <= 14.0 ||
+          (localPos - t.bottomLeftPos).distance <= 14.0 || (localPos - t.bottomRightPos).distance <= 14.0) {
         _activeMode = ComicDragMode.scale;
         _initialDist = math.max(10.0, (localPos - t.center).distance);
         _initialScale = widget.controller.selectedSfx?.scale ?? 1.0;
-        _initialW = t.halfW * 2;
-        _initialH = t.halfH * 2;
+        _initialW = t.halfW * 2; _initialH = t.halfH * 2;
         return;
       }
       if (widget.controller.selectedPanel != null) {
@@ -81,8 +76,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
             ComicHandleType.edgeRight => ComicDragMode.resizeRight,
             _ => ComicDragMode.none,
           };
-          _initialW = t.halfW * 2;
-          _initialH = t.halfH * 2;
+          _initialW = t.halfW * 2; _initialH = t.halfH * 2;
           return;
         }
       }
@@ -90,25 +84,17 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
 
     final b = ComicTransformResolver.findTappedBubble(widget.controller, localPos, pageSize);
     if (b != null) {
-      if (widget.controller.selectedBubbleId != b.id) {
-        widget.controller.selectBubble(b.id);
-      }
-      _activeMode = ComicDragMode.move;
-      return;
+      if (widget.controller.selectedBubbleId != b.id) widget.controller.selectBubble(b.id);
+      _activeMode = ComicDragMode.move; return;
     }
 
     final sfx = ComicTransformResolver.findTappedSfx(widget.controller, localPos, pageSize);
     if (sfx != null) {
-      widget.controller.selectSfx(sfx.id);
-      widget.onSfxTap?.call(sfx);
-      _activeMode = ComicDragMode.move;
-      return;
+      widget.controller.selectSfx(sfx.id); widget.onSfxTap?.call(sfx);
+      _activeMode = ComicDragMode.move; return;
     }
 
-    if (t != null && t.containsPoint(localPos)) {
-      _activeMode = ComicDragMode.move;
-      return;
-    }
+    if (t != null && t.containsPoint(localPos)) { _activeMode = ComicDragMode.move; return; }
 
     final p = ComicTransformResolver.findTappedPanel(widget.controller, localPos, pageSize);
     if (p != null) {
@@ -125,11 +111,6 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
     final mode = widget.controller.interactionMode;
     if (mode == ComicInteractionMode.drawPanel) return setState(() { _drawStart = _drawCurrent = localPos; });
     if (mode == ComicInteractionMode.slicePanel) return setState(() { _sliceStart = _sliceCurrent = localPos; });
-    if (mode == ComicInteractionMode.frameContent) {
-      _activeMode = ComicDragMode.frameContent;
-      widget.controller.recordHistory();
-      return;
-    }
     if (_activeMode == ComicDragMode.none) _handlePanDown(localPos, pageSize);
     if (_activeMode != ComicDragMode.none) widget.controller.recordHistory();
   }
@@ -140,9 +121,6 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
     }
     if (widget.controller.interactionMode == ComicInteractionMode.slicePanel) {
       return setState(() => _sliceCurrent = details.localPosition);
-    }
-    if (_activeMode == ComicDragMode.frameContent) {
-      return ComicEditorGestureHelper.applyFramePan(controller: widget.controller, details: details);
     }
 
     final c = widget.controller;
@@ -208,6 +186,32 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
     if (b != null) widget.onBubbleDoubleTap?.call(b);
   }
 
+  Widget _buildCanvasGestures(Size pageSize, Widget child) {
+    if (widget.controller.interactionMode == ComicInteractionMode.frameContent) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque, onTap: () {},
+        onScaleStart: (_) { _frameStartScale = widget.controller.selectedPanel?.scale ?? 1.0; widget.controller.recordHistory(); },
+        onScaleUpdate: (d) {
+          final p = widget.controller.selectedPanel;
+          if (p == null) return;
+          final newScale = d.scale != 1.0 ? (_frameStartScale * d.scale).clamp(0.2, 5.0) : p.scale;
+          widget.controller.setPanelTransform(p.id, scale: newScale, dx: p.offsetX + d.focalPointDelta.dx, dy: p.offsetY + d.focalPointDelta.dy);
+        },
+        child: child,
+      );
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque, onTap: () {},
+      onPanDown: (d) => _handlePanDown(d.localPosition, pageSize),
+      onTapUp: (d) => _handlePageTap(d.localPosition, pageSize),
+      onPanStart: (d) => _handlePanStart(d.localPosition, pageSize),
+      onPanUpdate: (d) => _handlePanUpdate(d, pageSize),
+      onPanEnd: (_) => _handlePanEnd(pageSize),
+      onDoubleTapDown: (d) => _handleDoubleTap(d.localPosition, pageSize),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -222,18 +226,14 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
         final pageSize = Size(targetWidth, targetHeight);
         final activeTransform = _getActiveTransform(pageSize);
 
-        final foregroundPainter = widget.isImmersive
-            ? null
-            : switch (widget.controller.interactionMode) {
-                ComicInteractionMode.drawPanel when _drawStart != null && _drawCurrent != null =>
-                  ComicDrawGuidePainter(drawRect: Rect.fromPoints(_drawStart!, _drawCurrent!)),
-                ComicInteractionMode.slicePanel when _sliceStart != null && _sliceCurrent != null =>
-                  ComicDrawGuidePainter(sliceStart: _sliceStart, sliceEnd: _sliceCurrent),
-                ComicInteractionMode.frameContent => null,
-                _ => activeTransform != null
-                    ? ComicSelectionBoxPainter(transform: activeTransform, guides: _activeGuides)
-                    : null,
-              };
+        final foregroundPainter = widget.isImmersive ? null : switch (widget.controller.interactionMode) {
+          ComicInteractionMode.drawPanel when _drawStart != null && _drawCurrent != null =>
+            ComicDrawGuidePainter(drawRect: Rect.fromPoints(_drawStart!, _drawCurrent!)),
+          ComicInteractionMode.slicePanel when _sliceStart != null && _sliceCurrent != null =>
+            ComicDrawGuidePainter(sliceStart: _sliceStart, sliceEnd: _sliceCurrent),
+          ComicInteractionMode.frameContent => null,
+          _ => activeTransform != null ? ComicSelectionBoxPainter(transform: activeTransform, guides: _activeGuides) : null,
+        };
 
         return Stack(
           children: [
@@ -260,25 +260,29 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {},
-                  onPanDown: (d) => _handlePanDown(d.localPosition, pageSize),
-                  onTapUp: (d) => _handlePageTap(d.localPosition, pageSize),
-                  onPanStart: (d) => _handlePanStart(d.localPosition, pageSize),
-                  onPanUpdate: (d) => _handlePanUpdate(d, pageSize),
-                  onPanEnd: (_) => _handlePanEnd(pageSize),
-                  onDoubleTapDown: (d) => _handleDoubleTap(d.localPosition, pageSize),
-                  child: CustomPaint(
-                    size: pageSize,
-                    painter: ComicPagePainter(
-                      page: widget.controller.activePage,
-                      panelImages: widget.controller.panelImages,
-                      selectedPanelId: widget.controller.selectedPanelId,
-                      selectedBubbleId: widget.controller.selectedBubbleId,
-                      selectedSfxId: widget.controller.selectedSfxId,
+                child: Listener(
+                  onPointerSignal: (event) {
+                    if (event is PointerScrollEvent && widget.controller.interactionMode == ComicInteractionMode.frameContent) {
+                      final p = widget.controller.selectedPanel;
+                      if (p != null) {
+                        final delta = event.scrollDelta.dy < 0 ? 0.15 : -0.15;
+                        widget.controller.setPanelTransform(p.id, scale: (p.scale + delta).clamp(0.2, 5.0));
+                      }
+                    }
+                  },
+                  child: _buildCanvasGestures(
+                    pageSize,
+                    CustomPaint(
+                      size: pageSize,
+                      painter: ComicPagePainter(
+                        page: widget.controller.activePage,
+                        panelImages: widget.controller.panelImages,
+                        selectedPanelId: widget.controller.selectedPanelId,
+                        selectedBubbleId: widget.controller.selectedBubbleId,
+                        selectedSfxId: widget.controller.selectedSfxId,
+                      ),
+                      foregroundPainter: foregroundPainter,
                     ),
-                    foregroundPainter: foregroundPainter,
                   ),
                 ),
               ),

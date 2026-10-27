@@ -1,5 +1,85 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - FEATURE - Escalado y Agrandamiento Dinámico del Lienzo dentro de Viñetas al Encuadrar en Cómic Studio
+
+**Resumen**:
+- **Escalado y Zoom de Dibujo / Lienzo al Encuadrar (`panel.scale`)**:
+  - Se habilitó la capacidad de agrandar ("zoom in") y achicar ("zoom out") el lienzo o dibujo incrustado dentro de una viñeta (rango extendido de 0.2x a 5.0x / 20% a 500%) durante el modo de encuadre (`ComicInteractionMode.frameContent`).
+- **Barra Táctil Superior de Encuadre (`ComicModeIndicatorBanner`)**:
+  - Al activar el modo encuadre, el banner superior se transforma en una barra de control táctil completa con:
+    - Botón `[-]` (reduce zoom en pasos de 15%).
+    - Chip indicador interactivo `${(scale * 100).round()}%` (al pulsarlo restablece el tamaño a 100%).
+    - Botón `[+]` (agranda el lienzo en pasos de 15%).
+    - Botón `[Centrar]` (`Icons.filter_center_focus`, restablece desplazamiento dx/dy a 0).
+    - Botón `[✓ Listo]` (cierra el modo encuadre y regresa a normal).
+  - Envuelta internamente en `ListenableBuilder` para reactividad instantánea e independiente.
+- **Dock Lateral y Slider Flyout (`ComicPanelContextBar`)**:
+  - El botón de encuadre (`Icons.crop`) despliega de inmediato el panel flyout a la izquierda con slider de zoom (`0.2` a `5.0`), iluminando el botón con fondo fucsia para confirmar visualmente el modo activo.
+  - Incorporado `didUpdateWidget` en `_ComicPanelContextBarState` para sincronización bidireccional continua con gestos y botones.
+- **Pellizco Multitáctil y Rueda de Ratón (`ComicPageEditorWidget`)**:
+  - Implementado `_buildCanvasGestures` que conmuta dinámicamente a `onScaleStart` y `onScaleUpdate` durante el encuadre: con 1 dedo desplaza la imagen por la viñeta, y con 2 dedos (pellizco) escala y agranda el lienzo suavemente en tiempo real.
+  - Añadido `Listener(onPointerSignal)` para zoom con rueda de desplazamiento de ratón en Windows.
+- **Calidad y Verificación**:
+  - Creada suite `test/screens/herramientas/comic_framing_scale_test.dart` (3/3 tests pasando).
+  - 173/173 tests de herramientas ejecutados con 100% de éxito.
+  - `flutter analyze`: 0 advertencias, 0 errores.
+  - 100% de los archivos Dart en `lib/` cumplen con la regla de $\le 300$ líneas.
+
+**Lecciones aprendidas**:
+- En aplicaciones de ilustración y cómic, el encuadre debe permitir tanto ajuste de posición (pan) como de escala (zoom) mediante múltiples canales de interacción simultáneos: gestos directos de 2 dedos (pellizco), botones discretos táctiles de incremento (`+` / `-`) y slider continuo de precisión.
+- Conmutar el `GestureDetector` de canvas de forma contextual según el modo de interacción activo (`frameContent` vs `normal`) previene interferencias y colisiones con los detectores de drag de elementos hijos.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/widgets/comic_mode_indicator_banner.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `pubspec.yaml`
+- `test/screens/herramientas/comic_framing_scale_test.dart`
+- `docs/contexto/historial.md`
+
+## [2026-10-26] - BUGFIX / FEATURE - Preservación de Grosor Lápiz/Borrador, Previsualización de Primer Hoja en Cómics y Persistencia de Nombres de Proyectos
+
+**Resumen**:
+- **Preservación de Grosor y Opacidad al Intercalar Herramientas (`DrawingController`)**:
+  - Se eliminó el reset incondicional a valores por defecto (`tool.defaultWidth` y `tool.defaultOpacity`) al conmutar herramientas en `selectTool`.
+  - Se introdujo memoria asociativa persistente por tipo de herramienta (`_toolWidths` y `_toolOpacities`).
+  - Al ajustar el grosor o la opacidad mediante el dock lateral o el modal de pinceles, se memoriza el valor de la herramienta activa. Al alternar o intercalar entre lápiz/pluma y borrador (o entre cualquier otro pincel y borrador), cada uno conserva exactamente su grosor personalizado previo sin restablecerse a los valores de fábrica.
+- **Previsualización de la Primera Hoja en Cómics (`ComicPageThumbnail`, `ComicChapterCard`, `ComicProjectsSheet`)**:
+  - Creado el widget dedicado `ComicPageThumbnail`: si el proyecto cuenta con miniatura PNG (`coverImageBase64`) la despliega de inmediato; si es nula, proyecta vectorialmente la primera página (`pages.first`) con `CustomPaint(painter: ComicPagePainter)` decodificando asíncronamente viñetas y dibujos incrustados con `ComicImageCache`.
+  - `ComicChapterCard` y `ComicProjectsSheet` integrados con `ComicPageThumbnail`, eliminando placeholders estáticos e íconos mudos.
+  - Al guardar en `ComicEditorScreen._performAutoSave()`, se genera automáticamente un PNG de la primera hoja con `ComicRenderExporter.exportPageToPng` guardándolo en `coverImageBase64`.
+  - Eliminados bordes `Border.all` de `ComicChapterCard` conforme a la regla de diseño brutalista (`docs/skill_visual.md`).
+- **Persistencia Robusta de Nombres de Cómics y Dibujos**:
+  - `DrawingTopBar` y `ComicTopBar`: El diálogo de renombre guarda de inmediato en disco (`await saveProject`) tras invocar `setTitle`.
+  - En `DrawingController`: Se preserva `thumbnailBase64` en `toProject()`, evitando que renombrar o salir sobrescriba la miniatura en disco con `null`.
+  - En `DibujoScreen` y `ComicEditorScreen`: Implementado `PopScope(canPop: false)` y `_handleBack()`. Al presionar el botón de atrás de la barra superior o el gesto táctil del sistema, se cancela el timer diferido y se aguarda explícitamente (`await _performAutoSave()`) antes de ejecutar `Navigator.pop()`, eliminando condiciones de carrera con la recarga de lista (`_load()`) de la pantalla anterior.
+  - En `ComicChapterCard` y `ComicLibraryScreen`: Añadido botón de renombrado (`Icons.edit_outlined`) y diálogo interactivo para renombrar capítulos directamente desde la biblioteca.
+- **Calidad y Verificación**:
+  - Creada suite de pruebas unitarias y de widgets: `test/screens/herramientas/drawing_brush_thickness_and_comic_preview_test.dart` (7/7 tests pasando).
+  - Suite completa de herramientas creativas: **170/170 tests pasando (100% verde)**.
+  - `flutter analyze lib/screens/herramientas test/screens/herramientas`: **0 advertencias, 0 errores**.
+  - Regla estricta de 300 líneas: 100% de los archivos modificados y nuevos cumplen con $\le 300$ líneas.
+
+**Lecciones aprendidas**:
+- Nunca reiniciar el estado de configuración de trazo (`strokeWidth`, `opacity`) a constantes de fábrica en `selectTool` cuando el usuario conmuta entre dibujo y borrado; un mapa de cache por herramienta (`Map<Tool, double>`) permite retener el contexto de cada instrumento.
+- Al permitir edición de metadatos (como el título del proyecto) en pantallas secundarias, la persistencia en almacenamiento debe ser inmediata o bien interceptada por `PopScope` con `await` antes de que la pantalla anterior invoque su callback de recarga de disco.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_top_bar.dart`
+- `lib/screens/herramientas/dibujo/dibujo_screen.dart`
+- `lib/screens/herramientas/comic/controllers/comic_controller.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/comic_library_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_chapter_card.dart`
+- `lib/screens/herramientas/comic/widgets/comic_projects_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_thumbnail.dart`
+- `test/screens/herramientas/drawing_brush_thickness_and_comic_preview_test.dart`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/historial.md`
+
+
 ## [2026-10-26] - BUGFIX - Parche Integral del Motor de Relleno (Balde de Pintura) en Taller de Dibujo Digital
 
 **Resumen**:
