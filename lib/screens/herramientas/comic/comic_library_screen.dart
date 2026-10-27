@@ -60,10 +60,8 @@ class _ComicLibraryScreenState extends State<ComicLibraryScreen> {
           autofocus: true,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            hintText: 'Ej. Temporada 1, Manga, Tiras',
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: const Color(0xFF282828),
+            hintText: 'Ej. Temporada 1, Manga, Tiras', hintStyle: const TextStyle(color: Colors.white38),
+            filled: true, fillColor: const Color(0xFF282828),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
           ),
         ),
@@ -71,21 +69,50 @@ class _ComicLibraryScreenState extends State<ComicLibraryScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCELAR', style: TextStyle(color: Colors.white54))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFDE59), foregroundColor: Colors.black),
-            onPressed: () {
-              final val = ctrl.text.trim();
-              if (val.isNotEmpty) Navigator.pop(ctx, val);
-            },
+            onPressed: () { final v = ctrl.text.trim(); if (v.isNotEmpty) Navigator.pop(ctx, v); },
             child: const Text('CREAR', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
-
     if (name != null && name.isNotEmpty) {
       setState(() {
         if (!_folders.contains(name)) _folders.add(name);
         _selectedFolder = name;
       });
+    }
+  }
+
+  Future<void> _renameChapter(ComicProject proj) async {
+    final textController = TextEditingController(text: proj.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Renombrar Capítulo', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+          decoration: InputDecoration(
+            hintText: 'Título del capítulo', hintStyle: const TextStyle(color: Colors.white38),
+            filled: true, fillColor: const Color(0xFF282828),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancelar', style: TextStyle(color: Colors.white54))),
+          TextButton(
+            onPressed: () { final t = textController.text.trim(); if (t.isNotEmpty) Navigator.of(ctx).pop(t); },
+            child: const Text('Guardar', style: TextStyle(color: Color(0xFFFFDE59), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (newTitle != null && newTitle.isNotEmpty) {
+      await ComicStorageService.saveProject(proj.copyWith(title: newTitle));
+      _loadData();
     }
   }
 
@@ -251,6 +278,7 @@ class _ComicLibraryScreenState extends State<ComicLibraryScreen> {
         return ComicChapterCard(
           project: p,
           onTap: () => _openComic(p),
+          onRename: () => _renameChapter(p),
           onDelete: () async {
             await ComicStorageService.deleteProject(p.id);
             _loadData();

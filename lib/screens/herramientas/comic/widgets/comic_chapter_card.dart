@@ -1,23 +1,21 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/comic_project.dart';
+import 'comic_page_thumbnail.dart';
 
 /// Tarjeta visual para un capítulo de cómic en la biblioteca.
 class ComicChapterCard extends StatelessWidget {
   final ComicProject project;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback? onRename;
 
   const ComicChapterCard({
     super.key,
     required this.project,
     required this.onTap,
     required this.onDelete,
+    this.onRename,
   });
-
-  Widget _cardPlaceholder() {
-    return const Center(child: Icon(Icons.menu_book_rounded, color: Colors.white24, size: 40));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +25,6 @@ class ComicChapterCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF333333), width: 1.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -36,13 +33,7 @@ class ComicChapterCard extends StatelessWidget {
             Expanded(
               child: Container(
                 color: const Color(0xFF252525),
-                child: project.coverImageBase64 != null
-                    ? Image.memory(
-                        base64Decode(project.coverImageBase64!),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _cardPlaceholder(),
-                      )
-                    : _cardPlaceholder(),
+                child: ComicPageThumbnail(project: project),
               ),
             ),
             Padding(
@@ -72,7 +63,19 @@ class ComicChapterCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      GestureContextPill(onDelete: onDelete),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (onRename != null) ...[
+                            GestureDetector(
+                              onTap: onRename,
+                              child: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFFFFDE59)),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          GestureContextPill(onDelete: onDelete),
+                        ],
+                      ),
                     ],
                   ),
                 ],

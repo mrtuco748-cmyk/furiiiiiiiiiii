@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../controllers/comic_controller.dart';
+import '../services/comic_storage_service.dart';
 import '../../widgets/creative_icon.dart';
 
 /// Barra superior flotante y no invasiva para el creador de cómics:
@@ -11,6 +12,7 @@ class ComicTopBar extends StatelessWidget {
   final VoidCallback onOpenExport;
   final VoidCallback onToggleImmersive;
   final VoidCallback? onToggleLayers;
+  final VoidCallback? onBack;
   final bool isLayersOpen;
   final bool isImmersive;
 
@@ -22,6 +24,7 @@ class ComicTopBar extends StatelessWidget {
     required this.onOpenExport,
     required this.onToggleImmersive,
     this.onToggleLayers,
+    this.onBack,
     this.isLayersOpen = false,
     this.isImmersive = false,
   });
@@ -70,6 +73,7 @@ class ComicTopBar extends StatelessWidget {
 
     if (newTitle != null && newTitle.isNotEmpty) {
       controller.setTitle(newTitle);
+      await ComicStorageService.saveProject(controller.project);
     }
   }
 
@@ -111,7 +115,7 @@ class ComicTopBar extends StatelessWidget {
             _buildIconButton(
               icon: Icons.arrow_back,
               color: Colors.white,
-              onTap: () => Navigator.of(context).pop(),
+              onTap: onBack ?? () => Navigator.of(context).pop(),
             ),
             const SizedBox(width: 8),
 

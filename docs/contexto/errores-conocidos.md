@@ -8,6 +8,28 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
+### ~~ALTA - Fallos e inconsistencias en la función Rellenar (Balde de pintura) en Taller de Dibujo~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`, `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`, `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`, `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- **Qué pasaba**: La herramienta de rellenar (balde de pintura) se bugueaba frecuentemente en varios escenarios:
+  1. Al tocar dentro de figuras geométricas (círculos y rectángulos dibujados con las herramientas de formas), la forma era ignorada y se inundaba todo el lienzo completo o se deformaba.
+  2. Al rellenar figuras compuestas por múltiples trazos (ej. 3 líneas formando un triángulo o 4 formando un cuadro), los rayos de búsqueda no detectaban los segmentos y se inundaba la pantalla.
+  3. Al trazar curvas abiertas (ej. forma de "U" o "C"), el algoritmo las trataba erróneamente como cerradas rellenando la abertura.
+  4. Al colorear en una capa nueva (flujo tradicional de lineart en Capa 1 y color en Capa 2), la capa activa vacía carecía de trazos y provocaba inundación total del lienzo.
+  5. Los trazos de relleno (`bucketFill`) no cerraban su `Path` (`p.close()`), impidiendo re-colorear zonas ya pintadas.
+- **Causa raíz**:
+  1. `findEnclosedRegion` solo evaluaba trazos con `stroke.points.length >= 3`. Los círculos y rectángulos de formas geométricas solo almacenan 2 puntos `[first, last]`, siendo descartados de entrada.
+  2. En el trazado radial, se comprobaba únicamente la distancia euclidiana a vértices discretos grabados (`(pt - sample).distanceSquared <= 36.0`). En trazos rápidos con vértices espaciados > 6 px, los rayos atravesaban las líneas sin colisionar. Además, los rayos que alcanzaban el borde del lienzo se marcaban como colisiones válidas generando polígonos estrellados anómalos.
+  3. No se validaba la proximidad entre el punto inicial y final en trazos a mano alzada, cerrando curvas abiertas arbitrarias.
+  4. `DrawingController.floodFill` y `startStroke` pasaban solo `activeLayer.strokes` en lugar de evaluar los trazos de todas las capas visibles activas (`_visibleStrokes`).
+- **Fix**:
+  1. Detección geométrica analítica para círculos (ecuación de elipse + 48 puntos perimetrales uniformes) y rectángulos (4 esquinas exactas).
+  2. Detección de trazo cerrado a mano alzada validando que `(first - last).distance <= max(45.0, strokeWidth * 3.5)`.
+  3. Reemplazo del muestreo por pasos por intersección continua exacta Ray-Segment en 48 direcciones con cálculo matricial de Cramer y puenteo inteligente de micro-brechas (< 45 px).
+  4. Soporte multicapa en `DrawingController` usando `_visibleStrokes` como referencia perimetral depositando el relleno en `activeLayer`.
+  5. Inclusión de `p.close()` para `DrawingToolType.bucketFill` en `DrawingStroke._buildPath` y soporte de re-coloreo instantáneo de rellenos previos.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-26
+
+
 ### ~~CRÍTICA - Congelamiento de app y RangeError al reordenar capas en taller de dibujo~~ ✅ RESUELTO 2026-10-26
 - **Dónde**: `lib/screens/herramientas/dibujo/controllers/drawing_layer_operations.dart`, `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
 - **Qué pasaba**: Al presionar y arrastrar una capa con el dedo en el dock vertical de capas de dibujo para reordenarla, la aplicación lanzaba un `RangeError: Value not in range: -1` y la app se congelaba o se cerraba. Además, el dock era muy estrecho para el uso cómodo con los dedos.

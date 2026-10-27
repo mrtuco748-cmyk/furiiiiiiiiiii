@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../controllers/comic_controller.dart';
@@ -6,6 +5,7 @@ import '../models/comic_page.dart';
 import '../models/comic_project.dart';
 import '../models/comic_template.dart';
 import '../services/comic_storage_service.dart';
+import 'comic_page_thumbnail.dart';
 
 /// Modal para explorar, abrir, duplicar y gestionar cómics e historietas guardadas en el dispositivo.
 class ComicProjectsSheet extends StatefulWidget {
@@ -226,12 +226,7 @@ class _ComicProjectsSheetState extends State<ComicProjectsSheet> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               clipBehavior: Clip.antiAlias,
-                              child: proj.coverImageBase64 != null
-                                  ? Image.memory(
-                                      base64Decode(proj.coverImageBase64!),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : const Icon(Icons.auto_stories, color: Colors.black26, size: 24),
+                              child: ComicPageThumbnail(project: proj),
                             ),
                             const SizedBox(width: 14),
                             Expanded(

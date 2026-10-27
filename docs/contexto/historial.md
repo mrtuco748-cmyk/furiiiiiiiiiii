@@ -1,5 +1,41 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - BUGFIX - Parche Integral del Motor de Relleno (Balde de Pintura) en Taller de Dibujo Digital
+
+**Resumen**:
+- **Solución a Inundaciones Erróneas y Fallas en la Herramienta de Relleno (`DrawingFloodFillHelper`)**:
+  - **Detección Geométrica Analítica de Círculos y Rectángulos**:
+    - Anteriormente, `findEnclosedRegion` requería estrictamente `stroke.points.length >= 3`. Como las herramientas de formas (círculo y rectángulo) solo almacenan 2 puntos `[first, last]`, eran ignoradas por completo y cualquier toque dentro de un círculo o rectángulo inundaba la pantalla entera o dibujaba estrellas anómalas.
+    - Se incorporó detección analítica por ecuación elíptica `((x-cx)/rx)^2 + ((y-cy)/ry)^2 <= 1.0` generando 48 vértices perimetrales uniformes para círculos, y extracción precisa de 4 esquinas para rectángulos.
+  - **Detección Rigurosa de Trazos Cerrados y Rechazo de Curvas Abiertas ("U" / "C")**:
+    - Se añadió validación de cierre perimetral: un trazo a mano alzada solo se considera un lazo cerrado si la distancia euclidiana entre sus puntos inicial y final es menor o igual a `max(45.0, strokeWidth * 3.5)`. Se evita que curvas abiertas como arcos o semicírculos sean cerrados artificialmente por el winding rule de Skia.
+  - **Trazado de Rayos Continuo Ray-Segment con Intersección Matricial en 48 Direcciones**:
+    - Se reemplazó el antiguo muestreo por pasos discretos `r += 6` (que se saltaba líneas rápidas cuyos vértices distaban más de 6 px) por cálculo analítico de intersección entre rayos y segmentos de recta utilizando la regla de Cramer en 2D.
+    - Se incorporó puenteo inteligente de micro-brechas (< 45 px) entre trazos manuales y ligero sangrado perimetral (+1.5 px) para suprimir franjas blancas contra los contornos de tinta.
+    - Se eliminó el falso positivo que trataba los límites del lienzo como bordes de trazo.
+  - **Re-coloreo de Áreas Ya Rellenadas**:
+    - Se agregó `p.close()` en `DrawingStroke._buildPath` para `DrawingToolType.bucketFill`, permitiendo que toques posteriores sobre zonas ya coloreadas reconozcan el polígono previo y lo re-coloreen instantáneamente.
+  - **Soporte de Relleno Multicapa en `DrawingController`**:
+    - En `floodFill` y `startStroke`, se pasó `existingStrokes: _visibleStrokes` (trazos de todas las capas visibles activas) en lugar de limitarse a `activeLayer.strokes`. De este modo, al colorear en una nueva capa transparente, el balde respeta los trazos de lineart de las capas inferiores sin inundar el lienzo.
+- **Calidad y Verificación**:
+  - Creada suite de pruebas unitarias `test/screens/herramientas/drawing_flood_fill_test.dart` (8/8 tests pasando al 100%).
+  - Ejecutada suite completa de dibujo: 51/51 tests pasando (100% verde).
+  - `flutter analyze lib/screens/herramientas test/screens/herramientas`: 0 issues found.
+  - Verificada la regla estricta de $\le 300$ líneas en todos los archivos modificados: `drawing_controller.dart` (294 líneas), `stroke_renderer.dart` (286 líneas), `drawing_flood_fill_helper.dart` (215 líneas), `drawing_stroke.dart` (136 líneas).
+
+**Lecciones aprendidas**:
+- En motores de dibujo basados en vectores, nunca utilizar muestreos espaciales discretos (`sample += step`) contra vértices almacenados para detección de colisiones de trazo; los gestos táctiles veloces generan segmentos largos que los rayos atraviesan. La intersección continua analítica rayo-segmento es exacta, inmune a la velocidad del trazo y miles de veces más rápida.
+- Las herramientas de relleno en aplicaciones con capas deben tomar las capas visibles como referencia de frontera geométrica, pero depositar el trazo resultante en la capa activa seleccionada por el usuario.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `test/screens/herramientas/drawing_flood_fill_test.dart`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/historial.md`
+
 ## [2026-10-26] - FEATURE - Docks Verticales Laterales para Edición de Viñetas y Globos con Auto-cierre de Capas en Cómic Studio
 
 **Resumen**:
