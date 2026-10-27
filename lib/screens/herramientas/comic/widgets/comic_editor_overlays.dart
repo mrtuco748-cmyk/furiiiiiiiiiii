@@ -7,6 +7,7 @@ import '../models/comic_sticker.dart';
 import 'comic_floating_bubble_bar.dart';
 import 'comic_floating_sfx_bar.dart';
 import 'comic_floating_template_bar.dart';
+import 'comic_layers_dock.dart';
 import 'comic_panel_context_bar.dart';
 import 'comic_panel_customizer_bar.dart';
 import 'comic_sfx_editor_bar.dart';
@@ -22,6 +23,7 @@ class ComicEditorOverlays extends StatelessWidget {
   final bool showSfxEditor;
   final bool showPanelCustomizer;
   final bool showTemplateBar;
+  final bool showLayersDock;
   final bool isImmersive;
 
   final VoidCallback onDrawInPanel;
@@ -38,6 +40,7 @@ class ComicEditorOverlays extends StatelessWidget {
   final void Function(String text, Color color) onStampSfx;
   final VoidCallback onCloseSfxBar;
   final VoidCallback onCloseTemplateBar;
+  final VoidCallback? onCloseLayersDock;
 
   const ComicEditorOverlays({
     super.key,
@@ -50,6 +53,7 @@ class ComicEditorOverlays extends StatelessWidget {
     required this.showSfxEditor,
     required this.showPanelCustomizer,
     required this.showTemplateBar,
+    this.showLayersDock = false,
     required this.isImmersive,
     required this.onDrawInPanel,
     required this.onInsertDrawing,
@@ -65,6 +69,7 @@ class ComicEditorOverlays extends StatelessWidget {
     required this.onStampSfx,
     required this.onCloseSfxBar,
     required this.onCloseTemplateBar,
+    this.onCloseLayersDock,
   });
 
   @override
@@ -73,12 +78,12 @@ class ComicEditorOverlays extends StatelessWidget {
 
     return Stack(
       children: [
-        // Barra de contexto de viñeta activa
+        // Barra de contexto de viñeta activa (vertical a la derecha)
         if (activePanel != null && !showPanelCustomizer)
           Positioned(
-            bottom: 74,
-            left: 0,
-            right: 0,
+            top: 70,
+            bottom: 70,
+            right: 10,
             child: Center(
               child: ComicPanelContextBar(
                 panel: activePanel!,
@@ -109,12 +114,12 @@ class ComicEditorOverlays extends StatelessWidget {
             ),
           ),
 
-        // Barra de personalización dimensional y geométrica de viñeta
+        // Barra de personalización dimensional y geométrica de viñeta (a la derecha)
         if (activePanel != null && showPanelCustomizer)
           Positioned(
-            bottom: 74,
-            left: 0,
-            right: 0,
+            top: 70,
+            bottom: 70,
+            right: 10,
             child: Center(
               child: ComicPanelCustomizerBar(
                 panel: activePanel!,
@@ -130,12 +135,12 @@ class ComicEditorOverlays extends StatelessWidget {
             ),
           ),
 
-        // Barra de globos de diálogo
+        // Barra de globos de diálogo (vertical a la derecha)
         if (showBubbleBar || controller.selectedBubble != null)
           Positioned(
-            bottom: 74,
-            left: 0,
-            right: 0,
+            top: 70,
+            bottom: 70,
+            right: 10,
             child: Center(
               child: ComicFloatingBubbleBar(
                 bubble: controller.selectedBubble ?? editingBubble,
@@ -146,12 +151,12 @@ class ComicEditorOverlays extends StatelessWidget {
             ),
           ),
 
-        // Editor de SFX seleccionado
+        // Editor de SFX seleccionado (a la derecha)
         if ((showSfxEditor || controller.selectedSfx != null) && (controller.selectedSfx ?? editingSfx) != null)
           Positioned(
-            bottom: 74,
-            left: 0,
-            right: 0,
+            top: 70,
+            bottom: 70,
+            right: 10,
             child: Center(
               child: ComicSfxEditorBar(
                 sfx: (controller.selectedSfx ?? editingSfx)!,
@@ -159,6 +164,19 @@ class ComicEditorOverlays extends StatelessWidget {
                 onDelete: onDeleteSfx,
                 onClose: onCloseSfxEditor,
               ),
+            ),
+          ),
+
+        // Dock lateral de capas de la página
+        if (showLayersDock)
+          Positioned(
+            top: 54,
+            bottom: 20,
+            right: 0,
+            child: ComicLayersDock(
+              controller: controller,
+              onClose: onCloseLayersDock ?? () {},
+              onElementSelected: onCloseLayersDock,
             ),
           ),
 

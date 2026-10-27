@@ -34,6 +34,7 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
   bool _showSfxEditor = false;
   bool _showPanelCustomizer = false;
   bool _showTemplateBar = false;
+  bool _showLayersDock = false;
   bool _isImmersive = false;
 
   ComicBubble? _editingBubble;
@@ -95,6 +96,7 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
     ComicSticker? sfxItem,
   }) {
     setState(() {
+      _showLayersDock = false;
       _showBubbleBar = bubble;
       _showSfxBar = sfx;
       _showSfxEditor = sfxEditor;
@@ -108,6 +110,7 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
 
   void _closeAllOverlays() {
     _toggleOverlay();
+    _showLayersDock = false;
     _controller.deselectAll();
   }
 
@@ -155,6 +158,12 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                     },
                     isImmersive: _isImmersive,
                     onToggleImmersive: () => setState(() => _isImmersive = !_isImmersive),
+                    isLayersOpen: _showLayersDock,
+                    onToggleLayers: () => setState(() {
+                      final willOpen = !_showLayersDock;
+                      _closeAllOverlays();
+                      _showLayersDock = willOpen;
+                    }),
                   ),
                 ),
 
@@ -205,11 +214,10 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                 showSfxEditor: _showSfxEditor,
                 showPanelCustomizer: _showPanelCustomizer,
                 showTemplateBar: _showTemplateBar,
+                showLayersDock: _showLayersDock,
+                onCloseLayersDock: () => setState(() => _showLayersDock = false),
                 isImmersive: _isImmersive,
-                onDrawInPanel: () {
-                  _closeAllOverlays();
-                  ComicEditorActions.drawInPanel(context: context, controller: _controller, panel: activePanel!);
-                },
+                onDrawInPanel: () { _closeAllOverlays(); ComicEditorActions.drawInPanel(context: context, controller: _controller, panel: activePanel!); },
                 onInsertDrawing: () => ComicEditorActions.insertDrawing(context: context, controller: _controller, panel: activePanel!),
                 onPickGalleryImage: () => ComicEditorActions.pickImageFromGallery(context: context, controller: _controller, panel: activePanel!),
                 onOpenPanelCustomizer: () => setState(() => _showPanelCustomizer = true),
@@ -230,14 +238,8 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                   if (id != null) _controller.deleteSfx(id);
                   _toggleOverlay();
                 },
-                onCloseSfxEditor: () {
-                  _controller.selectSfx(null);
-                  _toggleOverlay();
-                },
-                onStampSfx: (text, color) {
-                  _controller.addSfx(text, color: color);
-                  _toggleOverlay();
-                },
+                onCloseSfxEditor: () { _controller.selectSfx(null); _toggleOverlay(); },
+                onStampSfx: (text, color) { _controller.addSfx(text, color: color); _toggleOverlay(); },
                 onCloseSfxBar: () => _toggleOverlay(),
                 onCloseTemplateBar: () => _toggleOverlay(),
               ),

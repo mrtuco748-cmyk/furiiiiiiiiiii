@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../controllers/drawing_controller.dart';
+import '../services/drawing_storage_service.dart';
 
 /// Barra superior flotante estilo Infinite Painter (Screenshots 1, 2, 3, 4, 5):
 /// Botón Home/Atrás a la izquierda, título de proyecto editable en el centro,
@@ -81,6 +82,7 @@ class DrawingTopBar extends StatelessWidget {
 
     if (newTitle != null && newTitle.isNotEmpty) {
       controller.setTitle(newTitle);
+      await DrawingStorageService.saveProject(controller.toProject());
     }
   }
 

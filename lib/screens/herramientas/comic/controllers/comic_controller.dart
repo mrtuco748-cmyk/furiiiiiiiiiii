@@ -59,10 +59,7 @@ class ComicController extends ChangeNotifier {
 
   void recordHistory() => _history.recordSnapshot(activePage);
 
-  void setInteractionMode(ComicInteractionMode mode) {
-    _interactionMode = mode;
-    notifyListeners();
-  }
+  void setInteractionMode(ComicInteractionMode mode) { _interactionMode = mode; notifyListeners(); }
 
   void undo() {
     final prev = _history.undo(activePage);
@@ -87,6 +84,8 @@ class ComicController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setCoverImage(String base64) => _project = _project.copyWith(coverImageBase64: base64);
+
   void loadProject(ComicProject project) {
     _project = project;
     _history.clear();
@@ -97,9 +96,7 @@ class ComicController extends ChangeNotifier {
   }
 
   void selectElement({String? panelId, String? bubbleId, String? sfxId}) {
-    _selectedPanelId = panelId;
-    _selectedBubbleId = bubbleId;
-    _selectedSfxId = sfxId;
+    _selectedPanelId = panelId; _selectedBubbleId = bubbleId; _selectedSfxId = sfxId;
     notifyListeners();
   }
 

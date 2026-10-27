@@ -199,7 +199,8 @@ abstract final class StrokeRenderer {
   static void _renderBucketFill(Canvas canvas, DrawingStroke stroke) {
     final paint = Paint()
       ..color = stroke.color.withValues(alpha: stroke.opacity)
-      ..style = PaintingStyle.fill;
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
 
     if (stroke.points.length >= 3) {
       final path = Path();

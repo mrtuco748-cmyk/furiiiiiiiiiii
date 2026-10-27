@@ -68,13 +68,32 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
       child: Container(
         width: 38,
         height: 38,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(10),
-        ),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
         alignment: Alignment.center,
         child: child,
       ),
+    );
+  }
+
+  Widget _buildSliderRow(IconData icon, Color color, double val, double min, double max, ValueChanged<double> onChange, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: color),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              thumbColor: color,
+              activeTrackColor: color,
+              inactiveTrackColor: const Color(0xFF444444),
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: SliderComponentShape.noOverlay,
+            ),
+            child: Slider(value: val, min: min, max: max, onChanged: onChange),
+          ),
+        ),
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+      ],
     );
   }
 
@@ -82,65 +101,120 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
   Widget build(BuildContext context) {
     final hasDrawing = widget.panel.drawingPngBase64 != null;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E).withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Sub-controles flotantes a la izquierda del dock si están activos
+        if (_showBorderControls) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E).withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF333333), width: 1.2),
+            ),
+            child: ComicPanelQuickBorderRow(
+              currentBorderWidth: widget.panel.borderWidth,
+              currentBorderColor: widget.panel.borderColor,
+              onSelect: (w, c) => widget.onQuickBorder?.call(w, c),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+
+        if (_showTransformControls && hasDrawing) ...[
+          Container(
+            width: 190,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E).withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF333333), width: 1.2),
+            ),
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Acción 1: Dibujar en esta viñeta a escala real
+                _buildSliderRow(Icons.aspect_ratio, const Color(0xFFFF00FF), _scale.clamp(0.5, 3.0), 0.5, 3.0, (v) {
+                  setState(() => _scale = v);
+                  _applyTransform();
+                }, '${(_scale * 100).toInt()}%'),
+                _buildSliderRow(Icons.open_with, const Color(0xFFFFDE59), _dx.clamp(-150.0, 150.0), -150.0, 150.0, (v) {
+                  setState(() => _dx = v);
+                  _applyTransform();
+                }, '${_dx.toInt()}x'),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+
+        // Dock vertical de acciones estilo Infinite Painter (derecha de la pantalla)
+        Container(
+          width: 52,
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E).withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF333333), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 10,
+                offset: const Offset(-2, 0),
+              ),
+            ],
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 1. Dibujar
                 _buildIconButton(
                   bg: const Color(0xFF00D4FF),
                   child: const CreativeIcon('pen_gpen', color: Colors.black, size: 20, fallback: Icons.brush),
                   onTap: widget.onDraw,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 6),
 
-                // Acción 2: Insertar dibujo guardado
+                // 2. Insertar dibujo guardado
                 _buildIconButton(
                   bg: const Color(0xFF39FF14),
                   child: const Icon(Icons.palette_outlined, color: Colors.black, size: 20),
                   onTap: widget.onInsert,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 6),
 
-                // Acción 3: Imagen de galería del dispositivo
+                // 3. Galería
                 if (widget.onGallery != null) ...[
                   _buildIconButton(
                     bg: const Color(0xFF282828),
                     child: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF00D4FF), size: 20),
                     onTap: widget.onGallery!,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 6),
                 ],
 
-                // Acción 4: Cortar viñeta con cuchillo
+                // 4. Cortar
                 if (widget.onSlice != null) ...[
                   _buildIconButton(
                     bg: const Color(0xFFFF6B00),
                     child: const Icon(Icons.content_cut, color: Colors.black, size: 20),
                     onTap: widget.onSlice!,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 6),
                 ],
 
-                // Acción 5: Personalización avanzada (skew, rotación, radio)
+                // 5. Personalizar
                 _buildIconButton(
                   bg: const Color(0xFF282828),
                   child: const Icon(Icons.tune_rounded, color: Color(0xFF5AC8FA), size: 20),
                   onTap: widget.onCustomize,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 6),
 
-                // Acción 6: Borde rápido en 1 toque
+                // 6. Borde
                 _buildIconButton(
                   bg: _showBorderControls ? const Color(0xFFFFDE59) : const Color(0xFF282828),
                   child: Icon(
@@ -153,9 +227,9 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
                     _showTransformControls = false;
                   }),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 6),
 
-                // Si tiene dibujo o foto, controles de encuadre táctil y sliders
+                // Si tiene dibujo, encuadre y limpiar
                 if (hasDrawing) ...[
                   _buildIconButton(
                     bg: const Color(0xFFFF00FF),
@@ -171,26 +245,26 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
                       }
                     },
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 6),
                   _buildIconButton(
                     bg: const Color(0xFF2E1717),
                     child: const Icon(Icons.layers_clear, color: Color(0xFFFF453A), size: 20),
                     onTap: widget.onClear,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 6),
                 ],
 
-                // Acción 7: Eliminar viñeta
+                // Eliminar viñeta
                 if (widget.onDelete != null) ...[
                   _buildIconButton(
                     bg: const Color(0xFF2E1717),
                     child: const Icon(Icons.delete_outline, color: Color(0xFFFF453A), size: 20),
                     onTap: widget.onDelete!,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 6),
                 ],
 
-                // Cerrar / Deseleccionar viñeta
+                // Cerrar / Deseleccionar
                 _buildIconButton(
                   bg: const Color(0xFF282828),
                   child: const Icon(Icons.close, color: Colors.white54, size: 18),
@@ -199,89 +273,8 @@ class _ComicPanelContextBarState extends State<ComicPanelContextBar> {
               ],
             ),
           ),
-
-          // Selector rápido de borde (Grosor y Color en 1 toque)
-          if (_showBorderControls) ...[
-            const SizedBox(height: 10),
-            ComicPanelQuickBorderRow(
-              currentBorderWidth: widget.panel.borderWidth,
-              currentBorderColor: widget.panel.borderColor,
-              onSelect: (w, c) => widget.onQuickBorder?.call(w, c),
-            ),
-          ],
-
-          // Sliders de escala y paneo para dibujo embebido
-          if (_showTransformControls && hasDrawing) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: 240,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF252525),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.aspect_ratio, size: 14, color: Color(0xFFFF00FF)),
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderThemeData(
-                            thumbColor: const Color(0xFFFF00FF),
-                            activeTrackColor: const Color(0xFFFF00FF),
-                            inactiveTrackColor: const Color(0xFF444444),
-                            trackHeight: 2,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            overlayShape: SliderComponentShape.noOverlay,
-                          ),
-                          child: Slider(
-                            value: _scale.clamp(0.5, 3.0),
-                            min: 0.5,
-                            max: 3.0,
-                            onChanged: (val) {
-                              setState(() => _scale = val);
-                              _applyTransform();
-                            },
-                          ),
-                        ),
-                      ),
-                      Text('${(_scale * 100).toInt()}%', style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const Icon(Icons.open_with, size: 14, color: Color(0xFFFFDE59)),
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderThemeData(
-                            thumbColor: const Color(0xFFFFDE59),
-                            activeTrackColor: const Color(0xFFFFDE59),
-                            inactiveTrackColor: const Color(0xFF444444),
-                            trackHeight: 2,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            overlayShape: SliderComponentShape.noOverlay,
-                          ),
-                          child: Slider(
-                            value: _dx.clamp(-150.0, 150.0),
-                            min: -150,
-                            max: 150,
-                            onChanged: (val) {
-                              setState(() => _dx = val);
-                              _applyTransform();
-                            },
-                          ),
-                        ),
-                      ),
-                      Text('${_dx.toInt()}x', style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

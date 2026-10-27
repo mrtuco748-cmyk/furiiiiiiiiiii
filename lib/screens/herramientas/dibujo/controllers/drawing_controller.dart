@@ -21,15 +21,14 @@ import '../helpers/drawing_flood_fill_helper.dart';
 class DrawingController extends ChangeNotifier {
   String _projectId;
   String _projectTitle = 'Sin Título';
+  String? _thumbnailBase64;
   CanvasBackgroundType _backgroundType = CanvasBackgroundType.blank;
   List<DrawingLayer> _layers = [];
   int _activeLayerIndex = 0;
-
-  DrawingToolType _selectedTool = DrawingToolType.pen;
-  DrawingToolType _previousDrawingTool = DrawingToolType.pen;
+  DrawingToolType _selectedTool = DrawingToolType.pen, _previousDrawingTool = DrawingToolType.pen;
   Color _selectedColor = const Color(0xFF111111);
-  double _strokeWidth = DrawingToolType.pen.defaultWidth;
-  double _strokeOpacity = DrawingToolType.pen.defaultOpacity;
+  double _strokeWidth = DrawingToolType.pen.defaultWidth, _strokeOpacity = DrawingToolType.pen.defaultOpacity;
+  final Map<DrawingToolType, double> _toolWidths = {}, _toolOpacities = {};
 
   // Estabilización, Trazo Predictivo y Guía Visual de Pincel
   final _stabilizer = DrawingStrokeStabilizer();
@@ -47,7 +46,10 @@ class DrawingController extends ChangeNotifier {
   final List<DrawingAction> _undoStack = [], _redoStack = [];
 
   DrawingController({DrawingProject? initialProject})
-      : _projectId = initialProject?.id ?? 'proj_${DateTime.now().millisecondsSinceEpoch}' {
+      : _projectId = initialProject?.id ?? 'proj_${DateTime.now().millisecondsSinceEpoch}',
+        _thumbnailBase64 = initialProject?.thumbnailBase64 {
+    _toolWidths[_selectedTool] = _strokeWidth;
+    _toolOpacities[_selectedTool] = _strokeOpacity;
     if (initialProject != null) {
       loadProject(initialProject);
     } else {
@@ -63,9 +65,7 @@ class DrawingController extends ChangeNotifier {
   CanvasBackgroundType get backgroundType => _backgroundType;
   List<DrawingLayer> get layers => _layers;
   int get activeLayerIndex => _activeLayerIndex;
-  DrawingLayer get activeLayer =>
-      _layers.isNotEmpty ? _layers[_activeLayerIndex] : DrawingLayer(id: '0', name: '1', strokes: []);
-
+  DrawingLayer get activeLayer => _layers.isNotEmpty ? _layers[_activeLayerIndex] : DrawingLayer(id: '0', name: '1', strokes: []);
   DrawingToolType get selectedTool => _selectedTool;
   DrawingToolType get previousDrawingTool => _previousDrawingTool;
   Color get selectedColor => _selectedColor;
@@ -76,7 +76,6 @@ class DrawingController extends ChangeNotifier {
   DrawingLassoSelection? get activeSelection => _activeSelection;
   bool get hasSelection => _activeSelection != null;
   set activeSelection(DrawingLassoSelection? sel) { _activeSelection = sel; notifyListeners(); }
-
   bool get isPredictiveStrokeEnabled => _isPredictiveStrokeEnabled;
   int get predictiveStrokeLevel => _predictiveStrokeLevel;
   void setPredictiveStrokeEnabled(bool val) { _isPredictiveStrokeEnabled = val; notifyListeners(); }
@@ -84,7 +83,6 @@ class DrawingController extends ChangeNotifier {
   bool get showBrushCursor => _showBrushCursor;
   void setShowBrushCursor(bool val) { _showBrushCursor = val; notifyListeners(); }
   void toggleShowBrushCursor() { _showBrushCursor = !_showBrushCursor; notifyListeners(); }
-
   DrawingSymmetryMode get symmetryMode => _symmetryMode;
   Size get canvasSize => _canvasSize;
   bool get isRotationLocked => _isRotationLocked;
@@ -104,6 +102,7 @@ class DrawingController extends ChangeNotifier {
   void loadProject(DrawingProject project) {
     _projectId = project.id;
     _projectTitle = project.title;
+    _thumbnailBase64 = project.thumbnailBase64;
     if (project.canvasWidth > 0 && project.canvasHeight > 0) {
       _canvasSize = Size(project.canvasWidth, project.canvasHeight);
     }
@@ -114,11 +113,14 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  DrawingProject toProject({String? thumbnailBase64}) => DrawingProject(
-        id: _projectId, title: _projectTitle, canvasWidth: _canvasSize.width,
-        canvasHeight: _canvasSize.height, updatedAt: DateTime.now(),
-        layers: List<DrawingLayer>.from(_layers), thumbnailBase64: thumbnailBase64,
-      );
+  DrawingProject toProject({String? thumbnailBase64}) {
+    if (thumbnailBase64 != null) _thumbnailBase64 = thumbnailBase64;
+    return DrawingProject(
+      id: _projectId, title: _projectTitle, canvasWidth: _canvasSize.width,
+      canvasHeight: _canvasSize.height, updatedAt: DateTime.now(),
+      layers: List<DrawingLayer>.from(_layers), thumbnailBase64: _thumbnailBase64,
+    );
+  }
 
   void cancelActiveStroke() {
     _activeStroke = null;
@@ -132,8 +134,8 @@ class DrawingController extends ChangeNotifier {
       _previousDrawingTool = tool;
     }
     _selectedTool = tool;
-    _strokeWidth = tool.defaultWidth;
-    _strokeOpacity = tool.defaultOpacity;
+    _strokeWidth = _toolWidths[tool] ?? tool.defaultWidth;
+    _strokeOpacity = _toolOpacities[tool] ?? tool.defaultOpacity;
     if (tool != DrawingToolType.lasso && _activeSelection != null) _activeSelection = null;
     notifyListeners();
   }
@@ -151,8 +153,8 @@ class DrawingController extends ChangeNotifier {
   void flipSelectionHorizontal() => DrawingLassoOperations.applyFlipSelectionHorizontal(this);
   void clearSelection() { if (_activeSelection != null) { _activeSelection = null; notifyListeners(); } }
   void setColor(Color c) { _selectedColor = c; notifyListeners(); }
-  void setStrokeWidth(double w) { _strokeWidth = w; notifyListeners(); }
-  void setOpacity(double o) { _strokeOpacity = o; notifyListeners(); }
+  void setStrokeWidth(double w) { _strokeWidth = w; _toolWidths[_selectedTool] = w; notifyListeners(); }
+  void setOpacity(double o) { _strokeOpacity = o; _toolOpacities[_selectedTool] = o; notifyListeners(); }
   void setStrokeOpacity(double o) => setOpacity(o);
 
   void setActiveLayer(int i) { if (i >= 0 && i < _layers.length) { _activeLayerIndex = i; notifyListeners(); } }
@@ -160,18 +162,15 @@ class DrawingController extends ChangeNotifier {
   bool removeLayer(int i) {
     final res = DrawingLayerOperations.removeLayer(_layers, _activeLayerIndex, i);
     if (res == null) return false;
-    _layers = res.$1; _activeLayerIndex = res.$2; notifyListeners();
-    return true;
+    _layers = res.$1; _activeLayerIndex = res.$2; notifyListeners(); return true;
   }
   void toggleLayerVisibility(int i) { _layers = DrawingLayerOperations.toggleVisibility(_layers, i); notifyListeners(); }
   void duplicateActiveLayer() { final res = DrawingLayerOperations.duplicateLayer(_layers, _activeLayerIndex); _layers = res.$1; _activeLayerIndex = res.$2; notifyListeners(); }
   void rotateActiveLayer90() { _layers = DrawingLayerOperations.rotateLayer90(_layers, _activeLayerIndex, _canvasSize); notifyListeners(); }
   void invertActiveLayerColors() { _layers = DrawingLayerOperations.invertLayerColors(_layers, _activeLayerIndex); notifyListeners(); }
   void cycleBackgroundPattern() => setBackgroundType(switch (_backgroundType) {
-    CanvasBackgroundType.blank => CanvasBackgroundType.grid,
-    CanvasBackgroundType.grid => CanvasBackgroundType.dots,
-    CanvasBackgroundType.dots => CanvasBackgroundType.dark,
-    CanvasBackgroundType.dark => CanvasBackgroundType.blank,
+    CanvasBackgroundType.blank => CanvasBackgroundType.grid, CanvasBackgroundType.grid => CanvasBackgroundType.dots,
+    CanvasBackgroundType.dots => CanvasBackgroundType.dark, CanvasBackgroundType.dark => CanvasBackgroundType.blank,
   });
   void setLayerOpacity(int i, double o) { _layers = DrawingLayerOperations.setOpacity(_layers, i, o); notifyListeners(); }
   void reorderLayers(int oldI, int newI) { final res = DrawingLayerOperations.reorderLayers(_layers, _activeLayerIndex, oldI, newI); _layers = res.$1; _activeLayerIndex = res.$2; notifyListeners(); }
@@ -195,10 +194,11 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  List<DrawingStroke> get _visibleStrokes => [for (final l in _layers) if (l.isVisible) ...l.strokes];
+
   void floodFill(Offset p, Color c) {
     if (_layers.isEmpty || !activeLayer.isVisible || activeLayer.isLocked) return;
-    final stroke = DrawingFloodFillHelper.createFillStroke(seed: p, color: c, opacity: _strokeOpacity, existingStrokes: activeLayer.strokes, canvasSize: _canvasSize, selectionPolygon: _activeSelection?.polygonPoints);
-    _addDirectStroke(stroke);
+    _addDirectStroke(DrawingFloodFillHelper.createFillStroke(seed: p, color: c, opacity: _strokeOpacity, existingStrokes: _visibleStrokes, canvasSize: _canvasSize, selectionPolygon: _activeSelection?.polygonPoints));
   }
   void applyGradient(Offset s, Offset e, Color c) {
     if (_layers.isEmpty || !activeLayer.isVisible || activeLayer.isLocked) return;
@@ -208,8 +208,7 @@ class DrawingController extends ChangeNotifier {
   void startStroke(Offset localPosition, [double pressure = 1.0]) {
     if (_layers.isEmpty || !activeLayer.isVisible || activeLayer.isLocked) return;
     if (_selectedTool == DrawingToolType.bucketFill) {
-      final fill = DrawingFloodFillHelper.createFillStroke(seed: localPosition, color: _selectedColor, opacity: _strokeOpacity, existingStrokes: activeLayer.strokes, canvasSize: _canvasSize, selectionPolygon: _activeSelection?.polygonPoints);
-      _addDirectStroke(fill);
+      _addDirectStroke(DrawingFloodFillHelper.createFillStroke(seed: localPosition, color: _selectedColor, opacity: _strokeOpacity, existingStrokes: _visibleStrokes, canvasSize: _canvasSize, selectionPolygon: _activeSelection?.polygonPoints));
       return;
     }
     final ts = DateTime.now().microsecondsSinceEpoch;
@@ -275,17 +274,14 @@ class DrawingController extends ChangeNotifier {
 
     if (stroke.tool == DrawingToolType.lasso) {
       if (stroke.points.length >= 3) {
-        final poly = stroke.points.map((p) => p.offset).toList();
-        _activeSelection = DrawingLassoOperations.createSelection(poly, activeLayer.strokes);
+        _activeSelection = DrawingLassoOperations.createSelection(stroke.points.map((p) => p.offset).toList(), activeLayer.strokes);
       }
       notifyListeners();
       return;
     }
 
     final allStrokes = [stroke, ...mirrors];
-    final updatedStrokes = List<DrawingStroke>.from(activeLayer.strokes)..addAll(allStrokes);
-    _layers[_activeLayerIndex] = activeLayer.copyWith(strokes: updatedStrokes);
-
+    _layers[_activeLayerIndex] = activeLayer.copyWith(strokes: List<DrawingStroke>.from(activeLayer.strokes)..addAll(allStrokes));
     _undoStack.add(AddStrokesGroupAction(_activeLayerIndex, allStrokes));
     _redoStack.clear();
     notifyListeners();

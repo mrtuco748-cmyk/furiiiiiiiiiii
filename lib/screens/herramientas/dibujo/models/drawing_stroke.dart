@@ -40,7 +40,18 @@ class DrawingStroke {
     final first = points.first.offset;
     final last = points.last.offset;
 
-    // Manejo de formas geométricas (Línea, Rectángulo, Círculo, Trayectoria)
+    // Manejo de formas geométricas (Línea, Rectángulo, Círculo, Trayectoria, Relleno)
+    if (tool == DrawingToolType.bucketFill) {
+      if (points.length >= 3) {
+        p.moveTo(first.dx, first.dy);
+        for (int i = 1; i < points.length; i++) {
+          p.lineTo(points[i].offset.dx, points[i].offset.dy);
+        }
+        p.close();
+      }
+      return p;
+    }
+
     if (tool == DrawingToolType.line) {
       p.moveTo(first.dx, first.dy);
       p.lineTo(last.dx, last.dy);

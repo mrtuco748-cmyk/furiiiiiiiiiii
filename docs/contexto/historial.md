@@ -1,5 +1,36 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - FEATURE - Docks Verticales Laterales para Edición de Viñetas y Globos con Auto-cierre de Capas en Cómic Studio
+
+**Resumen**:
+- **Reubicación de Overlays Contextuales a Dock Vertical Derecho**:
+  - En `ComicPanelContextBar`: Se rediseñó la barra horizontal inferior (que tapaba viñetas y colisionaba con los controles inferiores) a una barra vertical estilizada y compacta de 52 px de ancho ubicada en el margen derecho (`right: 10`), con sub-paneles flyout que se expanden elegantemente hacia la izquierda para la edición de grosor/color de borde y transformaciones.
+  - En `ComicFloatingBubbleBar`: Se transformó la barra inferior de 330 px a una tarjeta vertical compacta y estilizada de 196 px de ancho adosada al margen derecho, con selector de forma, previsualización de estilo de cola y control táctil directo.
+  - En `ComicEditorOverlays`: Se unificó la ubicación de todos los paneles de edición de elementos (`ComicPanelContextBar`, `ComicFloatingBubbleBar`, `ComicPanelCustomizerBar`, `ComicSfxTextEditor`) sobre el margen derecho vertical (`right: 10, top: 70, bottom: 70`), dejando la página de cómic completamente despejada para dibujar y manipular con los dedos.
+- **Integración del Dock de Capas en Cómic (`ComicLayersDock`) y Exclusión Mutua**:
+  - Se creó el widget `ComicLayersDock` (ancho 164 px) en el lateral derecho para explorar y conmutar visibilidad y selección de viñetas, globos y onomatopeyas de la página actual.
+  - Se implementó la regla de auto-cierre automático: al seleccionarse o abrirse cualquier menú de edición de viñeta o globo de texto, el panel de capas se cierra automáticamente (`_showLayersDock = false`), evitando colisiones o sobrecarga visual en pantallas móviles.
+  - Se añadió el botón de alternancia de capas (`Icons.layers`) en `ComicTopBar`.
+- **Garantía de Calidad y Cumplimiento de Reglas**:
+  - Verificada la regla estricta de $\le 300$ líneas en el 100% de los archivos del repositorio (`lib/`).
+  - Ejecutada la suite completa de pruebas de herramientas: 163/163 tests pasando (100% éxito).
+  - Análisis estático (`flutter analyze`): 0 advertencias, 0 errores.
+
+**Lecciones aprendidas**:
+- En pantallas móviles táctiles para diseño gráfico y cómic, las barras flotantes en el borde inferior interfieren con la barra de navegación del sistema y con las barras de herramientas principales; los docks verticales en el margen derecho (o izquierdo según el rol) optimizan el alcance con el pulgar sin obstruir el contenido central.
+- El auto-cierre mutuo entre paneles laterales dependientes del contexto evita saturación de UI en pantallas pequeñas y mejora la claridad mental del usuario.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/comic/comic_editor_screen.dart`
+- `lib/screens/herramientas/comic/widgets/comic_editor_overlays.dart`
+- `lib/screens/herramientas/comic/widgets/comic_floating_bubble_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_panel_context_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_top_bar.dart`
+- `lib/screens/herramientas/comic/widgets/comic_layers_dock.dart`
+- `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
+- `docs/contexto/historial.md`
+- `docs/contexto/errores-conocidos.md`
+
 ## [2026-10-26] - BUGFIX - Perfeccionamiento Táctil: Reordenamiento Fluido de Capas sin Crash y Arrastre Seguro de Globos de Diálogo
 
 **Resumen**:

@@ -10,6 +10,8 @@ class ComicTopBar extends StatelessWidget {
   final VoidCallback onOpenReader;
   final VoidCallback onOpenExport;
   final VoidCallback onToggleImmersive;
+  final VoidCallback? onToggleLayers;
+  final bool isLayersOpen;
   final bool isImmersive;
 
   const ComicTopBar({
@@ -19,6 +21,8 @@ class ComicTopBar extends StatelessWidget {
     required this.onOpenReader,
     required this.onOpenExport,
     required this.onToggleImmersive,
+    this.onToggleLayers,
+    this.isLayersOpen = false,
     this.isImmersive = false,
   });
 
@@ -237,6 +241,17 @@ class ComicTopBar extends StatelessWidget {
               onTap: controller.canRedo ? controller.redo : () {},
             ),
             const Spacer(),
+
+            // Capas de la Página
+            if (onToggleLayers != null) ...[
+              _buildIconButton(
+                icon: Icons.layers,
+                color: isLayersOpen ? const Color(0xFF00D4FF) : Colors.white70,
+                onTap: onToggleLayers!,
+                bg: isLayersOpen ? const Color(0xFF1B2E35) : const Color(0xFF222222),
+              ),
+              const SizedBox(width: 8),
+            ],
 
             // Modo Lector Manga
             _buildIconButton(

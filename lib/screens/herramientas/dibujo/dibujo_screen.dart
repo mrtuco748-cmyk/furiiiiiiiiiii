@@ -124,6 +124,8 @@ class _DibujoScreenState extends State<DibujoScreen> {
 
   Future<void> _handleBack() async {
     _closeFloatingPanels();
+    _autoSaveTimer?.cancel();
+    await _performAutoSave();
     if (widget.onSaveAndReturn != null) {
       final exportSize = widget.canvasSize ?? Size(widget.project?.canvasWidth ?? 1200, widget.project?.canvasHeight ?? 1200);
       final png = await _controller.exportToPng(size: exportSize);
@@ -147,9 +149,9 @@ class _DibujoScreenState extends State<DibujoScreen> {
         _controller.selectedTool == DrawingToolType.lasso;
 
     return PopScope(
-      canPop: widget.onSaveAndReturn == null,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
-        if (!didPop && widget.onSaveAndReturn != null) {
+        if (!didPop) {
           await _handleBack();
         }
       },

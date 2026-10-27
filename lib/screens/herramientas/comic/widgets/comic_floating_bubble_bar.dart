@@ -112,9 +112,8 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 330,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      width: 196,
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A).withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(16),
@@ -123,107 +122,119 @@ class _ComicFloatingBubbleBarState extends State<ComicFloatingBubbleBar> {
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.6),
             blurRadius: 12,
-            offset: const Offset(0, 4),
+            offset: const Offset(-2, 2),
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Fila 1: Input de texto integrado + Botón cola + Eliminar + Cerrar
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF262626),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  alignment: Alignment.center,
-                  child: TextField(
-                    controller: _textCtrl,
-                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                      hintText: 'Escribe el diálogo...',
-                      hintStyle: TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                    onChanged: (_) => _applyLiveChanges(),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Cabecera: Título + Cola + Borrar + Confirmar
+            Row(
+              children: [
+                const Icon(Icons.chat_bubble_outline, size: 16, color: Color(0xFF00D4FF)),
+                const SizedBox(width: 4),
+                const Expanded(
+                  child: Text(
+                    'GLOBO',
+                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.6),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-
-              // Botón rápido de orientación de cola
-              GestureDetector(
-                onTap: _cycleTailDirection,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF444444)),
-                  ),
-                  child: Icon(_tailIcon(_tailDirection), size: 16, color: const Color(0xFFFFDE59)),
-                ),
-              ),
-              const SizedBox(width: 6),
-
-              // Eliminar
-              if (widget.bubble != null && widget.onDelete != null)
+                // Botón rápido de cola
                 GestureDetector(
-                  onTap: () => widget.onDelete!(widget.bubble!.id),
+                  onTap: _cycleTailDirection,
                   child: Container(
-                    width: 34,
-                    height: 34,
+                    width: 28,
+                    height: 28,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2E1A1A),
-                      borderRadius: BorderRadius.circular(8),
+                      color: const Color(0xFF2A2A2A),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFF444444)),
                     ),
-                    child: const Icon(Icons.delete_outline, color: Color(0xFFFF453A), size: 18),
+                    child: Icon(_tailIcon(_tailDirection), size: 14, color: const Color(0xFFFFDE59)),
                   ),
                 ),
-              const SizedBox(width: 6),
+                const SizedBox(width: 4),
+                // Eliminar
+                if (widget.bubble != null && widget.onDelete != null) ...[
+                  GestureDetector(
+                    onTap: () => widget.onDelete!(widget.bubble!.id),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E1A1A),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.delete_outline, color: Color(0xFFFF453A), size: 16),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // Confirmar / Cerrar
+                GestureDetector(
+                  onTap: widget.onClose,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF39FF14),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.check, color: Colors.black, size: 18),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
 
-              // Confirmar / Cerrar
-              GestureDetector(
-                onTap: widget.onClose,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF39FF14),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.check, color: Colors.black, size: 20),
-                ),
+            // Input de texto integrado
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF262626),
+                borderRadius: BorderRadius.circular(8),
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: TextField(
+                controller: _textCtrl,
+                maxLines: 2,
+                minLines: 1,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                  hintText: 'Escribe diálogo...',
+                  hintStyle: TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+                onChanged: (_) => _applyLiveChanges(),
+              ),
+            ),
+            const SizedBox(height: 8),
 
-          // Fila 2: Selector horizontal rápido de forma de globo (Manga, Nube, Grito, Eléctrico, etc.)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+            // Selector horizontal / envolvente de forma
+            const Text(
+              'FORMA DE GLOBO',
+              style: TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
               children: [
                 _buildShapeChip('Óvalo', ComicBubbleType.mangaOval),
                 _buildShapeChip('Grito', ComicBubbleType.screamSpiky),
-                _buildShapeChip('Pensamiento', ComicBubbleType.thoughtCloud),
+                _buildShapeChip('Pensar', ComicBubbleType.thoughtCloud),
                 _buildShapeChip('Eléctrico', ComicBubbleType.electricShonen),
                 _buildShapeChip('Onda', ComicBubbleType.dizzyWavy),
                 _buildShapeChip('Narrador', ComicBubbleType.narratorBox),
                 _buildShapeChip('Chat', ComicBubbleType.furiChat),
-                _buildShapeChip('Explosión', ComicBubbleType.impactExplosion),
+                _buildShapeChip('Impacto', ComicBubbleType.impactExplosion),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
