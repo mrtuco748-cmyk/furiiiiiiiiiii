@@ -84,7 +84,7 @@ class _PinterestScreenState extends State<PinterestScreen> {
   void _handleRendererGone() {
     if (!mounted) return;
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastRendererRecovery < 2000) return;
+    if (now - _lastRendererRecovery < 3500) return;
     _lastRendererRecovery = now;
 
     debugPrint('[Pinterest] Renderer process recuperado de forma segura');
@@ -94,7 +94,7 @@ class _PinterestScreenState extends State<PinterestScreen> {
       _webViewWidget = null;
       _controller = null;
     });
-    Future.delayed(const Duration(milliseconds: 250), () {
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         setState(() {
           _viewKey++;

@@ -26,7 +26,7 @@ abstract final class DrawingViewportMath {
   static Offset toCanvasCoordinates({
     required Offset globalPosition,
     required GlobalKey canvasKey,
-    required BuildContext context,
+    BuildContext? context,
     required TransformationController transformController,
     required Size canvasSize,
     required bool isFlippedHorizontal,
@@ -36,13 +36,19 @@ abstract final class DrawingViewportMath {
     final RenderBox? canvasBox = canvasKey.currentContext?.findRenderObject() as RenderBox?;
     if (canvasBox != null) {
       rawPoint = canvasBox.globalToLocal(globalPosition);
-    } else {
+    } else if (context != null) {
       final RenderBox? box = context.findRenderObject() as RenderBox?;
       if (box != null) {
         final localInViewport = box.globalToLocal(globalPosition);
         final Matrix4 inverted = Matrix4.inverted(transformController.value);
         rawPoint = MatrixUtils.transformPoint(inverted, localInViewport);
+      } else {
+        final Matrix4 inverted = Matrix4.inverted(transformController.value);
+        rawPoint = MatrixUtils.transformPoint(inverted, globalPosition);
       }
+    } else {
+      final Matrix4 inverted = Matrix4.inverted(transformController.value);
+      rawPoint = MatrixUtils.transformPoint(inverted, globalPosition);
     }
 
     double x = rawPoint.dx;
@@ -67,6 +73,74 @@ abstract final class DrawingViewportMath {
     if (pointers.length < 2) return 0.0;
     final pts = pointers.toList();
     return (pts[0] - pts[1]).distance;
+  }
+
+  /// Calcula la separación promedio o span entre los punteros activos de forma
+  /// continua e independiente del orden de los dedos.
+  static double calculateSpan(Iterable<Offset> pointers) {
+    if (pointers.length < 2) return 0.0;
+    if (pointers.length == 2) {
+      final pts = pointers.toList();
+      return (pts[0] - pts[1]).distance;
+    }
+    final focal = calculateFocalPoint(pointers);
+    double totalDist = 0.0;
+    for (final p in pointers) {
+      totalDist += (p - focal).distance;
+    }
+    return (totalDist / pointers.length) * 2.0;
+  }
+
+  /// Aplica una transformación incremental continua (pan + zoom) alrededor del
+  /// punto focal sin descolocar el lienzo ni resetear la posición.
+  static Matrix4 applyIncrementalTransform({
+    required Matrix4 currentMatrix,
+    required Offset prevFocalPoint,
+    required Offset currentFocalPoint,
+    double scaleFactor = 1.0,
+    double minScale = 0.02,
+    double maxScale = 30.0,
+  }) {
+    double s = scaleFactor;
+    if (s <= 0.0 || s.isNaN || s.isInfinite) {
+      s = 1.0;
+    }
+
+    final double currentScale = currentMatrix.getMaxScaleOnAxis();
+    if (currentScale > 0.0 && !currentScale.isNaN) {
+      if (currentScale * s < minScale) {
+        s = minScale / currentScale;
+      } else if (currentScale * s > maxScale) {
+        s = maxScale / currentScale;
+      }
+    }
+
+    final double dx = currentFocalPoint.dx - s * prevFocalPoint.dx;
+    final double dy = currentFocalPoint.dy - s * prevFocalPoint.dy;
+
+    final delta = Matrix4.identity()
+      ..translateByDouble(dx, dy, 0.0, 1.0)
+      ..scaleByDouble(s, s, 1.0, 1.0);
+
+    return delta..multiply(currentMatrix);
+  }
+
+  /// Zoom centrado en una coordenada específica de la pantalla (ej. rueda del ratón).
+  static Matrix4 applyZoomAtPoint({
+    required Matrix4 currentMatrix,
+    required Offset focalPoint,
+    required double scaleFactor,
+    double minScale = 0.02,
+    double maxScale = 30.0,
+  }) {
+    return applyIncrementalTransform(
+      currentMatrix: currentMatrix,
+      prevFocalPoint: focalPoint,
+      currentFocalPoint: focalPoint,
+      scaleFactor: scaleFactor,
+      minScale: minScale,
+      maxScale: maxScale,
+    );
   }
 
   static Matrix4? calculateTwoFingerTransform({

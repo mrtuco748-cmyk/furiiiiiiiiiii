@@ -59,11 +59,15 @@ class PinterestControllerFactory {
           return NavigationDecision.prevent;
         }
 
-        // Permitir toda la navegación interna dentro del ecosistema Pinterest
-        final isPinterest = host.contains('pinterest.') ||
+        // Permitir toda la navegación interna de Pinterest y proveedores de autenticación
+        final isPinterestOrAuth = host.contains('pinterest.') ||
             host.contains('pinimg.com') ||
-            host == 'pin.it';
-        if (isPinterest) {
+            host == 'pin.it' ||
+            host.contains('google.com') ||
+            host.contains('apple.com') ||
+            host.contains('facebook.com') ||
+            host.contains('recaptcha.net');
+        if (isPinterestOrAuth) {
           return NavigationDecision.navigate;
         }
 
@@ -79,7 +83,7 @@ class PinterestControllerFactory {
       ..setBackgroundColor(const Color(0xFF141414))
       ..setNavigationDelegate(delegate)
       ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
       )
       ..addJavaScriptChannel(
         PinterestCleaner.channelName,

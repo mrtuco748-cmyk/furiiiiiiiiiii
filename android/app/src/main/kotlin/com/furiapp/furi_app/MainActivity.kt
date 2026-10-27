@@ -182,6 +182,30 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW) {
+            val root = window?.decorView ?: return
+            traverseAndTrimWebViews(root)
+        }
+    }
+
+    private fun traverseAndTrimWebViews(view: View) {
+        if (view is WebView) {
+            try {
+                view.clearCache(false)
+            } catch (_: Exception) {}
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                if (child != null) {
+                    traverseAndTrimWebViews(child)
+                }
+            }
+        }
+    }
+
     private fun protectAllWebViews() {
         val root = window?.decorView ?: return
         traverseAndProtectWebViews(root)
@@ -247,6 +271,8 @@ class MainActivity : FlutterActivity() {
     private class SafeFuriWebViewClient(
         private val delegate: WebViewClient?
     ) : WebViewClient() {
+
+        private var lastGoneNotice = 0L
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
             delegate?.onPageStarted(view, url, favicon) ?: super.onPageStarted(view, url, favicon)
@@ -361,7 +387,11 @@ class MainActivity : FlutterActivity() {
                 parent?.removeView(view)
                 view.destroy()
             } catch (_: Exception) {}
-            dispatchMusicAction("webview_renderer_gone", null)
+            val now = System.currentTimeMillis()
+            if (now - lastGoneNotice > 3000L) {
+                lastGoneNotice = now
+                dispatchMusicAction("webview_renderer_gone", null)
+            }
             return true
         }
     }

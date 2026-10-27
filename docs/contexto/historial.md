@@ -1,5 +1,107 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-27] - RELEASE - Publicación F.U.R.I. v1.0.16 (Rediseño Navegación Multitáctil en Dibujo, Estabilidad en Pinterest y Releases Multiplataforma)
+
+**Resumen**:
+- **Versión**: Bump de versión a `1.0.16+16` en `pubspec.yaml`.
+- **Compilación de Artefactos de Release**:
+  - Windows x64: `furi_app.exe` y dependencias nativas empaquetadas en `furi-windows-x64-v1.0.16.zip` (23.87 MB).
+  - Android APKs por arquitectura (split-per-abi firmados con debug keystore v2):
+    - `app-arm64-v8a-release.apk` (40.21 MB)
+    - `app-armeabi-v7a-release.apk` (38.27 MB)
+    - `app-x86_64-release.apk` (42.83 MB)
+- **Verificación**:
+  - `apksigner verify` confirmado (`Verified using v2 scheme: true`).
+  - 185 tests unitarios y de widgets ejecutados exitosamente (100% green).
+  - `flutter analyze`: 0 issues found.
+  - Regla estricta de $\le 300$ líneas verificada en el 100% de los archivos `.dart` de `lib/`.
+- **Novedades de la versión**:
+  - Rediseño incremental y diferencial de navegación multitáctil y zoom en Dibujo Digital (sin saltos bruscos ni teletransportes al soltar los dedos).
+  - Detección simétrica de múltiples punteros y soporte de zoom continuo con rueda de ratón en Windows.
+  - Solución definitiva anti-reinicios y anti-crasheos en la sección Pinterest (estrangulamiento de reloads, User-Agent Tablet, liberación de decodificadores de video MediaCodec, persistencia de URL activa).
+
+**Archivos impactados**:
+- `pubspec.yaml`
+- `docs/contexto/historial.md`
+
+## [2026-10-27] - REFACTOR / BUGFIX - Solución Integral Anti-Reinicios, Optimización de Renderizado y Estabilidad Continua en Sección Pinterest
+
+**Resumen**:
+- **Neutralización de Bucles de Recarga y Redirección en JavaScript (`PinterestCleaner`)**:
+  - Se interceptó `window.location.reload` mediante un envoltorio con estrangulamiento temporal (mínimo 12 segundos entre recargas legítimas), anulando los bucles continuos de recarga provocados por los timeouts de Pinterest Mobile al fallar los intentos de apertura de la app externa.
+  - Se interceptó `window.location.replace` para bloquear redirecciones no deseadas a la raíz (`https://www.pinterest.com/`) o a la misma URL cuando el usuario está navegando un tablero o pin.
+  - Se interceptó `window.open` devolviendo `null` e impidiendo la apertura descontrolada de popups que causaban crasheos o saltos de navegación.
+  - Bloqueo en fase de captura de clics en enlaces con esquemas `intent://`, `pinterest://`, `market://` y `play.google.com`.
+- **Eliminación Definitiva de Colapso de Decodificadores de Video (`releaseVideoDecoder`)**:
+  - En scroll infinito, Pinterest acumulaba decenas de etiquetas `<video>`, agotando el límite del sistema de hardware `MediaCodec` en Android (8 a 16 instancias) y produciendo fallos fatales de GPU / render process (`onRenderProcessGone`).
+  - Se implementó `releaseVideoDecoder` que desmonta completamente la fuente de video (`removeAttribute('src')`, limpieza de nodos hijos y `load()`) para todos los videos en segundo plano.
+  - Se interceptó `HTMLMediaElement.prototype.play` permitiendo únicamente la reproducción cuando el video es activado explícitamente por el usuario, liberando los decodificadores de los demás videos y garantizando un máximo de 1 decodificador activo.
+- **Perfil de Navegación Moderno y Limpio (Tablet/Desktop Android)**:
+  - Se configuró el User-Agent a Chromium Tablet (`Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36`), suprimiendo los scripts agresivos de app-upsell de Pinterest sin perder la perfecta adaptabilidad responsiva CSS al ancho de pantalla del móvil ni la respuesta táctil.
+  - Se habilitaron dominios de autenticación OAuth en `onNavigationRequest` (`accounts.google.com`, `appleid.apple.com`, `facebook.com`, `recaptcha.net`) permitiendo iniciar sesión sin bloqueos externos.
+- **Persistencia de URL Activa y Recuperación sin Parpadeos (`PinterestService` y `PinterestScreen`)**:
+  - `PinterestService` ahora persiste `_currentUrl` en `SharedPreferences` (`furi_pinterest_last_nav_url`) evitando perder tableros o pines ante recargas o cambios de pantalla.
+  - Se amplió el debounce de recuperación de `_handleRendererGone` a 3500ms con reconexión suave en la URL exacta navegada.
+- **Liberación de Memoria Nativa en Android (`MainActivity.kt`)**:
+  - Se implementó `onTrimMemory` en `MainActivity.kt`: ante presión de memoria (`TRIM_MEMORY_RUNNING_LOW`), se recorre la jerarquía de vistas y se ejecuta `view.clearCache(false)`, liberando la caché de bitmaps de Chromium en RAM sin afectar cookies ni archivos locales.
+  - En `SafeFuriWebViewClient.onRenderProcessGone`, se añadió un debounce de 3000ms en el canal nativo hacia Flutter.
+- **Calidad y Verificación**:
+  - Creadas y ampliadas suites de tests en `test/screens/galeria/pinterest_service_test.dart`, `pinterest_screen_test.dart` y `pinterest_top_bar_widget_test.dart`.
+  - 185/185 tests ejecutados exitosamente en la suite global de galerías y herramientas.
+  - `flutter analyze`: **0 advertencias, 0 errores** en todo el proyecto.
+  - 100% de los archivos Dart en `lib/screens/galeria/` cumplen rigurosamente con la regla de $\le 300$ líneas.
+
+**Lecciones aprendidas**:
+- Los sitios web orientados a aplicaciones móviles (como Pinterest) contienen códigos de JavaScript diseñados para intentar abrir su app nativa mediante `intent://` y ejecutar un `setTimeout` con `window.location.reload()` o `replace()` si no detectan que la app se abrió. Neutralizar esos timeouts a nivel de JavaScript (`window.location.reload`) es fundamental para que el WebView funcione de forma fluida y estable.
+- En Android, los elementos `<video>` mantienen decodificadores de hardware asignados en el subsistema Stagefright incluso en estado de pausa. Desasociar el atributo `src` y llamar a `load()` en elementos fuera del viewport es la única forma confiable de liberar decodificadores y prevenir el colapso de Chromium (`onRenderProcessGone`) en feeds infinitos.
+
+**Archivos impactados**:
+- `lib/screens/galeria/services/pinterest_service.dart`
+- `lib/screens/galeria/widgets/pinterest_cleaner.dart`
+- `lib/screens/galeria/helpers/pinterest_controller_factory.dart`
+- `lib/screens/galeria/pinterest_screen.dart`
+- `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
+- `test/screens/galeria/pinterest_service_test.dart`
+- `test/screens/herramientas/drawing_viewport_zoom_test.dart`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/historial.md`
+
+## [2026-10-27] - REFACTOR / BUGFIX - Rediseño Integral del Sistema de Zoom y Navegación Multitáctil en Taller de Dibujo Digital
+
+**Resumen**:
+- **Eliminación de saltos y teletransporte de posición al levantar dedos (Zoom diferencial e incremental)**:
+  - Se sustituyó el cálculo estático basado en `initialTransform`, `initialFocalPoint` e `initialDistance` por una máquina de estados desacoplada con transformaciones incrementales fotograma a fotograma (`DrawingViewportMath.applyIncrementalTransform`).
+  - Al levantar un dedo durante el gesto de zoom o paneo con 2 dedos, el sistema re-ancla suavemente el punto focal en el dedo restante sin recalcular distancias relativas obsoletas ni resetear la escala a 1.0x, eliminando los saltos bruscos y el autocolocado en coordenadas anómalas.
+  - El dedo restante puede continuar desplazando el lienzo suavemente hasta que todos los dedos se retiren de la pantalla.
+- **Span Multi-puntero Sinuoso e Invariante al Orden (`DrawingViewportMath.calculateSpan`)**:
+  - Se implementó el cálculo continuo de separación promedio alrededor del punto focal $\frac{2}{N}\sum \|p_i - F\|$, garantizando simetría matemática ante 2, 3 o más dedos sin sesgos de orden ni saltos al detectar contactos adicionales (rechazo de palma/apoyo de mano).
+- **Protección de Herramienta Balde durante Zoom Multitáctil**:
+  - Al seleccionar la herramienta de balde de relleno (`bucketFill`), los toques de un solo dedo se difieren a la liberación (`onPointerUp`); si un segundo dedo entra en contacto para pellizcar o desplazar, la acción de relleno se descarta inmediatamente, evitando inundar accidentalmente el lienzo al intentar hacer zoom.
+- **Soporte de Zoom Progresivo con Rueda de Ratón (Desktop)**:
+  - Se incorporó `DrawingViewportMath.applyZoomAtPoint` y `Listener(onPointerSignal)` para zoom suave y continuo enfocado en el cursor del ratón en Windows/escritorio.
+- **Modularización y Regla de 300 Líneas**:
+  - `DrawingCanvasPaper` (110 líneas): componente puro de renderizado del lienzo (fondo, rotación, CustomPaint de capas, cursor y viñeta).
+  - `DrawingViewportGestureCoordinator` (183 líneas): coordinador desacoplado de eventos pointer y máquina de navegación gestual.
+  - `DrawingCanvasViewport` (137 líneas): viewport principal acoplado al árbol de widgets con `InteractiveViewer`.
+  - `DrawingViewportMath` (152 líneas): funciones matemáticas vectoriales y transformaciones afines diferenciales.
+- **Calidad y Verificación**:
+  - Creada suite `test/screens/herramientas/drawing_viewport_zoom_test.dart` con 5 tests unitarios y de widgets cubriendo invariancia de punto focal, levantamiento asíncrono de dedos, protección de balde y zoom por rueda de ratón.
+  - 178/178 tests de herramientas pasando con éxito (100% green).
+  - `flutter analyze`: 0 errores, 0 advertencias.
+
+**Lecciones aprendidas**:
+- En aplicaciones de dibujo donde los dedos controlan tanto el trazo (1 dedo) como la cámara (2+ dedos), nunca se deben calcular matrices absolutas ancladas a un estado inicial fijo (`T_initial`), porque los dedos humanos nunca se levantan ni tocan la pantalla en el mismo milisegundo. Tratar cada evento de movimiento como un paso diferencial incremental ($\Delta M = \text{translate}(F_t - s F_{prev}) \cdot \text{scale}(s)$) y re-anclar al cambiar la cantidad de punteros activos garantiza continuidad visual $C^0$ y elimina cualquier posibilidad de teletransporte.
+- Las herramientas de acción instantánea con toque único (como el balde de pintura) deben validarse al levantar el dedo (`PointerUp`) si no hubo desplazamiento ni intervención de un segundo puntero, para que el usuario pueda pellizcar libremente sobre cualquier parte del lienzo sin riesgo de disparar un relleno indeseado.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/widgets/drawing_viewport_math.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_viewport.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_canvas_paper.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_viewport_gesture_coordinator.dart`
+- `test/screens/herramientas/drawing_viewport_zoom_test.dart`
+- `docs/contexto/historial.md`
+- `docs/contexto/errores-conocidos.md`
+
 ## [2026-10-26] - FEATURE - Escalado y Agrandamiento Dinámico del Lienzo dentro de Viñetas al Encuadrar en Cómic Studio
 
 **Resumen**:

@@ -12,6 +12,7 @@ class PinterestService {
   PinterestService._internal();
 
   static const String _prefKeyLoggedIn = 'furi_pinterest_logged_in_state';
+  static const String _prefKeyLastNavUrl = 'furi_pinterest_last_nav_url';
   static const String _defaultUrl = 'https://www.pinterest.com/';
 
   bool _isLoggedIn = false;
@@ -24,7 +25,7 @@ class PinterestService {
   final ValueNotifier<bool> loggedInNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<String> urlNotifier = ValueNotifier<String>(_defaultUrl);
 
-  /// Inicializa la sesión guardada desde SharedPreferences
+  /// Inicializa la sesión y última URL navegada desde SharedPreferences
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -33,11 +34,21 @@ class PinterestService {
       _isLoggedIn = prefs.getBool(_prefKeyLoggedIn) ?? false;
       loggedInNotifier.value = _isLoggedIn;
 
+      final savedUrl = prefs.getString(_prefKeyLastNavUrl);
+      if (savedUrl != null &&
+          savedUrl.isNotEmpty &&
+          savedUrl.startsWith('http') &&
+          !savedUrl.contains('intent:') &&
+          !savedUrl.contains('market:')) {
+        _currentUrl = savedUrl;
+        urlNotifier.value = savedUrl;
+      }
+
       // Comprobar cookies nativas en Android si estaban disponibles
       if (!kIsWeb && Platform.isAndroid) {
         final hasCookie = await NotificationService.checkPinterestAuthCookie();
         if (hasCookie && !_isLoggedIn) {
-          setLoggedIn(true);
+          await setLoggedIn(true);
         }
       }
     } catch (e) {
@@ -59,12 +70,22 @@ class PinterestService {
     } catch (_) {}
   }
 
-  /// Actualiza la URL activa de navegación SPA
-  void updateUrl(String url) {
+  /// Actualiza la URL activa de navegación SPA y la persiste en disco
+  Future<void> updateUrl(String url) async {
     if (url.isEmpty || !url.startsWith('http')) return;
     if (_currentUrl == url) return;
+
+    // Si ya estamos autenticados y la URL recibida es un rebote a /login por error transitorio,
+    // no pisar la última URL de navegación válida
+    if (_isLoggedIn && url.contains('/login')) return;
+
     _currentUrl = url;
     urlNotifier.value = url;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyLastNavUrl, url);
+    } catch (_) {}
   }
 
   /// Valida el estado de autenticación analizando cookies o DOM

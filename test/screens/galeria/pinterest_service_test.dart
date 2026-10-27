@@ -28,19 +28,23 @@ void main() {
       expect(service.loggedInNotifier.value, isFalse);
     });
 
-    test('Actualización y normalización de URL activa', () {
+    test('Actualización y normalización de URL activa con persistencia en SharedPreferences', () async {
       final service = PinterestService();
+      await service.init();
       expect(service.currentUrl, 'https://www.pinterest.com/');
 
-      service.updateUrl('https://www.pinterest.com/pin/123456789/');
+      await service.updateUrl('https://www.pinterest.com/pin/123456789/');
       expect(service.currentUrl, 'https://www.pinterest.com/pin/123456789/');
       expect(service.urlNotifier.value, 'https://www.pinterest.com/pin/123456789/');
 
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('furi_pinterest_last_nav_url'), 'https://www.pinterest.com/pin/123456789/');
+
       // Ignora URLs no-http o vacías
-      service.updateUrl('');
+      await service.updateUrl('');
       expect(service.currentUrl, 'https://www.pinterest.com/pin/123456789/');
 
-      service.updateUrl('intent://pinterest.com/pin/123');
+      await service.updateUrl('intent://pinterest.com/pin/123');
       expect(service.currentUrl, 'https://www.pinterest.com/pin/123456789/');
     });
   });
@@ -62,7 +66,7 @@ void main() {
       expect(service.isLoggedIn, isTrue);
     });
 
-    test('El script cleanerJs contiene protecciones críticas', () {
+    test('El script cleanerJs contiene protecciones críticas anti-reinicio y anti-crash', () {
       expect(PinterestCleaner.channelName, 'FuriPinterest');
       expect(PinterestCleaner.cleanerJs, contains('standalone'));
       expect(PinterestCleaner.cleanerJs, contains('isExternalIntent'));
@@ -70,6 +74,9 @@ void main() {
       expect(PinterestCleaner.cleanerJs, contains('sanitizeMedia'));
       expect(PinterestCleaner.cleanerJs, contains('furi-pinterest-cleaner'));
       expect(PinterestCleaner.cleanerJs, contains('app_upsell_dismissed'));
+      expect(PinterestCleaner.cleanerJs, contains('origReload'));
+      expect(PinterestCleaner.cleanerJs, contains('window.open'));
+      expect(PinterestCleaner.cleanerJs, contains('releaseVideoDecoder'));
     });
   });
 }

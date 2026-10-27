@@ -43,13 +43,25 @@ class PinterestCleaner {
           localStorage.setItem('app_banner_dismissed', 'true');
         } catch (_) {}
 
-        // 2. Neutralizar enlaces e intentos de salto a intent:// o tiendas que reinician la página
+        // 2. Neutralizar bucles de reinicio, intents y popups de redirección
         const isExternalIntent = (url) => {
           if (!url || typeof url !== 'string') return false;
           const u = url.toLowerCase();
           return u.startsWith('intent:') || u.startsWith('pinterest:') || 
                  u.startsWith('market:') || u.startsWith('android-app:') ||
                  u.includes('play.google.com') || u.includes('apps.apple.com');
+        };
+
+        let lastReloadTime = 0;
+        const origReload = window.location.reload;
+        window.location.reload = function() {
+          const now = Date.now();
+          if (now - lastReloadTime < 12000) {
+            console.warn('[FURI] window.location.reload throttled');
+            return;
+          }
+          lastReloadTime = now;
+          return origReload.apply(this, arguments);
         };
 
         const origAssign = window.location.assign;
@@ -61,8 +73,19 @@ class PinterestCleaner {
         const origReplace = window.location.replace;
         window.location.replace = function(url) {
           if (isExternalIntent(url)) return;
+          if (url && (url === location.href || url === location.pathname)) return;
           return origReplace.apply(this, arguments);
         };
+
+        try {
+          window.open = function(url) {
+            if (isExternalIntent(url)) return null;
+            if (url) {
+              window.location.assign(url);
+            }
+            return null;
+          };
+        } catch (_) {}
 
         document.addEventListener('click', (e) => {
           const a = e.target && e.target.closest ? e.target.closest('a') : null;
@@ -74,11 +97,34 @@ class PinterestCleaner {
 
         // 3. Prevenir agotamiento de decodificadores de hardware por videos en segundo plano
         try {
+          const releaseVideoDecoder = (v) => {
+            try {
+              if (v && v.tagName === 'VIDEO') {
+                v.pause();
+                v.removeAttribute('src');
+                while (v.firstChild) {
+                  v.removeChild(v.firstChild);
+                }
+                v.load();
+              }
+            } catch (_) {}
+          };
+
           const origPlay = HTMLMediaElement.prototype.play;
           HTMLMediaElement.prototype.play = function() {
             if (this.tagName === 'VIDEO' && !this.dataset.userActive) {
               this.pause();
               return Promise.resolve();
+            }
+            // Al reproducir un video activo, liberar decodificadores de otros videos en segundo plano
+            if (this.tagName === 'VIDEO') {
+              const allVideos = document.getElementsByTagName('video');
+              for (let i = 0; i < allVideos.length; i++) {
+                const other = allVideos[i];
+                if (other !== this && !other.paused) {
+                  releaseVideoDecoder(other);
+                }
+              }
             }
             return origPlay.apply(this, arguments);
           };
@@ -91,11 +137,11 @@ class PinterestCleaner {
               if (v.autoplay) v.autoplay = false;
               if (v.preload !== 'none') v.preload = 'none';
               if (!v.dataset.userActive && !v.paused) {
-                v.pause();
+                releaseVideoDecoder(v);
               }
             }
           };
-          setInterval(sanitizeMedia, 2500);
+          setInterval(sanitizeMedia, 2000);
         } catch (_) {}
 
         // 4. Inyección de reglas CSS para ocultamiento instantáneo sin alterar React 18

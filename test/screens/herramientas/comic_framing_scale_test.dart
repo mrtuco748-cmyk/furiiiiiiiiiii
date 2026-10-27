@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:furi_app/screens/herramientas/comic/controllers/comic_controller.dart';
 import 'package:furi_app/screens/herramientas/comic/models/comic_interaction_mode.dart';
-import 'package:furi_app/screens/herramientas/comic/models/comic_panel.dart';
 import 'package:furi_app/screens/herramientas/comic/widgets/comic_mode_indicator_banner.dart';
 import 'package:furi_app/screens/herramientas/comic/widgets/comic_page_editor_widget.dart';
 

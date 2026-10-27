@@ -8,6 +8,37 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
+### ~~CRÍTICA - Reinicios continuos, recargas en bucle y congelamiento en la sección de Pinterest~~ ✅ RESUELTO 2026-10-27
+- **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `lib/screens/galeria/helpers/pinterest_controller_factory.dart`, `lib/screens/galeria/widgets/pinterest_cleaner.dart`, `lib/screens/galeria/services/pinterest_service.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
+- **Qué pasaba**: Al navegar por Pinterest en celular, la pantalla se reiniciaba a cada rato, parpadeaba recargando al inicio (`pinterest.com`), o se congelaba tras scroll prolongado.
+- **Causa raíz**:
+  1. **Bucles de redirección de Mobile Web e intents fallidos**: Pinterest detectaba el User Agent `Mobile` y ejecutaba scripts agresivos de app-upsell (`intent://`, `pinterest://`). Cuando el WebView bloqueaba estos esquemas, Pinterest disparaba un timeout de fallback (`setTimeout`) que invocaba `window.location.reload()` o `window.location.replace("https://www.pinterest.com/")`, recargando la página cada 1.5 a 3 segundos.
+  2. **Colapso de GPU y agotamiento de decodificadores de hardware (MediaCodec OOM)**: Los pines de video en el feed infinito creaban elementos `<video>` que reservaban instancias de hardware `MediaCodec` en Android (límite del sistema de 8 a 16 decodificadores). Al sobrepasar el límite, Android arrojaba SIGSEGV en `libstagefright.so` y Chromium mataba el proceso de renderizado (`onRenderProcessGone`).
+  3. **Recreación destructiva y pérdida de URL**: Al recibir `onRenderProcessGone`, el WebView nativo se destruía abruptamente y Dart recreaba el controlador completo tras 250ms, reseteando la URL a la raíz porque `PinterestService` no persistía en disco `currentUrl`.
+  4. **Acumulación de memoria en scroll infinito**: No se escuchaban eventos del sistema Android `onTrimMemory` para liberar la caché de texturas y mapas de bits decodificados de Chromium en memoria RAM.
+- **Fix**:
+  1. **Supresión y estrangulamiento de reloads en JS (`cleanerJs`)**: Se interceptó `window.location.reload` con un límite mínimo de 12 segundos entre recargas legítimas, neutralizando los reloads repetitivos de los timeouts de Pinterest. Se bloquearon intentos de `window.location.replace` al home o a la misma URL, y se interceptó `window.open` devolviendo `null` para prevenir popups y esquemas externos no controlados.
+  2. **Control estricto de decodificadores de video (`releaseVideoDecoder`)**: Se interceptó `HTMLMediaElement.prototype.play` permitiendo únicamente videos activados por el usuario. Al iniciar cualquier video, se liberan y desmontan los decodificadores de los videos en segundo plano (`removeAttribute('src')`, vaciado de hijos y `load()`), garantizando como máximo 1 decodificador activo y reduciendo a cero los crasheos por MediaCodec.
+  3. **Perfil de navegación moderno Tablet/Desktop**: Se actualizó el User-Agent a Chromium Tablet (`SM-X910` sin el token `Mobile`), eliminando las trampas e intercepciones forzosas de app-upsell de Pinterest, manteniendo el 100% de la adaptabilidad responsiva CSS al ancho de pantalla del móvil y fluidez táctil nativa.
+  4. **Persistencia robusta de URL y sesión en `PinterestService`**: `currentUrl` se persiste atómicamente en `SharedPreferences` (`furi_pinterest_last_nav_url`) evitando rebotes a `/login`. Ante cualquier recuperación del proceso de renderizado, se reabre la URL exacta en la que estaba el usuario con un debounce seguro de 3500ms.
+  5. **Manejo nativo de `onTrimMemory` en `MainActivity.kt`**: Se implementó `onTrimMemory` que ejecuta `view.clearCache(false)` para liberar bitmaps en memoria RAM durante sesiones largas sin borrar cookies ni caché en disco.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-27
+
+
+- **Dónde**: `lib/screens/herramientas/dibujo/widgets/drawing_viewport_math.dart`, `drawing_canvas_viewport.dart`, `drawing_viewport_gesture_coordinator.dart`
+- **Qué pasaba**: Al pellizcar con dos dedos para hacer zoom y soltar los dedos, o al levantar un dedo antes que el otro durante el gesto, el lienzo saltaba de golpe cientos de píxeles y se colocaba solo en posiciones extrañas, reseteando la escala de zoom. Además, si se iniciaba el pellizco con el balde seleccionado, a veces se inundaba el lienzo.
+- **Causa raíz**:
+  1. `calculateTwoFingerTransform` utilizaba una matriz absoluta anclada a `initialTransform`, `initialFocalPoint` e `initialDistance`. Al levantar un dedo antes que el otro (asincronía natural del tacto humano), los punteros activos pasaban de 2 a 1. `calculateDistance` retornaba `0.0`, lo que forzaba el factor de escala `s` de vuelta a `1.0`, y el punto focal mutaba instantáneamente del punto medio de los dos dedos a la posición absoluta del único dedo restante, produciendo una traslación artificial de la mitad de la separación de los dedos y colapsando el zoom previo.
+  2. El cálculo de separación entre 3 o más dedos evaluaba únicamente `pointers.toList()[0] - pointers.toList()[1]`, provocando fluctuaciones bruscas según el orden interno de claves del mapa.
+  3. No existía desacoplamiento entre el ciclo de vida de los punteros y el trazo del balde (`bucketFill`).
+- **Fix**:
+  1. Se implementó una transformación incremental frame-a-frame (`DrawingViewportMath.applyIncrementalTransform`) donde cada evento calcula una delta respecto al frame anterior ($\Delta M$). Al levantar un dedo, el coordinador reancla el punto focal al dedo restante sin modificar la matriz, permitiendo continuar paneando suavemente o levantar todos los dedos sin ningún salto visual.
+  2. Se introdujo `calculateSpan` simétrico e invariante al orden para $N$ dedos: $\frac{2}{N}\sum \|p_i - F\|$.
+  3. Se desacopló la lógica en `DrawingViewportGestureCoordinator` difiriendo la activación del balde a `onPointerUp` y cancelándola inmediatamente si se detecta un segundo dedo.
+  4. Se incorporó zoom continuo con rueda de ratón (`Listener.onPointerSignal`) y se modularizó el lienzo en `DrawingCanvasPaper` respetando la regla de $\le 300$ líneas.
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-27
+
+
 ### ~~ALTA - Reset de grosor al intercalar entre lápiz/pinceles y borrador en Taller de Dibujo~~ ✅ RESUELTO 2026-10-26
 - **Dónde**: `lib/screens/herramientas/dibujo/controllers/drawing_controller.dart`
 - **Qué pasaba**: Al configurar un grosor específico para el lápiz (ej. 14 px) y luego cambiar al borrador para corregir un trazo (ej. 45 px), al volver al lápiz o al borrador el grosor se reseteaba incondicionalmente a los valores predeterminados de fábrica de cada herramienta (`tool.defaultWidth`).
