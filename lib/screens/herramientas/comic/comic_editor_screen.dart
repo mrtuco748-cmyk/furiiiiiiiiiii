@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'controllers/comic_controller.dart';
 import 'helpers/comic_editor_actions.dart';
+import 'helpers/comic_render_exporter.dart';
 import 'models/comic_bubble.dart';
 import 'models/comic_project.dart';
 import 'models/comic_sticker.dart';
@@ -29,16 +31,10 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
   late final ComicController _controller;
   Timer? _autoSaveTimer;
 
-  bool _showBubbleBar = false;
-  bool _showSfxBar = false;
-  bool _showSfxEditor = false;
-  bool _showPanelCustomizer = false;
-  bool _showTemplateBar = false;
-  bool _showLayersDock = false;
-  bool _isImmersive = false;
+  bool _showBubbleBar = false, _showSfxBar = false, _showSfxEditor = false;
+  bool _showPanelCustomizer = false, _showTemplateBar = false, _showLayersDock = false, _isImmersive = false;
 
-  ComicBubble? _editingBubble;
-  ComicSticker? _editingSfx;
+  ComicBubble? _editingBubble; ComicSticker? _editingSfx;
 
   @visibleForTesting
   ComicController get controller => _controller;
@@ -58,12 +54,7 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
 
   void _openProjects() {
     _closeAllOverlays();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => ComicProjectsSheet(controller: _controller),
-    );
+    showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (_) => ComicProjectsSheet(controller: _controller));
   }
 
   void _onControllerChange() {
@@ -73,14 +64,28 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
 
   Future<void> _performAutoSave() async {
     try {
+      if (_controller.project.pages.isNotEmpty) {
+        final thumb = await ComicRenderExporter.exportPageToPng(
+          _controller.project.pages.first,
+          _controller.panelImages,
+          size: const Size(360, 509),
+        );
+        if (thumb != null) _controller.setCoverImage(base64Encode(thumb));
+      }
       await ComicStorageService.saveProject(_controller.project);
     } catch (_) {}
+  }
+
+  Future<void> _handleBack() async {
+    _closeAllOverlays();
+    _autoSaveTimer?.cancel();
+    await _performAutoSave();
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
-    _performAutoSave();
     _controller.removeListener(_onControllerChange);
     _controller.dispose();
     super.dispose();
@@ -116,21 +121,26 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF141414),
-      body: ListenableBuilder(
-        listenable: _controller,
-        builder: (context, _) {
-          final activePanel = _controller.selectedPanel;
-          return Stack(
-            children: [
-              // Canvas de la página de cómic
-              Positioned.fill(
-                child: ComicPageEditorWidget(
-                  controller: _controller,
-                  isImmersive: _isImmersive,
-                  onExitImmersive: () => setState(() => _isImmersive = false),
-                  onPanelTap: (_) => _toggleOverlay(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop) await _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF141414),
+        body: ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) {
+            final activePanel = _controller.selectedPanel;
+            return Stack(
+              children: [
+                // Canvas de la página de cómic
+                Positioned.fill(
+                  child: ComicPageEditorWidget(
+                    controller: _controller,
+                    isImmersive: _isImmersive,
+                    onExitImmersive: () => setState(() => _isImmersive = false),
+                    onPanelTap: (_) => _toggleOverlay(),
                   onBubbleTap: (bubble) => _toggleOverlay(bubble: true, bubbleItem: bubble),
                   onSfxTap: (sfx) => _toggleOverlay(sfxEditor: true, sfxItem: sfx),
                   onBubbleDoubleTap: (bubble) => _toggleOverlay(bubble: true, bubbleItem: bubble),
@@ -147,15 +157,10 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                   right: 0,
                   child: ComicTopBar(
                     controller: _controller,
+                    onBack: _handleBack,
                     onOpenProjects: _openProjects,
-                    onOpenReader: () {
-                      _closeAllOverlays();
-                      ComicEditorActions.openReader(context, _controller);
-                    },
-                    onOpenExport: () {
-                      _closeAllOverlays();
-                      ComicEditorActions.openExport(context, _controller);
-                    },
+                    onOpenReader: () { _closeAllOverlays(); ComicEditorActions.openReader(context, _controller); },
+                    onOpenExport: () { _closeAllOverlays(); ComicEditorActions.openExport(context, _controller); },
                     isImmersive: _isImmersive,
                     onToggleImmersive: () => setState(() => _isImmersive = !_isImmersive),
                     isLayersOpen: _showLayersDock,
@@ -182,7 +187,6 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFF1E1E1E),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFF00D4FF), width: 1.5),
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
@@ -288,6 +292,7 @@ class _ComicEditorScreenState extends State<ComicEditorScreen> {
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 }
