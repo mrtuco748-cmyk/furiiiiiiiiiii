@@ -16,6 +16,9 @@ class DrawingLayerOptionsSheet extends StatefulWidget {
   });
 
   static Future<void> show(BuildContext context, DrawingController controller, int index) {
+    if (index >= 0 && index < controller.layers.length) {
+      controller.setActiveLayer(index);
+    }
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -31,47 +34,41 @@ class DrawingLayerOptionsSheet extends StatefulWidget {
 class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
   late double _opacity;
 
-  DrawingLayer get _layer => widget.controller.layers[widget.layerIndex];
+  DrawingLayer? get _layer {
+    if (widget.layerIndex < 0 || widget.layerIndex >= widget.controller.layers.length) return null;
+    return widget.controller.layers[widget.layerIndex];
+  }
 
   @override
   void initState() {
     super.initState();
-    _opacity = _layer.opacity;
+    _opacity = _layer?.opacity ?? 1.0;
   }
 
   Future<void> _renameLayer() async {
-    final textCtrl = TextEditingController(text: _layer.name);
+    final layer = _layer;
+    if (layer == null) return;
+    final textCtrl = TextEditingController(text: layer.name);
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Renombrar Capa', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
         content: TextField(
           controller: textCtrl,
           autofocus: true,
           style: const TextStyle(color: Colors.white, fontSize: 15),
-          decoration: InputDecoration(
-            hintText: 'Nombre de la capa',
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: const Color(0xFF282828),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-          ),
+          decoration: const InputDecoration(hintText: 'Nombre de la capa', hintStyle: TextStyle(color: Colors.white38)),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancelar', style: TextStyle(color: Colors.white54))),
           TextButton(
-            onPressed: () {
-              final t = textCtrl.text.trim();
-              if (t.isNotEmpty) Navigator.of(ctx).pop(t);
-            },
+            onPressed: () { final t = textCtrl.text.trim(); if (t.isNotEmpty) Navigator.of(ctx).pop(t); },
             child: const Text('Guardar', style: TextStyle(color: Color(0xFF00D4FF), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
-
     if (newName != null && newName.isNotEmpty) {
       widget.controller.renameLayer(widget.layerIndex, newName);
       if (mounted) setState(() {});
@@ -80,6 +77,13 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final layer = _layer;
+    if (layer == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+      return const SizedBox.shrink();
+    }
     final canMergeDown = widget.layerIndex > 0;
     final totalLayers = widget.controller.layers.length;
 
@@ -103,7 +107,7 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
                     children: [
                       Flexible(
                         child: Text(
-                          _layer.name,
+                          layer.name,
                           style: GoogleFonts.bangers(color: Colors.white, fontSize: 20, letterSpacing: 0.8),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -169,15 +173,15 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: _layer.isVisible ? const Color(0xFF282828) : const Color(0xFF332020),
+                        color: layer.isVisible ? const Color(0xFF282828) : const Color(0xFF332020),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(_layer.isVisible ? Icons.visibility : Icons.visibility_off, color: _layer.isVisible ? Colors.white : Colors.white38, size: 20),
+                          Icon(layer.isVisible ? Icons.visibility : Icons.visibility_off, color: layer.isVisible ? Colors.white : Colors.white38, size: 20),
                           const SizedBox(height: 4),
-                          Text(_layer.isVisible ? 'Visible' : 'Oculta', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                          Text(layer.isVisible ? 'Visible' : 'Oculta', style: const TextStyle(color: Colors.white70, fontSize: 11)),
                         ],
                       ),
                     ),
@@ -195,15 +199,15 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: _layer.isLocked ? const Color(0xFF3A2B18) : const Color(0xFF282828),
+                        color: layer.isLocked ? const Color(0xFF3A2B18) : const Color(0xFF282828),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(_layer.isLocked ? Icons.lock : Icons.lock_open, color: _layer.isLocked ? const Color(0xFFFFDE59) : Colors.white70, size: 20),
+                          Icon(layer.isLocked ? Icons.lock : Icons.lock_open, color: layer.isLocked ? const Color(0xFFFFDE59) : Colors.white70, size: 20),
                           const SizedBox(height: 4),
-                          Text(_layer.isLocked ? 'Bloqueada' : 'Libre', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                          Text(layer.isLocked ? 'Bloqueada' : 'Libre', style: const TextStyle(color: Colors.white70, fontSize: 11)),
                         ],
                       ),
                     ),
@@ -214,10 +218,7 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
                 // Duplicar
                 Expanded(
                   child: GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      widget.controller.duplicateActiveLayer();
-                    },
+                    onTap: () { Navigator.of(context).pop(); widget.controller.duplicateActiveLayer(); },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(color: const Color(0xFF282828), borderRadius: BorderRadius.circular(10)),
@@ -238,10 +239,7 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
                 if (canMergeDown)
                   Expanded(
                     child: GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        widget.controller.mergeActiveLayerDown();
-                      },
+                      onTap: () { Navigator.of(context).pop(); widget.controller.mergeActiveLayerDown(); },
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(color: const Color(0xFF282828), borderRadius: BorderRadius.circular(10)),
@@ -270,10 +268,7 @@ class _DrawingLayerOptionsSheetState extends State<DrawingLayerOptionsSheet> {
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2D1616),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFF2D1616), borderRadius: BorderRadius.circular(10)),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

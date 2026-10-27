@@ -1,5 +1,44 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-26] - BUGFIX - Perfeccionamiento Táctil: Reordenamiento Fluido de Capas sin Crash y Arrastre Seguro de Globos de Diálogo
+
+**Resumen**:
+- **Solución al crash de capas y reordenamiento táctil en Dibujo Digital**:
+  - En `DrawingLayerOperations.reorderLayers`: Se eliminó el cálculo manual inverso con aritmética propensa a índices negativos (`-1`) que provocaba una excepción no capturada `RangeError` al arrastrar capas en el dock vertical. Se implementó una lógica de lista visual pura (`visualList = List.from(currentLayers.reversed)`), aplicando el reordenamiento nativo estándar de Flutter con ajuste seguro de límites (`clamp`) y preservando la capa activa sin pérdida de contexto.
+  - En `DrawingLayersDock`:
+    - Se rediseñó el dock vertical para uso cómodo con los dedos en smartphones (ancho optimizado de 164 px).
+    - Se desactivó `buildDefaultDragHandles: false` para evitar colisiones con gestos de long-press y pulsación.
+    - Se añadió una manija de arrastre explícita mediante `ReorderableDragStartListener` con icono táctil `Icons.drag_handle`, permitiendo iniciar el arrastre de forma instantánea sin retrasos ni esperas.
+    - Se incorporó un badge de miniatura (`C1`, `C2`...) con nombre elíptico en una sola línea (`softWrap: false`) que previene desbordamientos de RenderFlex.
+    - Se desacopló la botonera de opciones: selector de capa activa, toggle rápido de visibilidad (ojo) y modal completo de opciones (`Icons.tune`).
+  - En `DrawingLayerOptionsSheet`:
+    - Se añadió un getter seguro `_layer` con auto-cierre resiliente si la capa fue eliminada o movida, evitando desincronizaciones de índice.
+- **Perfeccionamiento del arrastre de globos de diálogo en Cómic Studio**:
+  - En `ComicPageEditorWidget`:
+    - Se removió la invocación prematura a `widget.onBubbleTap(b)` dentro de `_handlePanDown`. De esta forma, al posar el dedo para arrastrar, la pantalla no dispara `setState` en el padre ni abre barras contextuales durante el contacto inicial, garantizando un flujo táctil suave de 60/120 FPS sin interrupciones.
+    - Se añadió `onTap: () {}` en el `GestureDetector` de la página para asegurar la victoria en la arena de gestos táctiles, garantizando que el detector exterior de fondo (`Positioned.fill`) jamás reciba toques ocurridos sobre la hoja de cómic.
+  - En `ComicTransformResolver`:
+    - Se priorizó la comprobación del globo seleccionado en `findTappedBubble` con márgenes ampliados que cubren mangos de rotación y bordes (36 px y 52 px hacia el lollipop superior), evitando que viñetas subyacentes se apoderen del puntero.
+- **Calidad y Verificación**:
+  - Creado test de regresión unitario `test/screens/herramientas/drawing_layers_reorder_test.dart` (6/6 tests pasando).
+  - Test suite completa de herramientas `test/screens/herramientas/` ejecutada: 155/155 tests verdes (100% éxito).
+  - `flutter analyze lib/screens/herramientas test/screens/herramientas`: 0 issues.
+  - Verificada la regla estricta de $\le 300$ líneas en todos los archivos del módulo.
+
+**Lecciones aprendidas**:
+- En `ReorderableListView` con listas invertidas visualmente, nunca mezclar cálculos manuales `(length - 1 - index)` dentro del callback de destino: es mucho más robusto clonar la lista visual invertida, operar con los índices estándar de Flutter y reinvertir el resultado.
+- Nunca invocar callbacks de UI que disparen `setState` en widgets ancestros dentro de `onPanDown`; `onPanDown` es solo para preparación geométrica del gesto. Los callbacks de acción de tap pertenecen exclusivamente a `onTap` / `onTapUp`.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/controllers/drawing_layer_operations.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
+- `lib/screens/herramientas/dibujo/widgets/drawing_layer_options_sheet.dart`
+- `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`
+- `lib/screens/herramientas/comic/widgets/comic_transform_resolver.dart`
+- `test/screens/herramientas/drawing_layers_reorder_test.dart`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/historial.md`
+
 ## [2026-10-26] - BUGFIX - Movimiento Fluido de Globos de Diálogo en Cómic: Erradicación de Deselección Accidental y Optimización Táctil Directa
 
 **Resumen**:

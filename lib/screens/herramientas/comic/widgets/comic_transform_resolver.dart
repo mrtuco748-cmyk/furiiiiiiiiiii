@@ -65,6 +65,23 @@ class ComicTransformResolver {
   }
 
   static ComicBubble? findTappedBubble(ComicController c, Offset pos, Size pageSize) {
+    if (c.selectedBubble != null) {
+      final b = c.selectedBubble!;
+      final center = Offset(b.x * pageSize.width, b.y * pageSize.height);
+      final halfW = b.width / 2;
+      final halfH = b.height / 2;
+      final diff = pos - center;
+      final cosAngle = math.cos(-b.rotation);
+      final sinAngle = math.sin(-b.rotation);
+      final localX = diff.dx * cosAngle - diff.dy * sinAngle;
+      final localY = diff.dx * sinAngle + diff.dy * cosAngle;
+      if (localX.abs() <= halfW + 36.0 &&
+          (localY.abs() <= halfH + 36.0 ||
+              (localY >= -halfH - 52.0 && localY <= halfH + 36.0 && localX.abs() <= 32.0))) {
+        return b;
+      }
+    }
+
     for (final b in c.activePage.bubbles.reversed) {
       final center = Offset(b.x * pageSize.width, b.y * pageSize.height);
       final halfW = b.width / 2;
@@ -74,7 +91,7 @@ class ComicTransformResolver {
       final sinAngle = math.sin(-b.rotation);
       final localX = diff.dx * cosAngle - diff.dy * sinAngle;
       final localY = diff.dx * sinAngle + diff.dy * cosAngle;
-      final allowance = b.tailDirection != ComicTailDirection.none ? 42.0 : 30.0;
+      final allowance = b.tailDirection != ComicTailDirection.none ? 44.0 : 32.0;
       if (localX.abs() <= halfW + allowance && localY.abs() <= halfH + allowance) {
         return b;
       }

@@ -103,22 +103,28 @@ abstract final class DrawingLayerOperations {
   static (List<DrawingLayer>, int) reorderLayers(
     List<DrawingLayer> currentLayers,
     int activeIndex,
-    int oldIndex,
-    int newIndex,
+    int oldVisualIndex,
+    int newVisualIndex,
   ) {
-    if (oldIndex < 0 || oldIndex >= currentLayers.length) return (currentLayers, activeIndex);
-    if (newIndex < 0 || newIndex > currentLayers.length) return (currentLayers, activeIndex);
+    if (currentLayers.length <= 1) return (currentLayers, activeIndex);
+    if (oldVisualIndex < 0 || oldVisualIndex >= currentLayers.length) return (currentLayers, activeIndex);
+    if (newVisualIndex < 0 || newVisualIndex > currentLayers.length) return (currentLayers, activeIndex);
+
     final activeId = activeIndex >= 0 && activeIndex < currentLayers.length
         ? currentLayers[activeIndex].id
         : null;
-    final list = List<DrawingLayer>.from(currentLayers);
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
+
+    final visualList = List<DrawingLayer>.from(currentLayers.reversed);
+    var targetIndex = newVisualIndex;
+    if (oldVisualIndex < targetIndex) {
+      targetIndex -= 1;
     }
-    final item = list.removeAt(oldIndex);
-    list.insert(newIndex, item);
-    final nextActive = activeId != null ? list.indexWhere((l) => l.id == activeId) : 0;
-    return (list, nextActive != -1 ? nextActive : 0);
+    final item = visualList.removeAt(oldVisualIndex);
+    visualList.insert(targetIndex.clamp(0, visualList.length), item);
+
+    final updated = visualList.reversed.toList();
+    final nextActive = activeId != null ? updated.indexWhere((l) => l.id == activeId) : 0;
+    return (updated, nextActive != -1 ? nextActive : 0);
   }
 
   static (List<DrawingLayer>, int)? mergeDown(

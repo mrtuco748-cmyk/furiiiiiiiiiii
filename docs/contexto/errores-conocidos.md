@@ -8,7 +8,19 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
-### ~~CRÍTICA - Globos de texto en cómic se deseleccionaban y no se podían mover con los dedos~~ ✅ RESUELTO 2026-10-26
+### ~~CRÍTICA - Congelamiento de app y RangeError al reordenar capas en taller de dibujo~~ ✅ RESUELTO 2026-10-26
+- **Dónde**: `lib/screens/herramientas/dibujo/controllers/drawing_layer_operations.dart`, `lib/screens/herramientas/dibujo/widgets/drawing_layers_dock.dart`
+- **Qué pasaba**: Al presionar y arrastrar una capa con el dedo en el dock vertical de capas de dibujo para reordenarla, la aplicación lanzaba un `RangeError: Value not in range: -1` y la app se congelaba o se cerraba. Además, el dock era muy estrecho para el uso cómodo con los dedos.
+- **Causa raíz**:
+  1. **Aritmética inversa fallida en `reorderLayers`**: El callback de `ReorderableListView` entrega índices visuales de arriba hacia abajo (`0` es la capa superior). `reorderLayers` intentaba convertir esos índices mediante `layers.length - newIndex`, lo que combinado con la resta estándar de Flutter `newIndex -= 1` cuando `oldIndex < newIndex` producía índices `-1` fuera de rango.
+  2. **Colisión de gestos por mangos por defecto**: `ReorderableListView` con `buildDefaultDragHandles: true` requiere `DelayedReorderableDragStartListener` (long-press). Como el widget de cada capa tenía su propio `onLongPress` para abrir el modal de opciones, el gesto de arrastre colisionaba constantemente y abría el modal en vez de mover la capa.
+- **Fix**:
+  1. Se implementó una lógica de lista visual pura (`visualList = List.from(currentLayers.reversed)`) donde se aplica el movimiento estándar de Flutter y luego se revierte la lista (`visualList.reversed.toList()`), con clamping riguroso de límites.
+  2. Se configuró `buildDefaultDragHandles: false` y se añadió un `ReorderableDragStartListener` explícito con manija táctil `Icons.drag_handle`, permitiendo arrastre instantáneo sin conflicto de long-press.
+  3. Se rediseñó el dock con ancho de 164 px, badge numérico `C1`, `C2`..., selector de capa activa y botón dedicado para opciones de capa (`Icons.tune`).
+- **Prioridad**: ~~CRÍTICA~~ → RESUELTO 2026-10-26
+
+
 - **Dónde**: `lib/screens/herramientas/comic/widgets/comic_page_editor_widget.dart`, `comic_transform_resolver.dart`
 - **Qué pasaba**: Al presionar o arrastrar con el dedo un globo de texto en el lienzo de cómic, en vez de moverse se deseleccionaba inmediatamente y se quedaba fijo sin responder al tacto.
 - **Causa raíz**:

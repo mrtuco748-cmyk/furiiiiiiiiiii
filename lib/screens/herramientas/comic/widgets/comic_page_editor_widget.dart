@@ -90,8 +90,9 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
 
     final b = ComicTransformResolver.findTappedBubble(widget.controller, localPos, pageSize);
     if (b != null) {
-      widget.controller.selectBubble(b.id);
-      widget.onBubbleTap(b);
+      if (widget.controller.selectedBubbleId != b.id) {
+        widget.controller.selectBubble(b.id);
+      }
       _activeMode = ComicDragMode.move;
       return;
     }
@@ -261,6 +262,7 @@ class _ComicPageEditorWidgetState extends State<ComicPageEditorWidget> {
                 clipBehavior: Clip.antiAlias,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
+                  onTap: () {},
                   onPanDown: (d) => _handlePanDown(d.localPosition, pageSize),
                   onTapUp: (d) => _handlePageTap(d.localPosition, pageSize),
                   onPanStart: (d) => _handlePanStart(d.localPosition, pageSize),
