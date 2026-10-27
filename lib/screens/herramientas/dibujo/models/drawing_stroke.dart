@@ -43,9 +43,22 @@ class DrawingStroke {
     // Manejo de formas geométricas (Línea, Rectángulo, Círculo, Trayectoria, Relleno)
     if (tool == DrawingToolType.bucketFill) {
       if (points.length >= 3) {
-        p.moveTo(first.dx, first.dy);
-        for (int i = 1; i < points.length; i++) {
-          p.lineTo(points[i].offset.dx, points[i].offset.dy);
+        p.fillType = PathFillType.evenOdd;
+        bool isFirstInSubpath = true;
+        for (int i = 0; i < points.length; i++) {
+          final pt = points[i];
+          if (pt.pressure < 0) {
+            if (!isFirstInSubpath) {
+              p.close();
+            }
+            p.moveTo(pt.offset.dx, pt.offset.dy);
+            isFirstInSubpath = false;
+          } else if (isFirstInSubpath) {
+            p.moveTo(pt.offset.dx, pt.offset.dy);
+            isFirstInSubpath = false;
+          } else {
+            p.lineTo(pt.offset.dx, pt.offset.dy);
+          }
         }
         p.close();
       }

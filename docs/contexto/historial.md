@@ -1,5 +1,36 @@
 # Historial de Cambios y Aprendices y Aprendizajes
 
+## [2026-10-27] - BUGFIX / FEATURE - Parche de Relleno con Balde Inteligente con Respeto y Recorte de Puntos y Manchas Interiores (Holes / Islands)
+
+**Resumen**:
+- **Solución al Coloreo Indeseado sobre Manchas y Puntos Interiores**:
+  - Al rellenar con el balde (`DrawingToolType.bucketFill`) una forma cerrada (círculo, rectángulo o contorno cerrado) que contiene puntos, pecas, manchas a mano alzada o detalles interiores, el balde ahora pinta exclusivamente el fondo interior alrededor de los elementos, respetándolos intactos y sin cubrirlos ni pintarlos por encima.
+- **Detector y Extractor de Islas Interiores (`DrawingFillIslandDetector`)**:
+  - Se modularizó la lógica en `lib/screens/herramientas/dibujo/helpers/drawing_fill_island_detector.dart` (185 líneas).
+  - Identifica trazos interiores contenidos dentro de la envolvente exterior que no contienen al punto de toque (`seed`).
+  - Genera polígonos perimetrales adaptados a cada tipo de elemento: puntos simples circulares con radio según grosor de pincel (`strokeWidth / 2 + 1.2`), trazos cortos, óvalos/círculos y envolventes dilatadas a lo largo de normales perpendiculares para trazos y garabatos a mano alzada.
+  - Priorización por área estimada: si el usuario toca directamente sobre una mancha o punto interior, se selecciona el contenedor más específico y pequeño rellenando la mancha en sí misma sin alterar el fondo.
+- **Soporte de Múltiples Sub-Paths en Trazo y Persistencia (`DrawingStroke` y `StrokeRenderer`)**:
+  - En `DrawingStroke._buildPath()`, se configuró `PathFillType.evenOdd` para `bucketFill` y soporte de puntos centinela con `pressure < 0` como separadores de contorno interior (`p.close()` y nuevo `p.moveTo()`), permitiendo persistencia y deserialización 100% transparente en JSON (`DrawingProject.toMap` / `fromMap`).
+  - En `StrokeRenderer._renderBucketFill`, se simplificó el renderizado invocando directamente `canvas.drawPath(stroke.path, paint)`.
+- **Calidad y Verificación**:
+  - Creada suite de pruebas unitarias y de integración `test/screens/herramientas/drawing_flood_fill_islands_test.dart` (5/5 tests pasando).
+  - Suite completa de herramientas creativas: **183/183 tests pasando (100% green)**.
+  - `flutter analyze lib/screens/herramientas/ test/screens/herramientas/`: **0 advertencias, 0 errores**.
+  - Regla estricta de $\le 300$ líneas verificada en todos los archivos del módulo (`drawing_flood_fill_helper.dart`: 247 lín., `drawing_fill_island_detector.dart`: 185 lín., `drawing_stroke.dart`: 132 lín., `stroke_renderer.dart`: 244 lín.).
+
+**Lecciones aprendidas**:
+- En motores de dibujo vectorial donde los trazos de relleno deben convivir con trazos de línea y manchas previas en la misma capa, el relleno no puede ser un polígono simple macizo si existen elementos contenidos. Tratar los elementos internos como agujeros mediante la regla de bobinado alterno (`PathFillType.evenOdd`) y codificar el inicio de cada sub-path con `pressure < 0` en la lista secuencial de puntos resuelve simultáneamente el renderizado en pantalla y la serialización a disco sin necesidad de alterar los esquemas de datos existentes.
+
+**Archivos impactados**:
+- `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`
+- `lib/screens/herramientas/dibujo/helpers/drawing_fill_island_detector.dart`
+- `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`
+- `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- `test/screens/herramientas/drawing_flood_fill_islands_test.dart`
+- `docs/contexto/errores-conocidos.md`
+- `docs/contexto/historial.md`
+
 ## [2026-10-27] - RELEASE - Publicación F.U.R.I. v1.0.16 (Rediseño Navegación Multitáctil en Dibujo, Estabilidad en Pinterest y Releases Multiplataforma)
 
 **Resumen**:

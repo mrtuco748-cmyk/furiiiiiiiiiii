@@ -8,6 +8,20 @@
 > `docs/contexto/arquitectura.md` (sección "Lo que NO existe") y en `historial.md`.
 
 
+### ~~ALTA - El balde de pintura tapaba y pintaba encima de puntos, manchas u ojos interiores al rellenar un círculo o figura cerrada~~ ✅ RESUELTO 2026-10-27
+- **Dónde**: `lib/screens/herramientas/dibujo/helpers/drawing_flood_fill_helper.dart`, `lib/screens/herramientas/dibujo/helpers/drawing_fill_island_detector.dart`, `lib/screens/herramientas/dibujo/models/drawing_stroke.dart`, `lib/screens/herramientas/dibujo/painters/stroke_renderer.dart`
+- **Qué pasaba**: Al dibujar un círculo o forma cerrada exterior y dentro agregar puntos, pecas, manchas a mano alzada o detalles (ej. ojos o bocas), al tocar con el balde de pintura en el espacio interior para colorear el fondo, el balde rellenaba todo el disco de forma sólida y plana, tapando y cubriendo los puntos y manchas interiores.
+- **Causa raíz**:
+  1. `findEnclosedRegion` generaba un polígono simple del contorno exterior ignorando completamente los trazos existentes ubicados en el interior de la forma cerrada.
+  2. `DrawingStroke._buildPath` y `StrokeRenderer._renderBucketFill` unían linealmente los puntos en un único loop perimetral sin soporte de islas/huecos interiores (`PathFillType.evenOdd`) ni marcadores de separación de contornos en la lista de `DrawingPoint`.
+- **Fix**:
+  1. Se implementó `DrawingFillIslandDetector`: identifica las islas interiores (puntos únicos, trazos a mano alzada con grosor, círculos y rectángulos internos) que están dentro de la forma exterior contenedora pero que no contienen al punto de toque (`seed`).
+  2. Generación perimetral de islas con margen de separación y composición de `DrawingPoint` utilizando valores negativos de `pressure: -1.0` como centinela de inicio de sub-paths interiores, garantizando retrocompatibilidad y persistencia transparente en JSON (`DrawingProject`).
+  3. Soporte de `PathFillType.evenOdd` en `DrawingStroke._buildPath()` y renderizado directo de `canvas.drawPath(stroke.path, paint)` en `StrokeRenderer._renderBucketFill`.
+  4. Si el usuario toca directamente sobre una mancha o punto interior, se selecciona el contenedor más específico de menor área y se rellena esa mancha de forma individual sin afectar el fondo.
+- **Prioridad**: ~~ALTA~~ → RESUELTO 2026-10-27
+
+
 ### ~~CRÍTICA - Reinicios continuos, recargas en bucle y congelamiento en la sección de Pinterest~~ ✅ RESUELTO 2026-10-27
 - **Dónde**: `lib/screens/galeria/pinterest_screen.dart`, `lib/screens/galeria/helpers/pinterest_controller_factory.dart`, `lib/screens/galeria/widgets/pinterest_cleaner.dart`, `lib/screens/galeria/services/pinterest_service.dart`, `android/app/src/main/kotlin/com/furiapp/furi_app/MainActivity.kt`
 - **Qué pasaba**: Al navegar por Pinterest en celular, la pantalla se reiniciaba a cada rato, parpadeaba recargando al inicio (`pinterest.com`), o se congelaba tras scroll prolongado.

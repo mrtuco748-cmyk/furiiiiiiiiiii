@@ -203,13 +203,7 @@ abstract final class StrokeRenderer {
       ..isAntiAlias = true;
 
     if (stroke.points.length >= 3) {
-      final path = Path();
-      path.moveTo(stroke.points.first.offset.dx, stroke.points.first.offset.dy);
-      for (int i = 1; i < stroke.points.length; i++) {
-        path.lineTo(stroke.points[i].offset.dx, stroke.points[i].offset.dy);
-      }
-      path.close();
-      canvas.drawPath(path, paint);
+      canvas.drawPath(stroke.path, paint);
     } else {
       canvas.drawPaint(paint);
     }
